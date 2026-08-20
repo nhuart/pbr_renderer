@@ -1,0 +1,40 @@
+.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint
+
+help:
+	@echo "Available commands:"
+	@echo "  make build-debug      - Build with validation layers (debug)"
+	@echo "  make build-release    - Build optimized without validation layers"
+	@echo "  make run-debug        - Build and run debug"
+	@echo "  make run-release      - Build and run release"
+	@echo "  make format           - Format all source files with clang-format"
+	@echo "  make lint             - Run clang-tidy static analysis"
+	@echo "  make lint-fix         - Run clang-tidy and apply fixes automatically"
+
+.DEFAULT_GOAL := help
+
+configure-debug:
+	cmake -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+configure-release:
+	cmake -B build/release -DCMAKE_BUILD_TYPE=Release
+
+build-debug: configure-debug
+	cmake --build build/debug -- --no-print-directory
+
+build-release: configure-release
+	cmake --build build/release -- --no-print-directory
+
+run-debug: build-debug
+	./build/debug/pbr_renderer
+
+run-release: build-release
+	./build/release/pbr_renderer
+
+format:
+	find . -path ./build -prune -o \( -name "*.cpp" -o -name "*.h" \) -print | xargs clang-format -i
+
+lint: configure-debug
+	run-clang-tidy -p build/debug -quiet
+
+lint-fix: configure-debug
+	run-clang-tidy -p build/debug -quiet -fix
