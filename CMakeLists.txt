@@ -3,6 +3,8 @@ project(pbr_renderer)
 
 set(CMAKE_CXX_STANDARD 20)
 
+set(Vulkan_ROOT "$ENV{HOME}/vulkansdk/1.4.357.1/x86_64" CACHE PATH "Vulkan SDK path")
+
 find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
 
