@@ -1,7 +1,6 @@
-#include <cassert>
-
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -49,6 +48,8 @@ class HelloTriangleApplication {
 
   vk::raii::Queue graphicsQueue = nullptr;
 
+  vk::raii::SurfaceKHR surface = nullptr;
+
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
   void initWindow() {
@@ -63,6 +64,7 @@ class HelloTriangleApplication {
   void initVulkan() {
     createInstance();
     setupDebugMessenger();
+    createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
   }
@@ -150,6 +152,14 @@ class HelloTriangleApplication {
     debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
   }
 
+  void createSurface() {
+    VkSurfaceKHR rawSurface;
+    if (glfwCreateWindowSurface(*instance, window, nullptr, &rawSurface) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create window surface!");
+    }
+    surface = vk::raii::SurfaceKHR(instance, rawSurface);
+  }
+
   bool isDeviceSuitable(vk::raii::PhysicalDevice const& device) {
     // Check if the device supports the Vulkan 1.4 API version
     bool supportsVulkan1_4 = device.getProperties().apiVersion >= vk::ApiVersion14;
@@ -206,13 +216,18 @@ class HelloTriangleApplication {
     // Find the index of the first queue family that supports graphics
     std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
-    auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const& qfp) {
-      return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
-    });
-    assert(graphicsQueueFamilyProperty != queueFamilyProperties.end() && "No graphics queue family found!");
-
-    auto graphicsIndex =
-        static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
+    uint32_t graphicsIndex = std::numeric_limits<uint32_t>::max();
+    for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
+      bool hasGraphics = !!(queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics);
+      bool hasPresent = physicalDevice.getSurfaceSupportKHR(i, *surface);
+      if (hasGraphics && hasPresent) {
+        graphicsIndex = i;
+        break;
+      }
+    }
+    if (graphicsIndex == std::numeric_limits<uint32_t>::max()) {
+      throw std::runtime_error("no queue family supports both graphics and presentation!");
+    }
 
     // Enable required features via a pNext chain
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
@@ -238,7 +253,7 @@ class HelloTriangleApplication {
     graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
 
     std::cout << "Queues:\n";
-    std::cout << "  graphics (family " << graphicsIndex << ") — draw calls and rendering\n";
+    std::cout << "  graphics + present (family " << graphicsIndex << ") — draw calls, rendering, and presentation\n";
   }
 
   static std::vector<const char*> getRequiredInstanceExtensions() {
