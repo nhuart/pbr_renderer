@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <cstdlib>
-#include <limits>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -181,17 +181,15 @@ class HelloTriangleApplication {
     auto availableDeviceExtensions = device.enumerateDeviceExtensionProperties();
     bool supportsAllRequiredExtensions =
         std::ranges::all_of(requiredDeviceExtension, [&availableDeviceExtensions](auto const& requiredExt) {
-          return std::ranges::any_of(
-              availableDeviceExtensions, [requiredExt](auto const& availableExt) {
-                return strcmp(availableExt.extensionName, requiredExt) == 0;
-              });
+          return std::ranges::any_of(availableDeviceExtensions, [requiredExt](auto const& availableExt) {
+            return strcmp(availableExt.extensionName, requiredExt) == 0;
+          });
         });
 
     // Check if the device supports the required features
-    auto features =
-        device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
-                                     vk::PhysicalDeviceVulkan13Features,
-                                     vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+    auto features = device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
+                                                 vk::PhysicalDeviceVulkan13Features,
+                                                 vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
     bool supportsRequiredFeatures =
         features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
@@ -228,7 +226,8 @@ class HelloTriangleApplication {
   }
 
   static vk::PresentModeKHR chooseSwapPresentMode(std::vector<vk::PresentModeKHR> const& availablePresentModes) {
-    bool hasMailbox = std::ranges::any_of(availablePresentModes, [](auto m) { return m == vk::PresentModeKHR::eMailbox; });
+    bool hasMailbox =
+        std::ranges::any_of(availablePresentModes, [](auto m) { return m == vk::PresentModeKHR::eMailbox; });
     return hasMailbox ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
   }
 
@@ -240,7 +239,8 @@ class HelloTriangleApplication {
     glfwGetFramebufferSize(window, &width, &height);
     return {
         std::clamp(static_cast<uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-        std::clamp(static_cast<uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+        std::clamp(static_cast<uint32_t>(height), capabilities.minImageExtent.height,
+                   capabilities.maxImageExtent.height),
     };
   }
 
@@ -258,11 +258,16 @@ class HelloTriangleApplication {
     auto availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
 
     std::cout << "Swap chain support:\n";
-    std::cout << "  image count: min=" << capabilities.minImageCount
-              << " max=" << (capabilities.maxImageCount == 0 ? std::string("unlimited") : std::to_string(capabilities.maxImageCount)) << "\n";
-    std::cout << "  min extent: " << capabilities.minImageExtent.width << "x" << capabilities.minImageExtent.height << "\n";
-    std::cout << "  max extent: " << capabilities.maxImageExtent.width << "x" << capabilities.maxImageExtent.height << "\n";
-    std::cout << "  current extent: " << capabilities.currentExtent.width << "x" << capabilities.currentExtent.height << "\n";
+    std::cout << "  image count: min=" << capabilities.minImageCount << " max="
+              << (capabilities.maxImageCount == 0 ? std::string("unlimited")
+                                                  : std::to_string(capabilities.maxImageCount))
+              << "\n";
+    std::cout << "  min extent: " << capabilities.minImageExtent.width << "x" << capabilities.minImageExtent.height
+              << "\n";
+    std::cout << "  max extent: " << capabilities.maxImageExtent.width << "x" << capabilities.maxImageExtent.height
+              << "\n";
+    std::cout << "  current extent: " << capabilities.currentExtent.width << "x" << capabilities.currentExtent.height
+              << "\n";
     std::cout << "  supported transforms: " << vk::to_string(capabilities.supportedTransforms) << "\n";
     std::cout << "  current transform: " << vk::to_string(capabilities.currentTransform) << "\n";
     std::cout << "  supported composite alpha: " << vk::to_string(capabilities.supportedCompositeAlpha) << "\n";
@@ -301,16 +306,16 @@ class HelloTriangleApplication {
 
     std::cout << "Swap chain:\n";
     std::cout << "  images: " << swapChainImages.size() << " (requested min " << imageCount << ")\n";
-    std::cout << "  format: " << vk::to_string(swapChainSurfaceFormat.format)
-              << " / " << vk::to_string(swapChainSurfaceFormat.colorSpace) << "\n";
+    std::cout << "  format: " << vk::to_string(swapChainSurfaceFormat.format) << " / "
+              << vk::to_string(swapChainSurfaceFormat.colorSpace) << "\n";
     std::cout << "  extent: " << swapChainExtent.width << "x" << swapChainExtent.height << "\n";
     std::cout << "  present mode: " << vk::to_string(presentMode) << "\n";
   }
 
   void createImageViews() {
     vk::ImageViewCreateInfo createInfo{
-        .viewType         = vk::ImageViewType::e2D,
-        .format           = swapChainSurfaceFormat.format,
+        .viewType = vk::ImageViewType::e2D,
+        .format = swapChainSurfaceFormat.format,
         .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     };
 
@@ -343,7 +348,7 @@ class HelloTriangleApplication {
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
-            {},                                  // vk::PhysicalDeviceFeatures2
+            {},                              // vk::PhysicalDeviceFeatures2
             {.shaderDrawParameters = true},  // vk::PhysicalDeviceVulkan11Features
             {.dynamicRendering = true},      // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}   // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
