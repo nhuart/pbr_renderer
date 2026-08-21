@@ -161,7 +161,7 @@ class HelloTriangleApplication {
   }
 
   void createSurface() {
-    VkSurfaceKHR rawSurface;
+    VkSurfaceKHR rawSurface = nullptr;
     if (glfwCreateWindowSurface(*instance, window, nullptr, &rawSurface) != VK_SUCCESS) {
       throw std::runtime_error("failed to create window surface!");
     }
@@ -170,7 +170,7 @@ class HelloTriangleApplication {
 
   bool isDeviceSuitable(vk::raii::PhysicalDevice const& device) {
     // Check if the device supports the Vulkan 1.4 API version
-    bool supportsVulkan1_4 = device.getProperties().apiVersion >= vk::ApiVersion14;
+    bool supportsVulkan14 = device.getProperties().apiVersion >= vk::ApiVersion14;
 
     // Check if any of the queue families support graphics operations
     auto queueFamilies = device.getQueueFamilyProperties();
@@ -195,7 +195,7 @@ class HelloTriangleApplication {
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
         features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
-    return supportsVulkan1_4 && supportsGraphics && supportsAllRequiredExtensions && supportsRequiredFeatures;
+    return supportsVulkan14 && supportsGraphics && supportsAllRequiredExtensions && supportsRequiredFeatures;
   }
 
   void pickPhysicalDevice() {
@@ -209,25 +209,25 @@ class HelloTriangleApplication {
                 << (suitable ? " (suitable)" : " (not suitable)") << "\n";
     }
 
-    auto const deviceIter =
+    auto const DEVICE_ITER =
         std::ranges::find_if(physicalDevices, [&](auto const& gpu) { return isDeviceSuitable(gpu); });
-    if (deviceIter == physicalDevices.end()) {
+    if (DEVICE_ITER == physicalDevices.end()) {
       throw std::runtime_error("failed to find a suitable GPU!");
     }
-    physicalDevice = *deviceIter;
+    physicalDevice = *DEVICE_ITER;
     std::cout << "Selected GPU: " << physicalDevice.getProperties().deviceName << "\n";
   }
 
   static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const& availableFormats) {
-    auto it = std::ranges::find_if(availableFormats, [](auto const& f) {
-      return f.format == vk::Format::eB8G8R8A8Srgb && f.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
+    auto found = std::ranges::find_if(availableFormats, [](auto const& fmt) {
+      return fmt.format == vk::Format::eB8G8R8A8Srgb && fmt.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
     });
-    return it != availableFormats.end() ? *it : availableFormats[0];
+    return found != availableFormats.end() ? *found : availableFormats[0];
   }
 
   static vk::PresentModeKHR chooseSwapPresentMode(std::vector<vk::PresentModeKHR> const& availablePresentModes) {
     bool hasMailbox =
-        std::ranges::any_of(availablePresentModes, [](auto m) { return m == vk::PresentModeKHR::eMailbox; });
+        std::ranges::any_of(availablePresentModes, [](auto mode) { return mode == vk::PresentModeKHR::eMailbox; });
     return hasMailbox ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
   }
 
@@ -235,7 +235,8 @@ class HelloTriangleApplication {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
       return capabilities.currentExtent;
     }
-    int width, height;
+    int width  = 0;
+    int height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     return {
         std::clamp(static_cast<uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
@@ -273,12 +274,12 @@ class HelloTriangleApplication {
     std::cout << "  supported composite alpha: " << vk::to_string(capabilities.supportedCompositeAlpha) << "\n";
     std::cout << "  supported usage flags: " << vk::to_string(capabilities.supportedUsageFlags) << "\n";
     std::cout << "  surface formats (" << availableFormats.size() << "):\n";
-    for (auto const& f : availableFormats) {
-      std::cout << "    " << vk::to_string(f.format) << " / " << vk::to_string(f.colorSpace) << "\n";
+    for (auto const& fmt : availableFormats) {
+      std::cout << "    " << vk::to_string(fmt.format) << " / " << vk::to_string(fmt.colorSpace) << "\n";
     }
     std::cout << "  present modes (" << availablePresentModes.size() << "):\n";
-    for (auto const& m : availablePresentModes) {
-      std::cout << "    " << vk::to_string(m) << "\n";
+    for (auto const& mode : availablePresentModes) {
+      std::cout << "    " << vk::to_string(mode) << "\n";
     }
 
     swapChainExtent = chooseSwapExtent(capabilities);
