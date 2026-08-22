@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -75,6 +76,7 @@ class HelloTriangleApplication {
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createGraphicsPipeline();
   }
 
   void mainLoop() {
@@ -326,6 +328,47 @@ class HelloTriangleApplication {
     }
 
     std::cout << "Image views: " << swapChainImageViews.size() << " created\n";
+  }
+
+  void createGraphicsPipeline() {
+    auto vertCode = readFile("shaders/compiled/triangle.vert.spv");
+    auto fragCode = readFile("shaders/compiled/triangle.frag.spv");
+
+    vk::raii::ShaderModule vertModule = createShaderModule(vertCode);
+    vk::raii::ShaderModule fragModule = createShaderModule(fragCode);
+
+    vk::PipelineShaderStageCreateInfo vertStageInfo{
+        .stage  = vk::ShaderStageFlagBits::eVertex,
+        .module = *vertModule,
+        .pName  = "main",
+    };
+    vk::PipelineShaderStageCreateInfo fragStageInfo{
+        .stage  = vk::ShaderStageFlagBits::eFragment,
+        .module = *fragModule,
+        .pName  = "main",
+    };
+
+    std::array shaderStages = {vertStageInfo, fragStageInfo};
+    std::cout << "Shader modules: vertex and fragment created\n";
+  }
+
+  [[nodiscard]] vk::raii::ShaderModule createShaderModule(std::vector<char> const& code) const {
+    vk::ShaderModuleCreateInfo createInfo{
+        .codeSize = code.size(),
+        .pCode    = reinterpret_cast<uint32_t const*>(code.data()),
+    };
+    return vk::raii::ShaderModule(device, createInfo);
+  }
+
+  static std::vector<char> readFile(std::string const& filename) {
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+      throw std::runtime_error("failed to open file: " + filename);
+    }
+    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    return buffer;
   }
 
   void createLogicalDevice() {
