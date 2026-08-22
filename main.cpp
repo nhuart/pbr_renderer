@@ -57,6 +57,8 @@ class HelloTriangleApplication {
   vk::Extent2D swapChainExtent;
   std::vector<vk::raii::ImageView> swapChainImageViews;
 
+  vk::raii::PipelineLayout pipelineLayout = nullptr;
+
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
   void initWindow() {
@@ -349,7 +351,61 @@ class HelloTriangleApplication {
     };
 
     std::array shaderStages = {vertStageInfo, fragStageInfo};
-    std::cout << "Shader modules: vertex and fragment created\n";
+
+    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    vk::PipelineDynamicStateCreateInfo dynamicStateInfo{
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .pDynamicStates    = dynamicStates.data(),
+    };
+
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+        .vertexBindingDescriptionCount   = 0,
+        .vertexAttributeDescriptionCount = 0,
+    };
+
+    vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
+        .topology               = vk::PrimitiveTopology::eTriangleList,
+        .primitiveRestartEnable = vk::False,
+    };
+
+    vk::PipelineViewportStateCreateInfo viewportStateInfo{
+        .viewportCount = 1,
+        .scissorCount  = 1,
+    };
+
+    vk::PipelineRasterizationStateCreateInfo rasterizerInfo{
+        .depthClampEnable        = vk::False,
+        .rasterizerDiscardEnable = vk::False,
+        .polygonMode             = vk::PolygonMode::eFill,
+        .cullMode                = vk::CullModeFlagBits::eBack,
+        .frontFace               = vk::FrontFace::eClockwise,
+        .depthBiasEnable         = vk::False,
+        .lineWidth               = 1.0f,
+    };
+
+    vk::PipelineMultisampleStateCreateInfo multisamplingInfo{
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+        .sampleShadingEnable  = vk::False,
+    };
+
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+        .blendEnable    = vk::False,
+        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+    };
+    vk::PipelineColorBlendStateCreateInfo colorBlendingInfo{
+        .logicOpEnable   = vk::False,
+        .attachmentCount = 1,
+        .pAttachments    = &colorBlendAttachment,
+    };
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+        .setLayoutCount         = 0,
+        .pushConstantRangeCount = 0,
+    };
+    pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+
+    std::cout << "Graphics pipeline: fixed-function state and pipeline layout created\n";
   }
 
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(std::vector<char> const& code) const {
