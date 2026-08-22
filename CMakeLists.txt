@@ -40,6 +40,10 @@ add_custom_command(TARGET shaders POST_BUILD
 
 add_executable(pbr_renderer main.cpp)
 add_dependencies(pbr_renderer shaders)
+target_precompile_headers(pbr_renderer PRIVATE
+    <vulkan/vulkan_raii.hpp>
+    <GLFW/glfw3.h>
+)
 
 target_compile_definitions(pbr_renderer PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
