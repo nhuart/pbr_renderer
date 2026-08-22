@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -56,6 +57,9 @@ class HelloTriangleApplication {
   vk::Extent2D swapChainExtent;
   std::vector<vk::raii::ImageView> swapChainImageViews;
 
+  vk::raii::PipelineLayout pipelineLayout = nullptr;
+  vk::raii::Pipeline graphicsPipeline = nullptr;
+
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
   void initWindow() {
@@ -75,6 +79,7 @@ class HelloTriangleApplication {
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createGraphicsPipeline();
   }
 
   void mainLoop() {
@@ -235,7 +240,7 @@ class HelloTriangleApplication {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
       return capabilities.currentExtent;
     }
-    int width  = 0;
+    int width = 0;
     int height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     return {
@@ -326,6 +331,123 @@ class HelloTriangleApplication {
     }
 
     std::cout << "Image views: " << swapChainImageViews.size() << " created\n";
+  }
+
+  void createGraphicsPipeline() {
+    auto vertCode = readFile("shaders/compiled/triangle.vert.spv");
+    auto fragCode = readFile("shaders/compiled/triangle.frag.spv");
+
+    vk::raii::ShaderModule vertModule = createShaderModule(vertCode);
+    vk::raii::ShaderModule fragModule = createShaderModule(fragCode);
+
+    vk::PipelineShaderStageCreateInfo vertStageInfo{
+        .stage = vk::ShaderStageFlagBits::eVertex,
+        .module = *vertModule,
+        .pName = "main",
+    };
+    vk::PipelineShaderStageCreateInfo fragStageInfo{
+        .stage = vk::ShaderStageFlagBits::eFragment,
+        .module = *fragModule,
+        .pName = "main",
+    };
+
+    std::array shaderStages = {vertStageInfo, fragStageInfo};
+
+    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    vk::PipelineDynamicStateCreateInfo dynamicStateInfo{
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .pDynamicStates = dynamicStates.data(),
+    };
+
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+        .vertexBindingDescriptionCount = 0,
+        .vertexAttributeDescriptionCount = 0,
+    };
+
+    vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
+        .topology = vk::PrimitiveTopology::eTriangleList,
+        .primitiveRestartEnable = vk::False,
+    };
+
+    vk::PipelineViewportStateCreateInfo viewportStateInfo{
+        .viewportCount = 1,
+        .scissorCount = 1,
+    };
+
+    vk::PipelineRasterizationStateCreateInfo rasterizerInfo{
+        .depthClampEnable = vk::False,
+        .rasterizerDiscardEnable = vk::False,
+        .polygonMode = vk::PolygonMode::eFill,
+        .cullMode = vk::CullModeFlagBits::eBack,
+        .frontFace = vk::FrontFace::eClockwise,
+        .depthBiasEnable = vk::False,
+        .lineWidth = 1.0f,
+    };
+
+    vk::PipelineMultisampleStateCreateInfo multisamplingInfo{
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+        .sampleShadingEnable = vk::False,
+    };
+
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+        .blendEnable = vk::False,
+        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+    };
+    vk::PipelineColorBlendStateCreateInfo colorBlendingInfo{
+        .logicOpEnable = vk::False,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment,
+    };
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+        .setLayoutCount = 0,
+        .pushConstantRangeCount = 0,
+    };
+    pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+
+    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+        {
+            .stageCount = static_cast<uint32_t>(shaderStages.size()),
+            .pStages = shaderStages.data(),
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssemblyInfo,
+            .pViewportState = &viewportStateInfo,
+            .pRasterizationState = &rasterizerInfo,
+            .pMultisampleState = &multisamplingInfo,
+            .pColorBlendState = &colorBlendingInfo,
+            .pDynamicState = &dynamicStateInfo,
+            .layout = *pipelineLayout,
+            .renderPass = nullptr,
+        },
+        {
+            .colorAttachmentCount = 1,
+            .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
+        },
+    };
+
+    graphicsPipeline =
+        vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+    std::cout << "Graphics pipeline: created\n";
+  }
+
+  [[nodiscard]] vk::raii::ShaderModule createShaderModule(std::vector<char> const& code) const {
+    vk::ShaderModuleCreateInfo createInfo{
+        .codeSize = code.size(),
+        .pCode = reinterpret_cast<uint32_t const*>(code.data()),
+    };
+    return vk::raii::ShaderModule(device, createInfo);
+  }
+
+  static std::vector<char> readFile(std::string const& filename) {
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+      throw std::runtime_error("failed to open file: " + filename);
+    }
+    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    return buffer;
   }
 
   void createLogicalDevice() {

@@ -18,23 +18,23 @@ configure-debug:
 configure-release:
 	cmake -B build/release -DCMAKE_BUILD_TYPE=Release
 
-build-debug: configure-debug
+build-debug:
 	cmake --build build/debug -- --no-print-directory
 
-build-release: configure-release
+build-release:
 	cmake --build build/release -- --no-print-directory
 
-run-debug: build-debug
+run-debug:
 	./build/debug/pbr_renderer
 
-run-release: build-release
+run-release:
 	./build/release/pbr_renderer
 
 format:
 	find . -path ./build -prune -o \( -name "*.cpp" -o -name "*.h" \) -print | xargs clang-format -i
 
-lint: configure-debug
+lint:
 	run-clang-tidy -p build/debug -quiet
 
-lint-fix: configure-debug
+lint-fix:
 	run-clang-tidy -p build/debug -quiet -fix

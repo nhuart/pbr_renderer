@@ -8,7 +8,42 @@ set(Vulkan_ROOT "$ENV{HOME}/vulkansdk/1.4.357.1/x86_64" CACHE PATH "Vulkan SDK p
 find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
 
+find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
+
+set(SHADER_SOURCES
+    shaders/triangle.vert
+    shaders/triangle.frag
+)
+
+set(SHADER_SPIRV_OUTPUTS "")
+foreach(SHADER ${SHADER_SOURCES})
+    get_filename_component(SHADER_NAME ${SHADER} NAME)
+    set(SPIRV_OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+    add_custom_command(
+        OUTPUT ${SPIRV_OUTPUT}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+        COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/${SHADER}" -o ${SPIRV_OUTPUT}
+        DEPENDS "${CMAKE_SOURCE_DIR}/${SHADER}"
+        COMMENT "Compiling shader ${SHADER_NAME}"
+    )
+    list(APPEND SHADER_SPIRV_OUTPUTS ${SPIRV_OUTPUT})
+endforeach()
+
+add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
+
+# Copy compiled shaders next to the binary so the app can find them at runtime
+add_custom_command(TARGET shaders POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_BINARY_DIR}/shaders"
+        "${CMAKE_SOURCE_DIR}/shaders/compiled"
+)
+
 add_executable(pbr_renderer main.cpp)
+add_dependencies(pbr_renderer shaders)
+target_precompile_headers(pbr_renderer PRIVATE
+    <vulkan/vulkan_raii.hpp>
+    <GLFW/glfw3.h>
+)
 
 target_compile_definitions(pbr_renderer PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
