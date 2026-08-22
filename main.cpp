@@ -58,6 +58,7 @@ class HelloTriangleApplication {
   std::vector<vk::raii::ImageView> swapChainImageViews;
 
   vk::raii::PipelineLayout pipelineLayout = nullptr;
+  vk::raii::Pipeline graphicsPipeline = nullptr;
 
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
@@ -405,7 +406,28 @@ class HelloTriangleApplication {
     };
     pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
-    std::cout << "Graphics pipeline: fixed-function state and pipeline layout created\n";
+    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+        {
+            .stageCount          = static_cast<uint32_t>(shaderStages.size()),
+            .pStages             = shaderStages.data(),
+            .pVertexInputState   = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssemblyInfo,
+            .pViewportState      = &viewportStateInfo,
+            .pRasterizationState = &rasterizerInfo,
+            .pMultisampleState   = &multisamplingInfo,
+            .pColorBlendState    = &colorBlendingInfo,
+            .pDynamicState       = &dynamicStateInfo,
+            .layout              = *pipelineLayout,
+            .renderPass          = nullptr,
+        },
+        {
+            .colorAttachmentCount    = 1,
+            .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
+        },
+    };
+
+    graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+    std::cout << "Graphics pipeline: created\n";
   }
 
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(std::vector<char> const& code) const {
