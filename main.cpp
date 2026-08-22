@@ -48,6 +48,7 @@ class HelloTriangleApplication {
   vk::raii::Device device = nullptr;
 
   vk::raii::Queue graphicsQueue = nullptr;
+  uint32_t graphicsQueueFamilyIndex = 0;
 
   vk::raii::SurfaceKHR surface = nullptr;
 
@@ -59,6 +60,9 @@ class HelloTriangleApplication {
 
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
+
+  vk::raii::CommandPool commandPool = nullptr;
+  vk::raii::CommandBuffer commandBuffer = nullptr;
 
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
@@ -80,12 +84,16 @@ class HelloTriangleApplication {
     createSwapChain();
     createImageViews();
     createGraphicsPipeline();
+    createCommandPool();
+    createCommandBuffer();
   }
 
   void mainLoop() {
     while (!glfwWindowShouldClose(window)) {
       glfwPollEvents();
+      drawFrame();
     }
+    device.waitIdle();
   }
 
   void cleanup() {
@@ -439,6 +447,118 @@ class HelloTriangleApplication {
     return vk::raii::ShaderModule(device, createInfo);
   }
 
+  void createCommandPool() {
+    vk::CommandPoolCreateInfo poolInfo{
+        .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = graphicsQueueFamilyIndex,
+    };
+    commandPool = vk::raii::CommandPool(device, poolInfo);
+  }
+
+  void createCommandBuffer() {
+    vk::CommandBufferAllocateInfo allocInfo{
+        .commandPool        = *commandPool,
+        .level              = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1,
+    };
+    commandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+  }
+
+  void transitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+                             vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
+                             vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
+    vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask        = srcStage,
+        .srcAccessMask       = srcAccess,
+        .dstStageMask        = dstStage,
+        .dstAccessMask       = dstAccess,
+        .oldLayout           = oldLayout,
+        .newLayout           = newLayout,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image               = image,
+        .subresourceRange    = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+    };
+    commandBuffer.pipelineBarrier2(vk::DependencyInfo{
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &barrier,
+    });
+  }
+
+  void recordCommandBuffer(uint32_t imageIndex) {
+    commandBuffer.begin({});
+
+    transitionImageLayout(swapChainImages[imageIndex], vk::ImageLayout::eUndefined,
+                          vk::ImageLayout::eColorAttachmentOptimal, {}, vk::AccessFlagBits2::eColorAttachmentWrite,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+
+    vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+    vk::RenderingAttachmentInfo attachmentInfo{
+        .imageView   = *swapChainImageViews[imageIndex],
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp      = vk::AttachmentLoadOp::eClear,
+        .storeOp     = vk::AttachmentStoreOp::eStore,
+        .clearValue  = clearColor,
+    };
+    vk::RenderingInfo renderingInfo{
+        .renderArea           = {.offset = {0, 0}, .extent = swapChainExtent},
+        .layerCount           = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments    = &attachmentInfo,
+    };
+
+    commandBuffer.beginRendering(renderingInfo);
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+
+    vk::Viewport viewport{
+        .x        = 0.0f,
+        .y        = 0.0f,
+        .width    = static_cast<float>(swapChainExtent.width),
+        .height   = static_cast<float>(swapChainExtent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    commandBuffer.setViewport(0, viewport);
+    commandBuffer.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
+
+    commandBuffer.draw(3, 1, 0, 0);
+
+    commandBuffer.endRendering();
+
+    transitionImageLayout(swapChainImages[imageIndex], vk::ImageLayout::eColorAttachmentOptimal,
+                          vk::ImageLayout::ePresentSrcKHR, vk::AccessFlagBits2::eColorAttachmentWrite, {},
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::PipelineStageFlagBits2::eBottomOfPipe);
+
+    commandBuffer.end();
+  }
+
+  void drawFrame() {
+    auto [acquireResult, imageIndex] =
+        swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(), nullptr, nullptr);
+
+    commandBuffer.reset();
+    recordCommandBuffer(imageIndex);
+
+    vk::CommandBuffer cmdBuf = *commandBuffer;
+    vk::SubmitInfo submitInfo{
+        .commandBufferCount = 1,
+        .pCommandBuffers    = &cmdBuf,
+    };
+    graphicsQueue.submit(submitInfo);
+    graphicsQueue.waitIdle();
+
+    vk::SwapchainKHR sc = *swapChain;
+    vk::PresentInfoKHR presentInfo{
+        .swapchainCount = 1,
+        .pSwapchains    = &sc,
+        .pImageIndices  = &imageIndex,
+    };
+    std::ignore = graphicsQueue.presentKHR(presentInfo);
+  }
+
   static std::vector<char> readFile(std::string const& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
@@ -489,6 +609,7 @@ class HelloTriangleApplication {
 
     device = vk::raii::Device(physicalDevice, deviceCreateInfo);
     graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+    graphicsQueueFamilyIndex = graphicsIndex;
 
     std::cout << "Queues:\n";
     std::cout << "  graphics + present (family " << graphicsIndex << ") — draw calls, rendering, and presentation\n";
