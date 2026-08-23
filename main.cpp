@@ -19,10 +19,9 @@ import vulkan_hpp;
 #define GLFW_INCLUDE_VULKAN  // REQUIRED only for GLFW CreateWindowSurface.
 #include <GLFW/glfw3.h>
 
+#include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#include <chrono>
 
 struct Vertex {
   glm::vec2 pos;
@@ -510,8 +509,8 @@ class HelloTriangleApplication {
 
     vk::DescriptorSetLayout dslHandle = *descriptorSetLayout;
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &dslHandle,
+        .setLayoutCount = 1,
+        .pSetLayouts = &dslHandle,
         .pushConstantRangeCount = 0,
     };
     pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
@@ -641,22 +640,22 @@ class HelloTriangleApplication {
 
   void createDescriptorSetLayout() {
     vk::DescriptorSetLayoutBinding uboLayoutBinding{
-        .binding         = 0,
-        .descriptorType  = vk::DescriptorType::eUniformBuffer,
+        .binding = 0,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
         .descriptorCount = 1,
-        .stageFlags      = vk::ShaderStageFlagBits::eVertex,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
     };
     descriptorSetLayout = vk::raii::DescriptorSetLayout(device, vk::DescriptorSetLayoutCreateInfo{
                                                                     .bindingCount = 1,
-                                                                    .pBindings    = &uboLayoutBinding,
+                                                                    .pBindings = &uboLayoutBinding,
                                                                 });
   }
 
   void createUniformBuffers() {
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      auto [buffer, memory] = createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
-                                           vk::MemoryPropertyFlagBits::eHostVisible |
-                                               vk::MemoryPropertyFlagBits::eHostCoherent);
+      auto [buffer, memory] =
+          createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
+                       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
       uniformBuffersMapped.push_back(memory.mapMemory(0, sizeof(UniformBufferObject)));
       uniformBuffers.push_back(std::move(buffer));
       uniformBuffersMemory.push_back(std::move(memory));
@@ -669,10 +668,9 @@ class HelloTriangleApplication {
 
     UniformBufferObject ubo{
         .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-        .view  = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-        .proj  = glm::perspective(glm::radians(45.0f),
-                                 static_cast<float>(swapChainExtent.width) /
-                                     static_cast<float>(swapChainExtent.height),
+        .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        .proj = glm::perspective(glm::radians(45.0f),
+                                 static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
                                  0.1f, 10.0f),
     };
     ubo.proj[1][1] *= -1;  // GLM uses OpenGL clip space (Y up); Vulkan is Y down.
@@ -682,40 +680,41 @@ class HelloTriangleApplication {
 
   void createDescriptorPool() {
     vk::DescriptorPoolSize poolSize{
-        .type            = vk::DescriptorType::eUniformBuffer,
+        .type = vk::DescriptorType::eUniformBuffer,
         .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
     };
     descriptorPool = vk::raii::DescriptorPool(device, vk::DescriptorPoolCreateInfo{
-                                                           .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                                                           .maxSets       = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
-                                                           .poolSizeCount = 1,
-                                                           .pPoolSizes    = &poolSize,
-                                                       });
+                                                          .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                                                          .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                                                          .poolSizeCount = 1,
+                                                          .pPoolSizes = &poolSize,
+                                                      });
   }
 
   void createDescriptorSets() {
     std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
     descriptorSets = vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
-                                                           .descriptorPool     = *descriptorPool,
-                                                           .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-                                                           .pSetLayouts        = layouts.data(),
-                                                       });
+                                                          .descriptorPool = *descriptorPool,
+                                                          .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+                                                          .pSetLayouts = layouts.data(),
+                                                      });
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       vk::DescriptorBufferInfo bufferInfo{
           .buffer = *uniformBuffers[i],
           .offset = 0,
-          .range  = sizeof(UniformBufferObject),
+          .range = sizeof(UniformBufferObject),
       };
-      device.updateDescriptorSets(vk::WriteDescriptorSet{
-                                      .dstSet          = *descriptorSets[i],
-                                      .dstBinding      = 0,
-                                      .dstArrayElement = 0,
-                                      .descriptorCount = 1,
-                                      .descriptorType  = vk::DescriptorType::eUniformBuffer,
-                                      .pBufferInfo     = &bufferInfo,
-                                  },
-                                  {});
+      device.updateDescriptorSets(
+          vk::WriteDescriptorSet{
+              .dstSet = *descriptorSets[i],
+              .dstBinding = 0,
+              .dstArrayElement = 0,
+              .descriptorCount = 1,
+              .descriptorType = vk::DescriptorType::eUniformBuffer,
+              .pBufferInfo = &bufferInfo,
+          },
+          {});
     }
   }
 
