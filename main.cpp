@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +18,28 @@ import vulkan_hpp;
 
 #define GLFW_INCLUDE_VULKAN  // REQUIRED only for GLFW CreateWindowSurface.
 #include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
+
+struct Vertex {
+  glm::vec2 pos;
+  glm::vec3 color;
+
+  static vk::VertexInputBindingDescription getBindingDescription() {
+    return {.binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex};
+  }
+
+  static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
+    return {{{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, pos)},
+             {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, color)}}};
+  }
+};
+
+const std::vector<Vertex> VERTICES = {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+};
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -408,9 +431,13 @@ class HelloTriangleApplication {
         .pDynamicStates = dynamicStates.data(),
     };
 
+    auto bindingDescription    = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-        .vertexBindingDescriptionCount = 0,
-        .vertexAttributeDescriptionCount = 0,
+        .vertexBindingDescriptionCount   = 1,
+        .pVertexBindingDescriptions      = &bindingDescription,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+        .pVertexAttributeDescriptions    = attributeDescriptions.data(),
     };
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
@@ -565,7 +592,7 @@ class HelloTriangleApplication {
     cmd.setViewport(0, viewport);
     cmd.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
 
-    cmd.draw(3, 1, 0, 0);
+    cmd.draw(static_cast<uint32_t>(VERTICES.size()), 1, 0, 0);
 
     cmd.endRendering();
 
