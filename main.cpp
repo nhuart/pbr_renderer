@@ -20,6 +20,9 @@ import vulkan_hpp;
 #include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <chrono>
 
 struct Vertex {
   glm::vec2 pos;
@@ -33,6 +36,12 @@ struct Vertex {
     return {{{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, pos)},
              {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, color)}}};
   }
+};
+
+struct UniformBufferObject {
+  alignas(16) glm::mat4 model;
+  alignas(16) glm::mat4 view;
+  alignas(16) glm::mat4 proj;
 };
 
 const std::vector<Vertex> VERTICES = {
@@ -86,8 +95,13 @@ class HelloTriangleApplication {
   vk::Extent2D swapChainExtent;
   std::vector<vk::raii::ImageView> swapChainImageViews;
 
+  vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
+
+  std::vector<vk::raii::Buffer> uniformBuffers;
+  std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+  std::vector<void*> uniformBuffersMapped;
 
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
@@ -126,10 +140,12 @@ class HelloTriangleApplication {
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffers();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -487,8 +503,10 @@ class HelloTriangleApplication {
         .pAttachments = &colorBlendAttachment,
     };
 
+    vk::DescriptorSetLayout dslHandle = *descriptorSetLayout;
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-        .setLayoutCount = 0,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &dslHandle,
         .pushConstantRangeCount = 0,
     };
     pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
@@ -616,6 +634,47 @@ class HelloTriangleApplication {
     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
   }
 
+  void createDescriptorSetLayout() {
+    vk::DescriptorSetLayoutBinding uboLayoutBinding{
+        .binding         = 0,
+        .descriptorType  = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags      = vk::ShaderStageFlagBits::eVertex,
+    };
+    descriptorSetLayout = vk::raii::DescriptorSetLayout(device, vk::DescriptorSetLayoutCreateInfo{
+                                                                    .bindingCount = 1,
+                                                                    .pBindings    = &uboLayoutBinding,
+                                                                });
+  }
+
+  void createUniformBuffers() {
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      auto [buffer, memory] = createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
+                                           vk::MemoryPropertyFlagBits::eHostVisible |
+                                               vk::MemoryPropertyFlagBits::eHostCoherent);
+      uniformBuffersMapped.push_back(memory.mapMemory(0, sizeof(UniformBufferObject)));
+      uniformBuffers.push_back(std::move(buffer));
+      uniformBuffersMemory.push_back(std::move(memory));
+    }
+  }
+
+  void updateUniformBuffer() {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - startTime).count();
+
+    UniformBufferObject ubo{
+        .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        .view  = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        .proj  = glm::perspective(glm::radians(45.0f),
+                                 static_cast<float>(swapChainExtent.width) /
+                                     static_cast<float>(swapChainExtent.height),
+                                 0.1f, 10.0f),
+    };
+    ubo.proj[1][1] *= -1;  // GLM uses OpenGL clip space (Y up); Vulkan is Y down.
+
+    memcpy(uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+  }
+
   void createCommandBuffers() {
     vk::CommandBufferAllocateInfo allocInfo{
         .commandPool = *commandPool,
@@ -725,6 +784,8 @@ class HelloTriangleApplication {
 
     // Reset fence only after confirming we will submit — avoids unsignalled fence deadlock.
     device.resetFences(*inFlightFences[frameIndex]);
+
+    updateUniformBuffer();
 
     commandBuffers[frameIndex].reset();
     recordCommandBuffer(imageIndex);
