@@ -7,6 +7,7 @@ set(Vulkan_ROOT "$ENV{HOME}/vulkansdk/1.4.357.1/x86_64" CACHE PATH "Vulkan SDK p
 
 find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(glm REQUIRED)
 
 find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 
@@ -52,4 +53,4 @@ target_compile_definitions(pbr_renderer PRIVATE
 )
 
 target_include_directories(pbr_renderer PRIVATE ${Vulkan_INCLUDE_DIRS})
-target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw)
+target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm)

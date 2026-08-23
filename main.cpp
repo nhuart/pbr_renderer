@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +18,31 @@ import vulkan_hpp;
 
 #define GLFW_INCLUDE_VULKAN  // REQUIRED only for GLFW CreateWindowSurface.
 #include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
+
+struct Vertex {
+  glm::vec2 pos;
+  glm::vec3 color;
+
+  static vk::VertexInputBindingDescription getBindingDescription() {
+    return {.binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex};
+  }
+
+  static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
+    return {{{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, pos)},
+             {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, color)}}};
+  }
+};
+
+const std::vector<Vertex> VERTICES = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
+};
+
+const std::vector<uint16_t> INDICES = {0, 1, 2, 2, 3, 0};
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -63,6 +89,12 @@ class HelloTriangleApplication {
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
 
+  vk::raii::Buffer vertexBuffer = nullptr;
+  vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+
+  vk::raii::Buffer indexBuffer = nullptr;
+  vk::raii::DeviceMemory indexBufferMemory = nullptr;
+
   vk::raii::CommandPool commandPool = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
 
@@ -96,6 +128,8 @@ class HelloTriangleApplication {
     createImageViews();
     createGraphicsPipeline();
     createCommandPool();
+    createVertexBuffer();
+    createIndexBuffer();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -408,9 +442,13 @@ class HelloTriangleApplication {
         .pDynamicStates = dynamicStates.data(),
     };
 
+    auto bindingDescription = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-        .vertexBindingDescriptionCount = 0,
-        .vertexAttributeDescriptionCount = 0,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &bindingDescription,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+        .pVertexAttributeDescriptions = attributeDescriptions.data(),
     };
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
@@ -496,6 +534,88 @@ class HelloTriangleApplication {
     commandPool = vk::raii::CommandPool(device, poolInfo);
   }
 
+  [[nodiscard]] uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
+    vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+      if ((typeFilter & (1u << i)) && (memProperties.memoryTypes.at(i).propertyFlags & properties) == properties) {
+        return i;
+      }
+    }
+    throw std::runtime_error("failed to find suitable memory type!");
+  }
+
+  std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                                                                   vk::MemoryPropertyFlags properties) {
+    vk::raii::Buffer buffer(device, vk::BufferCreateInfo{
+                                        .size = size,
+                                        .usage = usage,
+                                        .sharingMode = vk::SharingMode::eExclusive,
+                                    });
+
+    vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
+    vk::raii::DeviceMemory memory(device,
+                                  vk::MemoryAllocateInfo{
+                                      .allocationSize = memRequirements.size,
+                                      .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
+                                  });
+    buffer.bindMemory(*memory, 0);
+    return {std::move(buffer), std::move(memory)};
+  }
+
+  void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size) {
+    vk::raii::CommandBuffer cmd = std::move(device
+                                                .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                                                    .commandPool = *commandPool,
+                                                    .level = vk::CommandBufferLevel::ePrimary,
+                                                    .commandBufferCount = 1,
+                                                })
+                                                .front());
+
+    cmd.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    cmd.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy{.srcOffset = 0, .dstOffset = 0, .size = size});
+    cmd.end();
+
+    vk::CommandBuffer cmdHandle = *cmd;
+    graphicsQueue.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &cmdHandle}, nullptr);
+    graphicsQueue.waitIdle();
+  }
+
+  void createVertexBuffer() {
+    vk::DeviceSize bufferSize = sizeof(VERTICES[0]) * VERTICES.size();
+
+    auto [stagingBuffer, stagingMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void* data = stagingMemory.mapMemory(0, bufferSize);
+    memcpy(data, VERTICES.data(), static_cast<size_t>(bufferSize));
+    stagingMemory.unmapMemory();
+
+    std::tie(vertexBuffer, vertexBufferMemory) =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+  }
+
+  void createIndexBuffer() {
+    vk::DeviceSize bufferSize = sizeof(INDICES[0]) * INDICES.size();
+
+    auto [stagingBuffer, stagingMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void* data = stagingMemory.mapMemory(0, bufferSize);
+    memcpy(data, INDICES.data(), static_cast<size_t>(bufferSize));
+    stagingMemory.unmapMemory();
+
+    std::tie(indexBuffer, indexBufferMemory) =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+  }
+
   void createCommandBuffers() {
     vk::CommandBufferAllocateInfo allocInfo{
         .commandPool = *commandPool,
@@ -506,8 +626,8 @@ class HelloTriangleApplication {
   }
 
   static void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::ImageLayout oldLayout,
-                             vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
-                             vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
+                                    vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
+                                    vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = srcStage,
         .srcAccessMask = srcAccess,
@@ -553,6 +673,8 @@ class HelloTriangleApplication {
     cmd.beginRendering(renderingInfo);
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+    cmd.bindVertexBuffers(0, *vertexBuffer, {vk::DeviceSize{0}});
+    cmd.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
 
     vk::Viewport viewport{
         .x = 0.0f,
@@ -565,7 +687,7 @@ class HelloTriangleApplication {
     cmd.setViewport(0, viewport);
     cmd.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
 
-    cmd.draw(3, 1, 0, 0);
+    cmd.drawIndexed(static_cast<uint32_t>(INDICES.size()), 1, 0, 0, 0);
 
     cmd.endRendering();
 
