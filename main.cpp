@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -482,9 +483,9 @@ class HelloTriangleApplication {
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(std::vector<char> const& code) const {
     vk::ShaderModuleCreateInfo createInfo{
         .codeSize = code.size(),
-        .pCode = reinterpret_cast<uint32_t const*>(code.data()),
+        .pCode = std::bit_cast<uint32_t const*>(code.data()),
     };
-    return vk::raii::ShaderModule(device, createInfo);
+    return {device, createInfo};
   }
 
   void createCommandPool() {
@@ -504,7 +505,7 @@ class HelloTriangleApplication {
     commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
   }
 
-  void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::ImageLayout oldLayout,
+  static void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::ImageLayout oldLayout,
                              vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
                              vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
     vk::ImageMemoryBarrier2 barrier{
@@ -619,12 +620,12 @@ class HelloTriangleApplication {
     };
     graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
 
-    vk::SwapchainKHR sc = *swapChain;
+    vk::SwapchainKHR swapChainHandle = *swapChain;
     vk::PresentInfoKHR presentInfo{
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
         .swapchainCount = 1,
-        .pSwapchains = &sc,
+        .pSwapchains = &swapChainHandle,
         .pImageIndices = &imageIndex,
     };
     vk::Result presentResult = graphicsQueue.presentKHR(presentInfo);
@@ -696,7 +697,7 @@ class HelloTriangleApplication {
   }
 
   static void framebufferResizeCallback(GLFWwindow* window, int /*width*/, int /*height*/) {
-    auto* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    auto* app = static_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
   }
 
