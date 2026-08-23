@@ -64,6 +64,10 @@ class HelloTriangleApplication {
   vk::raii::CommandPool commandPool = nullptr;
   vk::raii::CommandBuffer commandBuffer = nullptr;
 
+  vk::raii::Semaphore presentCompleteSemaphore = nullptr;
+  vk::raii::Semaphore renderFinishedSemaphore = nullptr;
+  vk::raii::Fence drawFence = nullptr;
+
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
   void initWindow() {
@@ -86,6 +90,7 @@ class HelloTriangleApplication {
     createGraphicsPipeline();
     createCommandPool();
     createCommandBuffer();
+    createSyncObjects();
   }
 
   void mainLoop() {
@@ -205,6 +210,7 @@ class HelloTriangleApplication {
                                                  vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
     bool supportsRequiredFeatures =
         features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
+        features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
         features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
@@ -535,26 +541,42 @@ class HelloTriangleApplication {
     commandBuffer.end();
   }
 
+  void createSyncObjects() {
+    presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{});
+    renderFinishedSemaphore  = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{});
+    drawFence                = vk::raii::Fence(device, {.flags = vk::FenceCreateFlagBits::eSignaled});
+  }
+
   void drawFrame() {
-    auto [acquireResult, imageIndex] =
-        swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(), nullptr, nullptr);
+    std::ignore = device.waitForFences(*drawFence, vk::True, std::numeric_limits<uint64_t>::max());
+    device.resetFences(*drawFence);
+
+    auto [result, imageIndex] =
+        swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(), *presentCompleteSemaphore, nullptr);
 
     commandBuffer.reset();
     recordCommandBuffer(imageIndex);
 
-    vk::CommandBuffer cmdBuf = *commandBuffer;
+    vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    vk::CommandBuffer cmdBuf         = *commandBuffer;
     vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers    = &cmdBuf,
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = &*presentCompleteSemaphore,
+        .pWaitDstStageMask    = &waitStage,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = &cmdBuf,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores    = &*renderFinishedSemaphore,
     };
-    graphicsQueue.submit(submitInfo);
-    graphicsQueue.waitIdle();
+    graphicsQueue.submit(submitInfo, *drawFence);
 
     vk::SwapchainKHR sc = *swapChain;
     vk::PresentInfoKHR presentInfo{
-        .swapchainCount = 1,
-        .pSwapchains    = &sc,
-        .pImageIndices  = &imageIndex,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores    = &*renderFinishedSemaphore,
+        .swapchainCount     = 1,
+        .pSwapchains        = &sc,
+        .pImageIndices      = &imageIndex,
     };
     std::ignore = graphicsQueue.presentKHR(presentInfo);
   }
@@ -593,7 +615,7 @@ class HelloTriangleApplication {
         featureChain = {
             {},                              // vk::PhysicalDeviceFeatures2
             {.shaderDrawParameters = true},  // vk::PhysicalDeviceVulkan11Features
-            {.dynamicRendering = true},      // vk::PhysicalDeviceVulkan13Features
+            {.synchronization2 = true, .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}   // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
 
