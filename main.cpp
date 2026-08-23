@@ -489,7 +489,7 @@ class HelloTriangleApplication {
 
   void createCommandPool() {
     vk::CommandPoolCreateInfo poolInfo{
-        .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = graphicsQueueFamilyIndex,
     };
     commandPool = vk::raii::CommandPool(device, poolInfo);
@@ -497,8 +497,8 @@ class HelloTriangleApplication {
 
   void createCommandBuffers() {
     vk::CommandBufferAllocateInfo allocInfo{
-        .commandPool        = *commandPool,
-        .level              = vk::CommandBufferLevel::ePrimary,
+        .commandPool = *commandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
     };
     commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
@@ -508,20 +508,20 @@ class HelloTriangleApplication {
                              vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
                              vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
     vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask        = srcStage,
-        .srcAccessMask       = srcAccess,
-        .dstStageMask        = dstStage,
-        .dstAccessMask       = dstAccess,
-        .oldLayout           = oldLayout,
-        .newLayout           = newLayout,
+        .srcStageMask = srcStage,
+        .srcAccessMask = srcAccess,
+        .dstStageMask = dstStage,
+        .dstAccessMask = dstAccess,
+        .oldLayout = oldLayout,
+        .newLayout = newLayout,
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image               = image,
-        .subresourceRange    = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        .image = image,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     };
     cmd.pipelineBarrier2(vk::DependencyInfo{
         .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
+        .pImageMemoryBarriers = &barrier,
     });
   }
 
@@ -536,17 +536,17 @@ class HelloTriangleApplication {
 
     vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
     vk::RenderingAttachmentInfo attachmentInfo{
-        .imageView   = *swapChainImageViews[imageIndex],
+        .imageView = *swapChainImageViews[imageIndex],
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = clearColor,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = clearColor,
     };
     vk::RenderingInfo renderingInfo{
-        .renderArea           = {.offset = {0, 0}, .extent = swapChainExtent},
-        .layerCount           = 1,
+        .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+        .layerCount = 1,
         .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachmentInfo,
+        .pColorAttachments = &attachmentInfo,
     };
 
     cmd.beginRendering(renderingInfo);
@@ -554,10 +554,10 @@ class HelloTriangleApplication {
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
 
     vk::Viewport viewport{
-        .x        = 0.0f,
-        .y        = 0.0f,
-        .width    = static_cast<float>(swapChainExtent.width),
-        .height   = static_cast<float>(swapChainExtent.height),
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = static_cast<float>(swapChainExtent.width),
+        .height = static_cast<float>(swapChainExtent.height),
         .minDepth = 0.0f,
         .maxDepth = 1.0f,
     };
@@ -589,8 +589,8 @@ class HelloTriangleApplication {
   void drawFrame() {
     std::ignore = device.waitForFences(*inFlightFences[frameIndex], vk::True, std::numeric_limits<uint64_t>::max());
 
-    auto [acquireResult, imageIndex] =
-        swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(), *presentCompleteSemaphores[frameIndex], nullptr);
+    auto [acquireResult, imageIndex] = swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
+                                                                  *presentCompleteSemaphores[frameIndex], nullptr);
 
     if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
       recreateSwapChain();
@@ -607,25 +607,25 @@ class HelloTriangleApplication {
     recordCommandBuffer(imageIndex);
 
     vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    vk::CommandBuffer cmdBuf         = *commandBuffers[frameIndex];
+    vk::CommandBuffer cmdBuf = *commandBuffers[frameIndex];
     vk::SubmitInfo submitInfo{
-        .waitSemaphoreCount   = 1,
-        .pWaitSemaphores      = &*presentCompleteSemaphores[frameIndex],
-        .pWaitDstStageMask    = &waitStage,
-        .commandBufferCount   = 1,
-        .pCommandBuffers      = &cmdBuf,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &*presentCompleteSemaphores[frameIndex],
+        .pWaitDstStageMask = &waitStage,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmdBuf,
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores    = &*renderFinishedSemaphores[imageIndex],
+        .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex],
     };
     graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
 
     vk::SwapchainKHR sc = *swapChain;
     vk::PresentInfoKHR presentInfo{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores    = &*renderFinishedSemaphores[imageIndex],
-        .swapchainCount     = 1,
-        .pSwapchains        = &sc,
-        .pImageIndices      = &imageIndex,
+        .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
+        .swapchainCount = 1,
+        .pSwapchains = &sc,
+        .pImageIndices = &imageIndex,
     };
     vk::Result presentResult = graphicsQueue.presentKHR(presentInfo);
     if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR ||
@@ -671,10 +671,10 @@ class HelloTriangleApplication {
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
-            {},                              // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters = true},  // vk::PhysicalDeviceVulkan11Features
+            {},                                                    // vk::PhysicalDeviceFeatures2
+            {.shaderDrawParameters = true},                        // vk::PhysicalDeviceVulkan11Features
             {.synchronization2 = true, .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState = true}   // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+            {.extendedDynamicState = true}                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
 
     float queuePriority = 0.5f;
