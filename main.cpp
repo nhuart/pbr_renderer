@@ -70,6 +70,7 @@ class HelloTriangleApplication {
   std::vector<vk::raii::Fence> inFlightFences;
 
   uint32_t frameIndex = 0;
+  bool framebufferResized = false;
 
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
@@ -77,9 +78,11 @@ class HelloTriangleApplication {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
   }
 
   void initVulkan() {
@@ -105,6 +108,7 @@ class HelloTriangleApplication {
   }
 
   void cleanup() {
+    cleanupSwapChain();
     glfwDestroyWindow(window);
     glfwTerminate();
   }
@@ -273,6 +277,33 @@ class HelloTriangleApplication {
       count = capabilities.maxImageCount;
     }
     return count;
+  }
+
+  void cleanupSwapChain() {
+    swapChainImageViews.clear();
+    swapChain = nullptr;
+  }
+
+  void recreateSwapChain() {
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(window, &width, &height);
+      glfwWaitEvents();
+    }
+
+    device.waitIdle();
+
+    cleanupSwapChain();
+
+    createSwapChain();
+    createImageViews();
+
+    renderFinishedSemaphores.clear();
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+      renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+    }
   }
 
   void createSwapChain() {
@@ -557,10 +588,20 @@ class HelloTriangleApplication {
 
   void drawFrame() {
     std::ignore = device.waitForFences(*inFlightFences[frameIndex], vk::True, std::numeric_limits<uint64_t>::max());
-    device.resetFences(*inFlightFences[frameIndex]);
 
-    auto [result, imageIndex] =
+    auto [acquireResult, imageIndex] =
         swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(), *presentCompleteSemaphores[frameIndex], nullptr);
+
+    if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
+      recreateSwapChain();
+      return;
+    }
+    if (acquireResult != vk::Result::eSuccess && acquireResult != vk::Result::eSuboptimalKHR) {
+      throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    // Reset fence only after confirming we will submit — avoids unsignalled fence deadlock.
+    device.resetFences(*inFlightFences[frameIndex]);
 
     commandBuffers[frameIndex].reset();
     recordCommandBuffer(imageIndex);
@@ -586,7 +627,14 @@ class HelloTriangleApplication {
         .pSwapchains        = &sc,
         .pImageIndices      = &imageIndex,
     };
-    std::ignore = graphicsQueue.presentKHR(presentInfo);
+    vk::Result presentResult = graphicsQueue.presentKHR(presentInfo);
+    if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR ||
+        framebufferResized) {
+      framebufferResized = false;
+      recreateSwapChain();
+    } else if (presentResult != vk::Result::eSuccess) {
+      throw std::runtime_error("failed to present swap chain image!");
+    }
 
     frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
   }
@@ -645,6 +693,11 @@ class HelloTriangleApplication {
 
     std::cout << "Queues:\n";
     std::cout << "  graphics + present (family " << graphicsIndex << ") — draw calls, rendering, and presentation\n";
+  }
+
+  static void framebufferResizeCallback(GLFWwindow* window, int /*width*/, int /*height*/) {
+    auto* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->framebufferResized = true;
   }
 
   static std::vector<const char*> getRequiredInstanceExtensions() {
