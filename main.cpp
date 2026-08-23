@@ -36,9 +36,9 @@ struct Vertex {
 };
 
 const std::vector<Vertex> VERTICES = {
-    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 };
 
 constexpr uint32_t WIDTH = 800;
@@ -86,6 +86,9 @@ class HelloTriangleApplication {
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
 
+  vk::raii::Buffer vertexBuffer = nullptr;
+  vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+
   vk::raii::CommandPool commandPool = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
 
@@ -119,6 +122,7 @@ class HelloTriangleApplication {
     createImageViews();
     createGraphicsPipeline();
     createCommandPool();
+    createVertexBuffer();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -523,6 +527,38 @@ class HelloTriangleApplication {
     commandPool = vk::raii::CommandPool(device, poolInfo);
   }
 
+  [[nodiscard]] uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
+    vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+      if ((typeFilter & (1u << i)) && (memProperties.memoryTypes.at(i).propertyFlags & properties) == properties) {
+        return i;
+      }
+    }
+    throw std::runtime_error("failed to find suitable memory type!");
+  }
+
+  void createVertexBuffer() {
+    vk::BufferCreateInfo bufferInfo{
+        .size        = sizeof(VERTICES[0]) * VERTICES.size(),
+        .usage       = vk::BufferUsageFlagBits::eVertexBuffer,
+        .sharingMode = vk::SharingMode::eExclusive,
+    };
+    vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+
+    vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+    vertexBufferMemory = vk::raii::DeviceMemory(device, vk::MemoryAllocateInfo{
+        .allocationSize  = memRequirements.size,
+        .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits,
+                                         vk::MemoryPropertyFlagBits::eHostVisible |
+                                         vk::MemoryPropertyFlagBits::eHostCoherent),
+    });
+    vertexBuffer.bindMemory(*vertexBufferMemory, 0);
+
+    void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
+    memcpy(data, VERTICES.data(), static_cast<size_t>(bufferInfo.size));
+    vertexBufferMemory.unmapMemory();
+  }
+
   void createCommandBuffers() {
     vk::CommandBufferAllocateInfo allocInfo{
         .commandPool = *commandPool,
@@ -580,6 +616,7 @@ class HelloTriangleApplication {
     cmd.beginRendering(renderingInfo);
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+    cmd.bindVertexBuffers(0, *vertexBuffer, {vk::DeviceSize{0}});
 
     vk::Viewport viewport{
         .x = 0.0f,
