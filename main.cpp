@@ -36,10 +36,13 @@ struct Vertex {
 };
 
 const std::vector<Vertex> VERTICES = {
-    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
 };
+
+const std::vector<uint16_t> INDICES = {0, 1, 2, 2, 3, 0};
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -89,6 +92,9 @@ class HelloTriangleApplication {
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
 
+  vk::raii::Buffer indexBuffer = nullptr;
+  vk::raii::DeviceMemory indexBufferMemory = nullptr;
+
   vk::raii::CommandPool commandPool = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
 
@@ -123,6 +129,7 @@ class HelloTriangleApplication {
     createGraphicsPipeline();
     createCommandPool();
     createVertexBuffer();
+    createIndexBuffer();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -590,6 +597,24 @@ class HelloTriangleApplication {
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
   }
 
+  void createIndexBuffer() {
+    vk::DeviceSize bufferSize = sizeof(INDICES[0]) * INDICES.size();
+
+    auto [stagingBuffer, stagingMemory] = createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                                                       vk::MemoryPropertyFlagBits::eHostVisible |
+                                                           vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void* data = stagingMemory.mapMemory(0, bufferSize);
+    memcpy(data, INDICES.data(), static_cast<size_t>(bufferSize));
+    stagingMemory.unmapMemory();
+
+    std::tie(indexBuffer, indexBufferMemory) =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+  }
+
   void createCommandBuffers() {
     vk::CommandBufferAllocateInfo allocInfo{
         .commandPool = *commandPool,
@@ -648,6 +673,7 @@ class HelloTriangleApplication {
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     cmd.bindVertexBuffers(0, *vertexBuffer, {vk::DeviceSize{0}});
+    cmd.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
 
     vk::Viewport viewport{
         .x = 0.0f,
@@ -660,7 +686,7 @@ class HelloTriangleApplication {
     cmd.setViewport(0, viewport);
     cmd.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
 
-    cmd.draw(static_cast<uint32_t>(VERTICES.size()), 1, 0, 0);
+    cmd.drawIndexed(static_cast<uint32_t>(INDICES.size()), 1, 0, 0, 0);
 
     cmd.endRendering();
 
