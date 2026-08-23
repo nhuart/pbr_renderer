@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -19,6 +20,7 @@ import vulkan_hpp;
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<char const*> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
 
@@ -48,6 +50,7 @@ class HelloTriangleApplication {
   vk::raii::Device device = nullptr;
 
   vk::raii::Queue graphicsQueue = nullptr;
+  uint32_t graphicsQueueFamilyIndex = 0;
 
   vk::raii::SurfaceKHR surface = nullptr;
 
@@ -60,15 +63,27 @@ class HelloTriangleApplication {
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
 
+  vk::raii::CommandPool commandPool = nullptr;
+  std::vector<vk::raii::CommandBuffer> commandBuffers;
+
+  std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
+  std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
+  std::vector<vk::raii::Fence> inFlightFences;
+
+  uint32_t frameIndex = 0;
+  bool framebufferResized = false;
+
   std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
 
   void initWindow() {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
   }
 
   void initVulkan() {
@@ -80,15 +95,21 @@ class HelloTriangleApplication {
     createSwapChain();
     createImageViews();
     createGraphicsPipeline();
+    createCommandPool();
+    createCommandBuffers();
+    createSyncObjects();
   }
 
   void mainLoop() {
     while (!glfwWindowShouldClose(window)) {
       glfwPollEvents();
+      drawFrame();
     }
+    device.waitIdle();
   }
 
   void cleanup() {
+    cleanupSwapChain();
     glfwDestroyWindow(window);
     glfwTerminate();
   }
@@ -197,6 +218,7 @@ class HelloTriangleApplication {
                                                  vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
     bool supportsRequiredFeatures =
         features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
+        features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
         features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
@@ -256,6 +278,33 @@ class HelloTriangleApplication {
       count = capabilities.maxImageCount;
     }
     return count;
+  }
+
+  void cleanupSwapChain() {
+    swapChainImageViews.clear();
+    swapChain = nullptr;
+  }
+
+  void recreateSwapChain() {
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(window, &width, &height);
+      glfwWaitEvents();
+    }
+
+    device.waitIdle();
+
+    cleanupSwapChain();
+
+    createSwapChain();
+    createImageViews();
+
+    renderFinishedSemaphores.clear();
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+      renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+    }
   }
 
   void createSwapChain() {
@@ -434,9 +483,161 @@ class HelloTriangleApplication {
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(std::vector<char> const& code) const {
     vk::ShaderModuleCreateInfo createInfo{
         .codeSize = code.size(),
-        .pCode = reinterpret_cast<uint32_t const*>(code.data()),
+        .pCode = std::bit_cast<uint32_t const*>(code.data()),
     };
-    return vk::raii::ShaderModule(device, createInfo);
+    return {device, createInfo};
+  }
+
+  void createCommandPool() {
+    vk::CommandPoolCreateInfo poolInfo{
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = graphicsQueueFamilyIndex,
+    };
+    commandPool = vk::raii::CommandPool(device, poolInfo);
+  }
+
+  void createCommandBuffers() {
+    vk::CommandBufferAllocateInfo allocInfo{
+        .commandPool = *commandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+    };
+    commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
+  }
+
+  static void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::ImageLayout oldLayout,
+                             vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
+                             vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
+    vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask = srcStage,
+        .srcAccessMask = srcAccess,
+        .dstStageMask = dstStage,
+        .dstAccessMask = dstAccess,
+        .oldLayout = oldLayout,
+        .newLayout = newLayout,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = image,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+    };
+    cmd.pipelineBarrier2(vk::DependencyInfo{
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &barrier,
+    });
+  }
+
+  void recordCommandBuffer(uint32_t imageIndex) {
+    auto const& cmd = commandBuffers[frameIndex];
+    cmd.begin({});
+
+    transitionImageLayout(cmd, swapChainImages[imageIndex], vk::ImageLayout::eUndefined,
+                          vk::ImageLayout::eColorAttachmentOptimal, {}, vk::AccessFlagBits2::eColorAttachmentWrite,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+
+    vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+    vk::RenderingAttachmentInfo attachmentInfo{
+        .imageView = *swapChainImageViews[imageIndex],
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = clearColor,
+    };
+    vk::RenderingInfo renderingInfo{
+        .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachmentInfo,
+    };
+
+    cmd.beginRendering(renderingInfo);
+
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+
+    vk::Viewport viewport{
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = static_cast<float>(swapChainExtent.width),
+        .height = static_cast<float>(swapChainExtent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    cmd.setViewport(0, viewport);
+    cmd.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
+
+    cmd.draw(3, 1, 0, 0);
+
+    cmd.endRendering();
+
+    transitionImageLayout(cmd, swapChainImages[imageIndex], vk::ImageLayout::eColorAttachmentOptimal,
+                          vk::ImageLayout::ePresentSrcKHR, vk::AccessFlagBits2::eColorAttachmentWrite, {},
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::PipelineStageFlagBits2::eBottomOfPipe);
+
+    cmd.end();
+  }
+
+  void createSyncObjects() {
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+      renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+    }
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+      inFlightFences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+    }
+  }
+
+  void drawFrame() {
+    std::ignore = device.waitForFences(*inFlightFences[frameIndex], vk::True, std::numeric_limits<uint64_t>::max());
+
+    auto [acquireResult, imageIndex] = swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
+                                                                  *presentCompleteSemaphores[frameIndex], nullptr);
+
+    if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
+      recreateSwapChain();
+      return;
+    }
+    if (acquireResult != vk::Result::eSuccess && acquireResult != vk::Result::eSuboptimalKHR) {
+      throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    // Reset fence only after confirming we will submit — avoids unsignalled fence deadlock.
+    device.resetFences(*inFlightFences[frameIndex]);
+
+    commandBuffers[frameIndex].reset();
+    recordCommandBuffer(imageIndex);
+
+    vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    vk::CommandBuffer cmdBuf = *commandBuffers[frameIndex];
+    vk::SubmitInfo submitInfo{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &*presentCompleteSemaphores[frameIndex],
+        .pWaitDstStageMask = &waitStage,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmdBuf,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex],
+    };
+    graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
+
+    vk::SwapchainKHR swapChainHandle = *swapChain;
+    vk::PresentInfoKHR presentInfo{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
+        .swapchainCount = 1,
+        .pSwapchains = &swapChainHandle,
+        .pImageIndices = &imageIndex,
+    };
+    vk::Result presentResult = graphicsQueue.presentKHR(presentInfo);
+    if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR ||
+        framebufferResized) {
+      framebufferResized = false;
+      recreateSwapChain();
+    } else if (presentResult != vk::Result::eSuccess) {
+      throw std::runtime_error("failed to present swap chain image!");
+    }
+
+    frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 
   static std::vector<char> readFile(std::string const& filename) {
@@ -471,10 +672,10 @@ class HelloTriangleApplication {
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
-            {},                              // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters = true},  // vk::PhysicalDeviceVulkan11Features
-            {.dynamicRendering = true},      // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState = true}   // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+            {},                                                    // vk::PhysicalDeviceFeatures2
+            {.shaderDrawParameters = true},                        // vk::PhysicalDeviceVulkan11Features
+            {.synchronization2 = true, .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
+            {.extendedDynamicState = true}                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
 
     float queuePriority = 0.5f;
@@ -489,9 +690,15 @@ class HelloTriangleApplication {
 
     device = vk::raii::Device(physicalDevice, deviceCreateInfo);
     graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+    graphicsQueueFamilyIndex = graphicsIndex;
 
     std::cout << "Queues:\n";
     std::cout << "  graphics + present (family " << graphicsIndex << ") — draw calls, rendering, and presentation\n";
+  }
+
+  static void framebufferResizeCallback(GLFWwindow* window, int /*width*/, int /*height*/) {
+    auto* app = static_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->framebufferResized = true;
   }
 
   static std::vector<const char*> getRequiredInstanceExtensions() {
