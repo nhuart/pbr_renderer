@@ -442,13 +442,13 @@ class HelloTriangleApplication {
         .pDynamicStates = dynamicStates.data(),
     };
 
-    auto bindingDescription    = Vertex::getBindingDescription();
+    auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-        .vertexBindingDescriptionCount   = 1,
-        .pVertexBindingDescriptions      = &bindingDescription,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &bindingDescription,
         .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
-        .pVertexAttributeDescriptions    = attributeDescriptions.data(),
+        .pVertexAttributeDescriptions = attributeDescriptions.data(),
     };
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
@@ -544,30 +544,32 @@ class HelloTriangleApplication {
     throw std::runtime_error("failed to find suitable memory type!");
   }
 
-  std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size,
-                                                                    vk::BufferUsageFlags usage,
-                                                                    vk::MemoryPropertyFlags properties) {
+  std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                                                                   vk::MemoryPropertyFlags properties) {
     vk::raii::Buffer buffer(device, vk::BufferCreateInfo{
-                                        .size        = size,
-                                        .usage       = usage,
+                                        .size = size,
+                                        .usage = usage,
                                         .sharingMode = vk::SharingMode::eExclusive,
                                     });
 
     vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
-    vk::raii::DeviceMemory memory(device, vk::MemoryAllocateInfo{
-                                              .allocationSize  = memRequirements.size,
-                                              .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
-                                          });
+    vk::raii::DeviceMemory memory(device,
+                                  vk::MemoryAllocateInfo{
+                                      .allocationSize = memRequirements.size,
+                                      .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
+                                  });
     buffer.bindMemory(*memory, 0);
     return {std::move(buffer), std::move(memory)};
   }
 
   void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size) {
-    vk::raii::CommandBuffer cmd = std::move(device.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-                                                .commandPool        = *commandPool,
-                                                .level              = vk::CommandBufferLevel::ePrimary,
-                                                .commandBufferCount = 1,
-                                            }).front());
+    vk::raii::CommandBuffer cmd = std::move(device
+                                                .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                                                    .commandPool = *commandPool,
+                                                    .level = vk::CommandBufferLevel::ePrimary,
+                                                    .commandBufferCount = 1,
+                                                })
+                                                .front());
 
     cmd.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     cmd.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy{.srcOffset = 0, .dstOffset = 0, .size = size});
@@ -581,17 +583,16 @@ class HelloTriangleApplication {
   void createVertexBuffer() {
     vk::DeviceSize bufferSize = sizeof(VERTICES[0]) * VERTICES.size();
 
-    auto [stagingBuffer, stagingMemory] = createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-                                                       vk::MemoryPropertyFlagBits::eHostVisible |
-                                                           vk::MemoryPropertyFlagBits::eHostCoherent);
+    auto [stagingBuffer, stagingMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* data = stagingMemory.mapMemory(0, bufferSize);
     memcpy(data, VERTICES.data(), static_cast<size_t>(bufferSize));
     stagingMemory.unmapMemory();
 
     std::tie(vertexBuffer, vertexBufferMemory) =
-        createBuffer(bufferSize,
-                     vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
                      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
@@ -600,9 +601,9 @@ class HelloTriangleApplication {
   void createIndexBuffer() {
     vk::DeviceSize bufferSize = sizeof(INDICES[0]) * INDICES.size();
 
-    auto [stagingBuffer, stagingMemory] = createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-                                                       vk::MemoryPropertyFlagBits::eHostVisible |
-                                                           vk::MemoryPropertyFlagBits::eHostCoherent);
+    auto [stagingBuffer, stagingMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* data = stagingMemory.mapMemory(0, bufferSize);
     memcpy(data, INDICES.data(), static_cast<size_t>(bufferSize));
@@ -625,8 +626,8 @@ class HelloTriangleApplication {
   }
 
   static void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::ImageLayout oldLayout,
-                             vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
-                             vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
+                                    vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
+                                    vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage) {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = srcStage,
         .srcAccessMask = srcAccess,
