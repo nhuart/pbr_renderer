@@ -140,6 +140,12 @@ class HelloTriangleApplication {
   vk::raii::DeviceMemory depthImageMemory = nullptr;
   vk::raii::ImageView depthImageView = nullptr;
 
+  vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+
+  vk::raii::Image colorImage = nullptr;
+  vk::raii::DeviceMemory colorImageMemory = nullptr;
+  vk::raii::ImageView colorImageView = nullptr;
+
   uint32_t mipLevels = 0;
   vk::raii::Image textureImage = nullptr;
   vk::raii::DeviceMemory textureImageMemory = nullptr;
@@ -177,6 +183,7 @@ class HelloTriangleApplication {
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
+    createColorResources();
     createDepthResources();
     createTextureImage();
     createTextureImageView();
@@ -308,6 +315,7 @@ class HelloTriangleApplication {
                                                  vk::PhysicalDeviceVulkan13Features,
                                                  vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
     bool supportsRequiredFeatures =
+        features.template get<vk::PhysicalDeviceFeatures2>().features.sampleRateShading &&
         features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy &&
         features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
@@ -334,7 +342,19 @@ class HelloTriangleApplication {
       throw std::runtime_error("failed to find a suitable GPU!");
     }
     physicalDevice = *DEVICE_ITER;
+    msaaSamples = getMaxUsableSampleCount();
     std::cout << "Selected GPU: " << physicalDevice.getProperties().deviceName << "\n";
+    std::cout << "MSAA samples: " << vk::to_string(msaaSamples) << "\n";
+  }
+
+  [[nodiscard]] vk::SampleCountFlagBits getMaxUsableSampleCount() const {
+    vk::SampleCountFlags counts = physicalDevice.getProperties().limits.framebufferColorSampleCounts &
+                                  physicalDevice.getProperties().limits.framebufferDepthSampleCounts;
+    for (auto candidate : {vk::SampleCountFlagBits::e64, vk::SampleCountFlagBits::e32, vk::SampleCountFlagBits::e16,
+                           vk::SampleCountFlagBits::e8, vk::SampleCountFlagBits::e4, vk::SampleCountFlagBits::e2}) {
+      if (counts & candidate) return candidate;
+    }
+    return vk::SampleCountFlagBits::e1;
   }
 
   static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const& availableFormats) {
@@ -373,6 +393,9 @@ class HelloTriangleApplication {
   }
 
   void cleanupSwapChain() {
+    colorImageView = nullptr;
+    colorImage = nullptr;
+    colorImageMemory = nullptr;
     depthImageView = nullptr;
     depthImage = nullptr;
     depthImageMemory = nullptr;
@@ -395,6 +418,7 @@ class HelloTriangleApplication {
 
     createSwapChain();
     createImageViews();
+    createColorResources();
     createDepthResources();
 
     renderFinishedSemaphores.clear();
@@ -502,11 +526,21 @@ class HelloTriangleApplication {
                                vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
   }
 
+  void createColorResources() {
+    std::tie(colorImage, colorImageMemory) =
+        createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, swapChainSurfaceFormat.format,
+                    vk::ImageTiling::eOptimal,
+                    vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal);
+    colorImageView = createImageView(*colorImage, swapChainSurfaceFormat.format);
+  }
+
   void createDepthResources() {
     vk::Format depthFormat = findDepthFormat();
     std::tie(depthImage, depthImageMemory) =
-        createImage(swapChainExtent.width, swapChainExtent.height, 1, depthFormat, vk::ImageTiling::eOptimal,
-                    vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, depthFormat,
+                    vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal);
     depthImageView = createImageView(*depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
   }
 
@@ -588,8 +622,9 @@ class HelloTriangleApplication {
     };
 
     vk::PipelineMultisampleStateCreateInfo multisamplingInfo{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-        .sampleShadingEnable = vk::False,
+        .rasterizationSamples = msaaSamples,
+        .sampleShadingEnable = vk::True,
+        .minSampleShading = 0.2f,
     };
 
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{
@@ -683,7 +718,8 @@ class HelloTriangleApplication {
   }
 
   std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height,
-                                                                 uint32_t numMipLevels, vk::Format format,
+                                                                 uint32_t numMipLevels,
+                                                                 vk::SampleCountFlagBits numSamples, vk::Format format,
                                                                  vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                                                                  vk::MemoryPropertyFlags properties) {
     vk::raii::Image image(device, vk::ImageCreateInfo{
@@ -692,7 +728,7 @@ class HelloTriangleApplication {
                                       .extent = {width, height, 1},
                                       .mipLevels = numMipLevels,
                                       .arrayLayers = 1,
-                                      .samples = vk::SampleCountFlagBits::e1,
+                                      .samples = numSamples,
                                       .tiling = tiling,
                                       .usage = usage,
                                       .sharingMode = vk::SharingMode::eExclusive,
@@ -809,7 +845,7 @@ class HelloTriangleApplication {
 
     std::tie(textureImage, textureImageMemory) =
         createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), mipLevels,
-                    vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
+                    vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
                     vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
                         vk::ImageUsageFlagBits::eSampled,
                     vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -1084,6 +1120,11 @@ class HelloTriangleApplication {
                           vk::PipelineStageFlagBits2::eColorAttachmentOutput,
                           vk::PipelineStageFlagBits2::eColorAttachmentOutput);
 
+    transitionImageLayout(cmd, *colorImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, {},
+                          vk::AccessFlagBits2::eColorAttachmentWrite,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+
     transitionImageLayout(
         cmd, *depthImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -1093,10 +1134,13 @@ class HelloTriangleApplication {
 
     vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
     vk::RenderingAttachmentInfo colorAttachmentInfo{
-        .imageView = *swapChainImageViews[imageIndex],
+        .imageView = *colorImageView,
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .resolveMode = vk::ResolveModeFlagBits::eAverage,
+        .resolveImageView = *swapChainImageViews[imageIndex],
+        .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .storeOp = vk::AttachmentStoreOp::eDontCare,
         .clearValue = clearColor,
     };
     vk::ClearValue clearDepth = vk::ClearDepthStencilValue{1.0f, 0};
@@ -1243,7 +1287,7 @@ class HelloTriangleApplication {
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
-            {.features = {.samplerAnisotropy = true}},             // vk::PhysicalDeviceFeatures2
+            {.features = {.sampleRateShading = true, .samplerAnisotropy = true}},  // vk::PhysicalDeviceFeatures2
             {.shaderDrawParameters = true},                        // vk::PhysicalDeviceVulkan11Features
             {.synchronization2 = true, .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
