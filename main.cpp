@@ -140,6 +140,7 @@ class HelloTriangleApplication {
   vk::raii::DeviceMemory depthImageMemory = nullptr;
   vk::raii::ImageView depthImageView = nullptr;
 
+  uint32_t mipLevels = 0;
   vk::raii::Image textureImage = nullptr;
   vk::raii::DeviceMemory textureImageMemory = nullptr;
   vk::raii::ImageView textureImageView = nullptr;
@@ -462,13 +463,14 @@ class HelloTriangleApplication {
     std::cout << "  present mode: " << vk::to_string(presentMode) << "\n";
   }
 
-  [[nodiscard]] vk::raii::ImageView createImageView(
-      vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor) const {
+  [[nodiscard]] vk::raii::ImageView createImageView(vk::Image image, vk::Format format,
+                                                    vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
+                                                    uint32_t numMipLevels = 1) const {
     return vk::raii::ImageView(device, vk::ImageViewCreateInfo{
                                            .image = image,
                                            .viewType = vk::ImageViewType::e2D,
                                            .format = format,
-                                           .subresourceRange = {aspectFlags, 0, 1, 0, 1},
+                                           .subresourceRange = {aspectFlags, 0, numMipLevels, 0, 1},
                                        });
   }
 
@@ -479,7 +481,9 @@ class HelloTriangleApplication {
     std::cout << "Image views: " << swapChainImageViews.size() << " created\n";
   }
 
-  void createTextureImageView() { textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb); }
+  void createTextureImageView() {
+    textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
+  }
 
   [[nodiscard]] vk::Format findSupportedFormat(std::vector<vk::Format> const& candidates, vk::ImageTiling tiling,
                                                vk::FormatFeatureFlags features) const {
@@ -501,7 +505,7 @@ class HelloTriangleApplication {
   void createDepthResources() {
     vk::Format depthFormat = findDepthFormat();
     std::tie(depthImage, depthImageMemory) =
-        createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, vk::ImageTiling::eOptimal,
+        createImage(swapChainExtent.width, swapChainExtent.height, 1, depthFormat, vk::ImageTiling::eOptimal,
                     vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
     depthImageView = createImageView(*depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
   }
@@ -521,7 +525,7 @@ class HelloTriangleApplication {
                                                    .compareEnable = vk::False,
                                                    .compareOp = vk::CompareOp::eAlways,
                                                    .minLod = 0.0f,
-                                                   .maxLod = 0.0f,
+                                                   .maxLod = vk::LodClampNone,
                                                    .borderColor = vk::BorderColor::eIntOpaqueBlack,
                                                    .unnormalizedCoordinates = vk::False,
                                                });
@@ -678,14 +682,15 @@ class HelloTriangleApplication {
     graphicsQueue.waitIdle();
   }
 
-  std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height, vk::Format format,
+  std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height,
+                                                                 uint32_t numMipLevels, vk::Format format,
                                                                  vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                                                                  vk::MemoryPropertyFlags properties) {
     vk::raii::Image image(device, vk::ImageCreateInfo{
                                       .imageType = vk::ImageType::e2D,
                                       .format = format,
                                       .extent = {width, height, 1},
-                                      .mipLevels = 1,
+                                      .mipLevels = numMipLevels,
                                       .arrayLayers = 1,
                                       .samples = vk::SampleCountFlagBits::e1,
                                       .tiling = tiling,
@@ -721,6 +726,67 @@ class HelloTriangleApplication {
     cmd.copyBufferToImage(*buffer, *image, vk::ImageLayout::eTransferDstOptimal, region);
   }
 
+  void generateMipmaps(vk::raii::CommandBuffer const& cmd, vk::raii::Image const& image, vk::Format imageFormat,
+                       int32_t texWidth, int32_t texHeight, uint32_t numMipLevels) {
+    vk::FormatProperties formatProperties = physicalDevice.getFormatProperties(imageFormat);
+    if (!(formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+      throw std::runtime_error("texture image format does not support linear blitting!");
+    }
+
+    vk::ImageMemoryBarrier2 barrier{
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = *image,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+    };
+
+    int32_t mipWidth = texWidth;
+    int32_t mipHeight = texHeight;
+
+    for (uint32_t i = 1; i < numMipLevels; i++) {
+      barrier.subresourceRange.baseMipLevel = i - 1;
+      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+      barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+      barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+      barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+      barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+      barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+      cmd.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+
+      vk::ImageBlit blit{
+          .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
+          .srcOffsets = std::array<vk::Offset3D, 2>{vk::Offset3D{0, 0, 0}, vk::Offset3D{mipWidth, mipHeight, 1}},
+          .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = 1},
+          .dstOffsets = std::array<vk::Offset3D, 2>{
+              vk::Offset3D{0, 0, 0},
+              vk::Offset3D{mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1}},
+      };
+      cmd.blitImage(*image, vk::ImageLayout::eTransferSrcOptimal, *image, vk::ImageLayout::eTransferDstOptimal, blit,
+                    vk::Filter::eLinear);
+
+      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+      barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+      barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+      barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+      barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+      barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+      cmd.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+
+      if (mipWidth > 1) mipWidth /= 2;
+      if (mipHeight > 1) mipHeight /= 2;
+    }
+
+    // Transition the last mip level (never used as blit source, still in TransferDst)
+    barrier.subresourceRange.baseMipLevel = numMipLevels - 1;
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    cmd.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+  }
+
   void createTextureImage() {
     int texWidth = 0;
     int texHeight = 0;
@@ -729,6 +795,7 @@ class HelloTriangleApplication {
     if (!pixels) {
       throw std::runtime_error("failed to load texture image!");
     }
+    mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
     vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * 4;
 
     auto [stagingBuffer, stagingBufferMemory] =
@@ -741,8 +808,10 @@ class HelloTriangleApplication {
     stbi_image_free(pixels);
 
     std::tie(textureImage, textureImageMemory) =
-        createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), vk::Format::eR8G8B8A8Srgb,
-                    vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), mipLevels,
+                    vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
+                    vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
+                        vk::ImageUsageFlagBits::eSampled,
                     vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     vk::raii::CommandBuffer cmd = beginSingleTimeCommands();
@@ -754,14 +823,11 @@ class HelloTriangleApplication {
     copyBufferToImage(cmd, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth),
                       static_cast<uint32_t>(texHeight));
 
-    transitionImageLayout(cmd, *textureImage, vk::ImageLayout::eTransferDstOptimal,
-                          vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferWrite,
-                          vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
-                          vk::PipelineStageFlagBits2::eFragmentShader);
+    generateMipmaps(cmd, textureImage, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, mipLevels);
 
     endSingleTimeCommands(std::move(cmd));
 
-    std::cout << "Texture image: " << texWidth << "x" << texHeight << " loaded\n";
+    std::cout << "Texture image: " << texWidth << "x" << texHeight << " (" << mipLevels << " mip levels) loaded\n";
   }
 
   [[nodiscard]] uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
