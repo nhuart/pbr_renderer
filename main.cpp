@@ -56,8 +56,8 @@ struct Vertex {
 namespace std {
 template <>
 struct hash<Vertex> {
-  size_t operator()(Vertex const& v) const {
-    return ((hash<glm::vec3>()(v.pos) ^ (hash<glm::vec3>()(v.color) << 1)) >> 1) ^ (hash<glm::vec2>()(v.texCoord) << 1);
+  size_t operator()(Vertex const& vtx) const {
+    return ((hash<glm::vec3>()(vtx.pos) ^ (hash<glm::vec3>()(vtx.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vtx.texCoord) << 1);
   }
 };
 }  // namespace std
@@ -671,7 +671,7 @@ class HelloTriangleApplication {
     return cmd;
   }
 
-  void endSingleTimeCommands(vk::raii::CommandBuffer&& cmd) const {
+  void endSingleTimeCommands(vk::raii::CommandBuffer cmd) const {
     cmd.end();
     vk::CommandBuffer cmdHandle = *cmd;
     graphicsQueue.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &cmdHandle}, nullptr);
@@ -814,7 +814,8 @@ class HelloTriangleApplication {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
+    std::string warn;
+    std::string err;
 
     if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
       throw std::runtime_error(warn + err);
