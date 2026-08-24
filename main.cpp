@@ -57,7 +57,8 @@ namespace std {
 template <>
 struct hash<Vertex> {
   size_t operator()(Vertex const& vtx) const {
-    return ((hash<glm::vec3>()(vtx.pos) ^ (hash<glm::vec3>()(vtx.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vtx.texCoord) << 1);
+    return ((hash<glm::vec3>()(vtx.pos) ^ (hash<glm::vec3>()(vtx.color) << 1)) >> 1) ^
+           (hash<glm::vec2>()(vtx.texCoord) << 1);
   }
 };
 }  // namespace std
@@ -506,7 +507,8 @@ class HelloTriangleApplication {
   }
 
   void createTextureImageView() {
-    textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
+    textureImageView =
+        createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
   }
 
   [[nodiscard]] vk::Format findSupportedFormat(std::vector<vk::Format> const& candidates, vk::ImageTiling tiling,
@@ -537,10 +539,9 @@ class HelloTriangleApplication {
 
   void createDepthResources() {
     vk::Format depthFormat = findDepthFormat();
-    std::tie(depthImage, depthImageMemory) =
-        createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, depthFormat,
-                    vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal);
+    std::tie(depthImage, depthImageMemory) = createImage(
+        swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, depthFormat, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
     depthImageView = createImageView(*depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
   }
 
@@ -717,8 +718,7 @@ class HelloTriangleApplication {
     graphicsQueue.waitIdle();
   }
 
-  std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height,
-                                                                 uint32_t numMipLevels,
+  std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height, uint32_t numMipLevels,
                                                                  vk::SampleCountFlagBits numSamples, vk::Format format,
                                                                  vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                                                                  vk::MemoryPropertyFlags properties) {
@@ -793,9 +793,9 @@ class HelloTriangleApplication {
           .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
           .srcOffsets = std::array<vk::Offset3D, 2>{vk::Offset3D{0, 0, 0}, vk::Offset3D{mipWidth, mipHeight, 1}},
           .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = 1},
-          .dstOffsets = std::array<vk::Offset3D, 2>{
-              vk::Offset3D{0, 0, 0},
-              vk::Offset3D{mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1}},
+          .dstOffsets =
+              std::array<vk::Offset3D, 2>{vk::Offset3D{0, 0, 0}, vk::Offset3D{mipWidth > 1 ? mipWidth / 2 : 1,
+                                                                              mipHeight > 1 ? mipHeight / 2 : 1, 1}},
       };
       cmd.blitImage(*image, vk::ImageLayout::eTransferSrcOptimal, *image, vk::ImageLayout::eTransferDstOptimal, blit,
                     vk::Filter::eLinear);
@@ -843,12 +843,11 @@ class HelloTriangleApplication {
     stagingBufferMemory.unmapMemory();
     stbi_image_free(pixels);
 
-    std::tie(textureImage, textureImageMemory) =
-        createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), mipLevels,
-                    vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
-                    vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
-                        vk::ImageUsageFlagBits::eSampled,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal);
+    std::tie(textureImage, textureImageMemory) = createImage(
+        static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), mipLevels, vk::SampleCountFlagBits::e1,
+        vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     vk::raii::CommandBuffer cmd = beginSingleTimeCommands();
 
@@ -1289,9 +1288,9 @@ class HelloTriangleApplication {
                        vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
             {.features = {.sampleRateShading = true, .samplerAnisotropy = true}},  // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters = true},                        // vk::PhysicalDeviceVulkan11Features
-            {.synchronization2 = true, .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState = true}                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+            {.shaderDrawParameters = true},                                        // vk::PhysicalDeviceVulkan11Features
+            {.synchronization2 = true, .dynamicRendering = true},                  // vk::PhysicalDeviceVulkan13Features
+            {.extendedDynamicState = true}  // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
 
     float queuePriority = 0.5f;
