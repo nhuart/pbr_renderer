@@ -451,9 +451,7 @@ class HelloTriangleApplication {
     std::cout << "Image views: " << swapChainImageViews.size() << " created\n";
   }
 
-  void createTextureImageView() {
-    textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb);
-  }
+  void createTextureImageView() { textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb); }
 
   void createTextureSampler() {
     vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
@@ -598,13 +596,13 @@ class HelloTriangleApplication {
   }
 
   [[nodiscard]] vk::raii::CommandBuffer beginSingleTimeCommands() const {
-    vk::raii::CommandBuffer cmd = std::move(
-        vk::raii::CommandBuffers(device, vk::CommandBufferAllocateInfo{
-                                             .commandPool = *commandPool,
-                                             .level = vk::CommandBufferLevel::ePrimary,
-                                             .commandBufferCount = 1,
-                                         })
-            .front());
+    vk::raii::CommandBuffer cmd = std::move(vk::raii::CommandBuffers(device,
+                                                                     vk::CommandBufferAllocateInfo{
+                                                                         .commandPool = *commandPool,
+                                                                         .level = vk::CommandBufferLevel::ePrimary,
+                                                                         .commandBufferCount = 1,
+                                                                     })
+                                                .front());
     cmd.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     return cmd;
   }
@@ -617,8 +615,8 @@ class HelloTriangleApplication {
   }
 
   std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height, vk::Format format,
-                                                                  vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-                                                                  vk::MemoryPropertyFlags properties) {
+                                                                 vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+                                                                 vk::MemoryPropertyFlags properties) {
     vk::raii::Image image(device, vk::ImageCreateInfo{
                                       .imageType = vk::ImageType::e2D,
                                       .format = format,
@@ -633,11 +631,11 @@ class HelloTriangleApplication {
                                   });
 
     vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
-    vk::raii::DeviceMemory imageMemory(device,
-                                       vk::MemoryAllocateInfo{
-                                           .allocationSize = memRequirements.size,
-                                           .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
-                                       });
+    vk::raii::DeviceMemory imageMemory(
+        device, vk::MemoryAllocateInfo{
+                    .allocationSize = memRequirements.size,
+                    .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
+                });
     image.bindMemory(*imageMemory, 0);
 
     return {std::move(image), std::move(imageMemory)};
@@ -680,8 +678,7 @@ class HelloTriangleApplication {
 
     std::tie(textureImage, textureImageMemory) =
         createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), vk::Format::eR8G8B8A8Srgb,
-                    vk::ImageTiling::eOptimal,
-                    vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                    vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
                     vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     vk::raii::CommandBuffer cmd = beginSingleTimeCommands();
@@ -796,11 +793,11 @@ class HelloTriangleApplication {
          .descriptorCount = 1,
          .stageFlags = vk::ShaderStageFlagBits::eFragment},
     }};
-    descriptorSetLayout = vk::raii::DescriptorSetLayout(
-        device, vk::DescriptorSetLayoutCreateInfo{
-                    .bindingCount = static_cast<uint32_t>(bindings.size()),
-                    .pBindings = bindings.data(),
-                });
+    descriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, vk::DescriptorSetLayoutCreateInfo{
+                                                  .bindingCount = static_cast<uint32_t>(bindings.size()),
+                                                  .pBindings = bindings.data(),
+                                              });
   }
 
   void createUniformBuffers() {
@@ -836,13 +833,12 @@ class HelloTriangleApplication {
         {.type = vk::DescriptorType::eCombinedImageSampler,
          .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)},
     }};
-    descriptorPool = vk::raii::DescriptorPool(
-        device, vk::DescriptorPoolCreateInfo{
-                    .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                    .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
-                    .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-                    .pPoolSizes = poolSizes.data(),
-                });
+    descriptorPool = vk::raii::DescriptorPool(device, vk::DescriptorPoolCreateInfo{
+                                                          .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                                                          .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                                                          .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+                                                          .pPoolSizes = poolSizes.data(),
+                                                      });
   }
 
   void createDescriptorSets() {
