@@ -8,10 +8,14 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #include <vulkan/vulkan_raii.hpp>
@@ -24,13 +28,19 @@ import vulkan_hpp;
 
 #include <chrono>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 
 struct Vertex {
   glm::vec3 pos;
   glm::vec3 color;
   glm::vec2 texCoord;
+
+  bool operator==(Vertex const& other) const {
+    return pos == other.pos && color == other.color && texCoord == other.texCoord;
+  }
 
   static vk::VertexInputBindingDescription getBindingDescription() {
     return {.binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex};
@@ -43,25 +53,24 @@ struct Vertex {
   }
 };
 
+namespace std {
+template <>
+struct hash<Vertex> {
+  size_t operator()(Vertex const& v) const {
+    return ((hash<glm::vec3>()(v.pos) ^ (hash<glm::vec3>()(v.color) << 1)) >> 1) ^
+           (hash<glm::vec2>()(v.texCoord) << 1);
+  }
+};
+}  // namespace std
+
 struct UniformBufferObject {
   alignas(16) glm::mat4 model;
   alignas(16) glm::mat4 view;
   alignas(16) glm::mat4 proj;
 };
 
-const std::vector<Vertex> VERTICES = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-};
-
-const std::vector<uint16_t> INDICES = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -116,6 +125,9 @@ class HelloTriangleApplication {
   std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
   std::vector<void*> uniformBuffersMapped;
 
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
 
@@ -169,6 +181,7 @@ class HelloTriangleApplication {
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
+    loadModel();
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
@@ -713,7 +726,7 @@ class HelloTriangleApplication {
     int texWidth = 0;
     int texHeight = 0;
     int texChannels = 0;
-    stbi_uc* pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     if (!pixels) {
       throw std::runtime_error("failed to load texture image!");
     }
@@ -798,15 +811,50 @@ class HelloTriangleApplication {
     graphicsQueue.waitIdle();
   }
 
+  void loadModel() {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+      throw std::runtime_error(warn + err);
+    }
+
+    std::unordered_map<Vertex, uint32_t> uniqueVertices;
+    for (auto const& shape : shapes) {
+      for (auto const& index : shape.mesh.indices) {
+        Vertex vertex{};
+        vertex.pos = {
+            attrib.vertices[3 * index.vertex_index + 0],
+            attrib.vertices[3 * index.vertex_index + 1],
+            attrib.vertices[3 * index.vertex_index + 2],
+        };
+        vertex.texCoord = {
+            attrib.texcoords[2 * index.texcoord_index + 0],
+            1.0f - attrib.texcoords[2 * index.texcoord_index + 1],
+        };
+        vertex.color = {1.0f, 1.0f, 1.0f};
+
+        auto [it, inserted] = uniqueVertices.insert({vertex, static_cast<uint32_t>(vertices.size())});
+        if (inserted) {
+          vertices.push_back(vertex);
+        }
+        indices.push_back(it->second);
+      }
+    }
+    std::cout << "Model loaded: " << vertices.size() << " unique vertices, " << indices.size() << " indices\n";
+  }
+
   void createVertexBuffer() {
-    vk::DeviceSize bufferSize = sizeof(VERTICES[0]) * VERTICES.size();
+    vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     auto [stagingBuffer, stagingMemory] =
         createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
                      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* data = stagingMemory.mapMemory(0, bufferSize);
-    memcpy(data, VERTICES.data(), static_cast<size_t>(bufferSize));
+    memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
     stagingMemory.unmapMemory();
 
     std::tie(vertexBuffer, vertexBufferMemory) =
@@ -817,14 +865,14 @@ class HelloTriangleApplication {
   }
 
   void createIndexBuffer() {
-    vk::DeviceSize bufferSize = sizeof(INDICES[0]) * INDICES.size();
+    vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     auto [stagingBuffer, stagingMemory] =
         createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
                      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* data = stagingMemory.mapMemory(0, bufferSize);
-    memcpy(data, INDICES.data(), static_cast<size_t>(bufferSize));
+    memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
     stagingMemory.unmapMemory();
 
     std::tie(indexBuffer, indexBufferMemory) =
@@ -1005,7 +1053,7 @@ class HelloTriangleApplication {
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     cmd.bindVertexBuffers(0, *vertexBuffer, {vk::DeviceSize{0}});
-    cmd.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
+    cmd.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint32);
 
     vk::Viewport viewport{
         .x = 0.0f,
@@ -1020,7 +1068,7 @@ class HelloTriangleApplication {
 
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, *descriptorSets[frameIndex], {});
 
-    cmd.drawIndexed(static_cast<uint32_t>(INDICES.size()), 1, 0, 0, 0);
+    cmd.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
     cmd.endRendering();
 
