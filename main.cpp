@@ -353,7 +353,7 @@ class HelloTriangleApplication {
                                   physicalDevice.getProperties().limits.framebufferDepthSampleCounts;
     for (auto candidate : {vk::SampleCountFlagBits::e64, vk::SampleCountFlagBits::e32, vk::SampleCountFlagBits::e16,
                            vk::SampleCountFlagBits::e8, vk::SampleCountFlagBits::e4, vk::SampleCountFlagBits::e2}) {
-      if (counts & candidate) return candidate;
+      if (counts & candidate) { return candidate; }
     }
     return vk::SampleCountFlagBits::e1;
   }
@@ -808,8 +808,8 @@ class HelloTriangleApplication {
       barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
       cmd.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
 
-      if (mipWidth > 1) mipWidth /= 2;
-      if (mipHeight > 1) mipHeight /= 2;
+      if (mipWidth > 1) { mipWidth /= 2; }
+      if (mipHeight > 1) { mipHeight /= 2; }
     }
 
     // Transition the last mip level (never used as blit source, still in TransferDst)
