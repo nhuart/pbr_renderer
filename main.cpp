@@ -854,7 +854,7 @@ class HelloTriangleApplication {
 
     transitionImageLayout(cmd, *textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, {},
                           vk::AccessFlagBits2::eTransferWrite, vk::PipelineStageFlagBits2::eTopOfPipe,
-                          vk::PipelineStageFlagBits2::eTransfer);
+                          vk::PipelineStageFlagBits2::eTransfer, vk::ImageAspectFlagBits::eColor, mipLevels);
 
     copyBufferToImage(cmd, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth),
                       static_cast<uint32_t>(texHeight));
@@ -1092,7 +1092,8 @@ class HelloTriangleApplication {
   static void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::ImageLayout oldLayout,
                                     vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess,
                                     vk::PipelineStageFlags2 srcStage, vk::PipelineStageFlags2 dstStage,
-                                    vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor) {
+                                    vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
+                                    uint32_t numMipLevels = 1) {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = srcStage,
         .srcAccessMask = srcAccess,
@@ -1103,7 +1104,7 @@ class HelloTriangleApplication {
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
         .image = image,
-        .subresourceRange = {aspectFlags, 0, 1, 0, 1},
+        .subresourceRange = {aspectFlags, 0, numMipLevels, 0, 1},
     };
     cmd.pipelineBarrier2(vk::DependencyInfo{
         .imageMemoryBarrierCount = 1,
