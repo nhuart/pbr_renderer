@@ -57,8 +57,7 @@ namespace std {
 template <>
 struct hash<Vertex> {
   size_t operator()(Vertex const& v) const {
-    return ((hash<glm::vec3>()(v.pos) ^ (hash<glm::vec3>()(v.color) << 1)) >> 1) ^
-           (hash<glm::vec2>()(v.texCoord) << 1);
+    return ((hash<glm::vec3>()(v.pos) ^ (hash<glm::vec3>()(v.color) << 1)) >> 1) ^ (hash<glm::vec2>()(v.texCoord) << 1);
   }
 };
 }  // namespace std
@@ -463,8 +462,8 @@ class HelloTriangleApplication {
     std::cout << "  present mode: " << vk::to_string(presentMode) << "\n";
   }
 
-  [[nodiscard]] vk::raii::ImageView createImageView(vk::Image image, vk::Format format,
-                                                    vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor) const {
+  [[nodiscard]] vk::raii::ImageView createImageView(
+      vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor) const {
     return vk::raii::ImageView(device, vk::ImageViewCreateInfo{
                                            .image = image,
                                            .viewType = vk::ImageViewType::e2D,
@@ -916,7 +915,7 @@ class HelloTriangleApplication {
     float time = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - startTime).count();
 
     UniformBufferObject ubo{
-        .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(15.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
         .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
         .proj = glm::perspective(glm::radians(45.0f),
                                  static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
@@ -1018,12 +1017,12 @@ class HelloTriangleApplication {
                           vk::PipelineStageFlagBits2::eColorAttachmentOutput,
                           vk::PipelineStageFlagBits2::eColorAttachmentOutput);
 
-    transitionImageLayout(cmd, *depthImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-                          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-                          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-                          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                          vk::ImageAspectFlagBits::eDepth);
+    transitionImageLayout(
+        cmd, *depthImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::ImageAspectFlagBits::eDepth);
 
     vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
     vk::RenderingAttachmentInfo colorAttachmentInfo{
