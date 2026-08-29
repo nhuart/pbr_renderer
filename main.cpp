@@ -83,7 +83,10 @@ struct Particle {
 
   static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
     return {{{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Particle, position)},
-             {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = offsetof(Particle, color)}}};
+             {.location = 1,
+              .binding = 0,
+              .format = vk::Format::eR32G32B32A32Sfloat,
+              .offset = offsetof(Particle, color)}}};
   }
 };
 
@@ -404,7 +407,9 @@ class HelloTriangleApplication {
                                   physicalDevice.getProperties().limits.framebufferDepthSampleCounts;
     for (auto candidate : {vk::SampleCountFlagBits::e64, vk::SampleCountFlagBits::e32, vk::SampleCountFlagBits::e16,
                            vk::SampleCountFlagBits::e8, vk::SampleCountFlagBits::e4, vk::SampleCountFlagBits::e2}) {
-      if (counts & candidate) { return candidate; }
+      if (counts & candidate) {
+        return candidate;
+      }
     }
     return vk::SampleCountFlagBits::e1;
   }
@@ -859,8 +864,12 @@ class HelloTriangleApplication {
       barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
       cmd.pipelineBarrier2(vk::DependencyInfo{.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
 
-      if (mipWidth > 1) { mipWidth /= 2; }
-      if (mipHeight > 1) { mipHeight /= 2; }
+      if (mipWidth > 1) {
+        mipWidth /= 2;
+      }
+      if (mipHeight > 1) {
+        mipHeight /= 2;
+      }
     }
 
     // Transition the last mip level (never used as blit source, still in TransferDst)
@@ -1146,12 +1155,11 @@ class HelloTriangleApplication {
   }
 
   void createComputeCommandBuffers() {
-    computeCommandBuffers = vk::raii::CommandBuffers(
-        device, vk::CommandBufferAllocateInfo{
-                    .commandPool = *commandPool,
-                    .level = vk::CommandBufferLevel::ePrimary,
-                    .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-                });
+    computeCommandBuffers = vk::raii::CommandBuffers(device, vk::CommandBufferAllocateInfo{
+                                                                 .commandPool = *commandPool,
+                                                                 .level = vk::CommandBufferLevel::ePrimary,
+                                                                 .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+                                                             });
   }
 
   void createShaderStorageBuffers() {
@@ -1180,11 +1188,11 @@ class HelloTriangleApplication {
     stagingMemory.unmapMemory();
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      auto [ssbo, ssboMemory] = createBuffer(
-          bufferSize,
-          vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer |
-              vk::BufferUsageFlagBits::eTransferDst,
-          vk::MemoryPropertyFlagBits::eDeviceLocal);
+      auto [ssbo, ssboMemory] =
+          createBuffer(bufferSize,
+                       vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer |
+                           vk::BufferUsageFlagBits::eTransferDst,
+                       vk::MemoryPropertyFlagBits::eDeviceLocal);
       copyBuffer(stagingBuffer, ssbo, bufferSize);
       shaderStorageBuffers.push_back(std::move(ssbo));
       shaderStorageBuffersMemory.push_back(std::move(ssboMemory));
@@ -1242,8 +1250,7 @@ class HelloTriangleApplication {
                                                              });
 
     computePipeline = vk::raii::Pipeline(
-        device, nullptr,
-        vk::ComputePipelineCreateInfo{.stage = compStageInfo, .layout = *computePipelineLayout});
+        device, nullptr, vk::ComputePipelineCreateInfo{.stage = compStageInfo, .layout = *computePipelineLayout});
     std::cout << "Compute pipeline: created\n";
   }
 
@@ -1255,12 +1262,10 @@ class HelloTriangleApplication {
     vk::raii::ShaderModule fragModule = createShaderModule(fragCode);
 
     std::array shaderStages = {
-        vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eVertex,
-                                          .module = *vertModule,
-                                          .pName = "main"},
-        vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eFragment,
-                                          .module = *fragModule,
-                                          .pName = "main"},
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex, .module = *vertModule, .pName = "main"},
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment, .module = *fragModule, .pName = "main"},
     };
 
     std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
@@ -1325,8 +1330,7 @@ class HelloTriangleApplication {
         .stencilTestEnable = vk::False,
     };
 
-    particlePipelineLayout =
-        vk::raii::PipelineLayout(device, vk::PipelineLayoutCreateInfo{.setLayoutCount = 0});
+    particlePipelineLayout = vk::raii::PipelineLayout(device, vk::PipelineLayoutCreateInfo{.setLayoutCount = 0});
 
     vk::Format depthFormat = findDepthFormat();
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
@@ -1362,21 +1366,21 @@ class HelloTriangleApplication {
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer,
                                .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2},
     };
-    computeDescriptorPool = vk::raii::DescriptorPool(
-        device, vk::DescriptorPoolCreateInfo{
-                    .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                    .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
-                    .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-                    .pPoolSizes = poolSizes.data(),
-                });
+    computeDescriptorPool =
+        vk::raii::DescriptorPool(device, vk::DescriptorPoolCreateInfo{
+                                             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                                             .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                                             .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+                                             .pPoolSizes = poolSizes.data(),
+                                         });
 
     std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *computeDescriptorSetLayout);
-    computeDescriptorSets = vk::raii::DescriptorSets(
-        device, vk::DescriptorSetAllocateInfo{
-                    .descriptorPool = *computeDescriptorPool,
-                    .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-                    .pSetLayouts = layouts.data(),
-                });
+    computeDescriptorSets =
+        vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
+                                             .descriptorPool = *computeDescriptorPool,
+                                             .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+                                             .pSetLayouts = layouts.data(),
+                                         });
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       vk::DescriptorBufferInfo uboInfo{
@@ -1423,8 +1427,8 @@ class HelloTriangleApplication {
     auto const& cmd = computeCommandBuffers[frameIdx];
     cmd.begin({});
     cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *computePipeline);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computePipelineLayout, 0,
-                           *computeDescriptorSets[frameIdx], {});
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computePipelineLayout, 0, *computeDescriptorSets[frameIdx],
+                           {});
     cmd.dispatch(PARTICLE_COUNT / 256, 1, 1);
     cmd.end();
   }
@@ -1588,8 +1592,7 @@ class HelloTriangleApplication {
     commandBuffers[frameIndex].reset();
     recordCommandBuffer(imageIndex);
 
-    std::array waitSemaphores = {*presentCompleteSemaphores[frameIndex],
-                                 *computeFinishedSemaphores[frameIndex]};
+    std::array waitSemaphores = {*presentCompleteSemaphores[frameIndex], *computeFinishedSemaphores[frameIndex]};
     std::array<vk::PipelineStageFlags, 2> waitStages = {vk::PipelineStageFlagBits::eColorAttachmentOutput,
                                                         vk::PipelineStageFlagBits::eVertexInput};
     vk::CommandBuffer cmdBuf = *commandBuffers[frameIndex];
