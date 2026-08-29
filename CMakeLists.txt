@@ -20,6 +20,9 @@ find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 set(SHADER_SOURCES
     shaders/triangle.vert
     shaders/triangle.frag
+    shaders/particle.vert
+    shaders/particle.frag
+    shaders/particle.comp
 )
 
 set(SHADER_SPIRV_OUTPUTS "")
