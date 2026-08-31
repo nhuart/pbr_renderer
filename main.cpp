@@ -1193,14 +1193,14 @@ class HelloTriangleApplication {
   }
 
   void createUniformBuffers() {
-    for (auto& go : gameObjects) {
+    for (auto& obj : gameObjects) {
       for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         auto [buffer, memory] =
             createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
                          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        go.uniformBuffersMapped.push_back(memory.mapMemory(0, sizeof(UniformBufferObject)));
-        go.uniformBuffers.push_back(std::move(buffer));
-        go.uniformBuffersMemory.push_back(std::move(memory));
+        obj.uniformBuffersMapped.push_back(memory.mapMemory(0, sizeof(UniformBufferObject)));
+        obj.uniformBuffers.push_back(std::move(buffer));
+        obj.uniformBuffersMemory.push_back(std::move(memory));
       }
     }
   }
@@ -1219,15 +1219,15 @@ class HelloTriangleApplication {
         0.1f, 10.0f);
     proj[1][1] *= -1;  // GLM uses OpenGL clip space (Y up); Vulkan is Y down.
 
-    for (auto& go : gameObjects) {
+    for (auto& obj : gameObjects) {
       // Continuously rotate each object around Z at 15°/s.
-      go.rotation.z = time * glm::radians(15.0f);
+      obj.rotation.z = time * glm::radians(15.0f);
       UniformBufferObject ubo{
-          .model = go.getModelMatrix(),
+          .model = obj.getModelMatrix(),
           .view = view,
           .proj = proj,
       };
-      memcpy(go.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+      memcpy(obj.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
     }
 
     ComputeUBO cubo{.deltaTime = deltaTime};
@@ -1235,8 +1235,8 @@ class HelloTriangleApplication {
   }
 
   void createDescriptorPool() {
-    uint32_t objectCount = static_cast<uint32_t>(gameObjects.size());
-    uint32_t setCount = objectCount * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    auto objectCount = static_cast<uint32_t>(gameObjects.size());
+    auto setCount = objectCount * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{{
         {.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount},
         {.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount},
@@ -1256,9 +1256,9 @@ class HelloTriangleApplication {
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
-    for (auto& go : gameObjects) {
+    for (auto& obj : gameObjects) {
       std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
-      go.descriptorSets =
+      obj.descriptorSets =
           vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
                                                .descriptorPool = *descriptorPool,
                                                .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
@@ -1267,18 +1267,18 @@ class HelloTriangleApplication {
 
       for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vk::DescriptorBufferInfo bufferInfo{
-            .buffer = *go.uniformBuffers[i],
+            .buffer = *obj.uniformBuffers[i],
             .offset = 0,
             .range = sizeof(UniformBufferObject),
         };
         std::array<vk::WriteDescriptorSet, 2> descriptorWrites{{
-            {.dstSet = *go.descriptorSets[i],
+            {.dstSet = *obj.descriptorSets[i],
              .dstBinding = 0,
              .dstArrayElement = 0,
              .descriptorCount = 1,
              .descriptorType = vk::DescriptorType::eUniformBuffer,
              .pBufferInfo = &bufferInfo},
-            {.dstSet = *go.descriptorSets[i],
+            {.dstSet = *obj.descriptorSets[i],
              .dstBinding = 1,
              .dstArrayElement = 0,
              .descriptorCount = 1,
@@ -1666,8 +1666,8 @@ class HelloTriangleApplication {
     cmd.setViewport(0, viewport);
     cmd.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
 
-    for (auto const& go : gameObjects) {
-      cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, *go.descriptorSets[frameIndex], {});
+    for (auto const& obj : gameObjects) {
+      cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, *obj.descriptorSets[frameIndex], {});
       cmd.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     }
 
