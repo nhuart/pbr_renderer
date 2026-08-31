@@ -34,7 +34,7 @@ format:
 	find . -path ./build -prune -o \( -name "*.cpp" -o -name "*.h" \) -print | xargs clang-format -i
 
 lint:
-	run-clang-tidy -p build/debug -quiet
+	run-clang-tidy -p build/debug -quiet -j$(shell nproc) "^$(CURDIR)/[^/]+\.cpp"
 
 lint-fix:
-	run-clang-tidy -p build/debug -quiet -fix
+	run-clang-tidy -p build/debug -quiet -fix -j$(shell nproc) "^$(CURDIR)/[^/]+\.cpp"
