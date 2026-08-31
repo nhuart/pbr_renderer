@@ -17,10 +17,9 @@
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tiny_gltf.h>
-
 #include <ktx.h>
 #include <ktxvulkan.h>
+#include <tiny_gltf.h>
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #include <vulkan/vulkan_raii.hpp>
@@ -887,9 +886,8 @@ class HelloTriangleApplication {
 
   void createTextureImage() {
     ktxTexture2* kTexture = nullptr;
-    KTX_error_code result = ktxTexture2_CreateFromNamedFile(
-        TEXTURE_PATH.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-        &kTexture);
+    KTX_error_code result =
+        ktxTexture2_CreateFromNamedFile(TEXTURE_PATH.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
     if (result != KTX_SUCCESS) {
       throw std::runtime_error("failed to load KTX2 texture: " + std::string(ktxErrorString(result)));
     }
@@ -929,10 +927,8 @@ class HelloTriangleApplication {
           .bufferOffset = offset,
           .bufferRowLength = 0,
           .bufferImageHeight = 0,
-          .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
-                               .mipLevel = level,
-                               .baseArrayLayer = 0,
-                               .layerCount = 1},
+          .imageSubresource =
+              {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = level, .baseArrayLayer = 0, .layerCount = 1},
           .imageOffset = {0, 0, 0},
           .imageExtent = {std::max(1u, texWidth >> level), std::max(1u, texHeight >> level), 1},
       });
@@ -1031,8 +1027,8 @@ class HelloTriangleApplication {
         // --- Position attribute ---
         auto const& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
         auto const& posView = model.bufferViews[posAccessor.bufferView];
-        auto const* posData = reinterpret_cast<float const*>(
-            model.buffers[posView.buffer].data.data() + posView.byteOffset + posAccessor.byteOffset);
+        auto const* posData = reinterpret_cast<float const*>(model.buffers[posView.buffer].data.data() +
+                                                             posView.byteOffset + posAccessor.byteOffset);
         size_t posStride = posView.byteStride ? posView.byteStride / sizeof(float) : 3;
 
         // --- Texture coordinate attribute ---
