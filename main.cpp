@@ -91,6 +91,25 @@ struct Particle {
   }
 };
 
+struct GameObject {
+  glm::vec3 position = {0.0f, 0.0f, 0.0f};
+  glm::vec3 rotation = {0.0f, 0.0f, 0.0f};
+  glm::vec3 scale = {1.0f, 1.0f, 1.0f};
+  std::vector<vk::raii::Buffer> uniformBuffers;
+  std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+  std::vector<void*> uniformBuffersMapped;
+  std::vector<vk::raii::DescriptorSet> descriptorSets;
+
+  [[nodiscard]] glm::mat4 getModelMatrix() const {
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, position);
+    model = glm::rotate(model, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::rotate(model, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+    return glm::scale(model, scale);
+  }
+};
+
 struct ComputeUBO {
   float deltaTime;
 };
@@ -146,7 +165,6 @@ class HelloTriangleApplication {
   vk::raii::PipelineLayout pipelineLayout = nullptr;
 
   vk::raii::DescriptorPool descriptorPool = nullptr;
-  std::vector<vk::raii::DescriptorSet> descriptorSets;
   vk::raii::Pipeline graphicsPipeline = nullptr;
 
   vk::raii::DescriptorSetLayout computeDescriptorSetLayout = nullptr;
@@ -169,9 +187,7 @@ class HelloTriangleApplication {
   std::vector<vk::raii::Semaphore> computeFinishedSemaphores;
   std::vector<vk::raii::Fence> computeInFlightFences;
 
-  std::vector<vk::raii::Buffer> uniformBuffers;
-  std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
-  std::vector<void*> uniformBuffersMapped;
+  std::vector<GameObject> gameObjects;
 
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
@@ -245,6 +261,7 @@ class HelloTriangleApplication {
     loadModel();
     createVertexBuffer();
     createIndexBuffer();
+    setupGameObjects();
     createUniformBuffers();
     createShaderStorageBuffers();
     createDescriptorPool();
@@ -1045,14 +1062,17 @@ class HelloTriangleApplication {
     std::vector<uint32_t> localRemap(vertexCount);
     for (size_t i = 0; i < vertexCount; ++i) {
       Vertex vertex{};
-      float posX = 0.0f; float posY = 0.0f; float posZ = 0.0f;
+      float posX = 0.0f;
+      float posY = 0.0f;
+      float posZ = 0.0f;
       memcpy(&posX, posBytes + i * posStride + 0 * sizeof(float), sizeof(float));
       memcpy(&posY, posBytes + i * posStride + 1 * sizeof(float), sizeof(float));
       memcpy(&posZ, posBytes + i * posStride + 2 * sizeof(float), sizeof(float));
       vertex.pos = {posX, posY, posZ};
       vertex.color = {1.0f, 1.0f, 1.0f};
       if (uvBytes != nullptr) {
-        float uvU = 0.0f; float uvV = 0.0f;
+        float uvU = 0.0f;
+        float uvV = 0.0f;
         memcpy(&uvU, uvBytes + i * uvStride + 0 * sizeof(float), sizeof(float));
         memcpy(&uvV, uvBytes + i * uvStride + 1 * sizeof(float), sizeof(float));
         // glTF UV origin is top-left (OpenGL convention); flip V for Vulkan.
@@ -1159,14 +1179,29 @@ class HelloTriangleApplication {
                                               });
   }
 
+  void setupGameObjects() {
+    // Three instances of the same mesh with different transforms.
+    gameObjects.resize(3);
+    gameObjects[0].position = {0.0f, 0.0f, 0.0f};
+    gameObjects[1].position = {-1.5f, 0.0f, 0.0f};
+    gameObjects[1].rotation.z = glm::radians(45.0f);
+    gameObjects[1].scale = {0.75f, 0.75f, 0.75f};
+    gameObjects[2].position = {1.5f, 0.0f, 0.0f};
+    gameObjects[2].rotation.z = glm::radians(-45.0f);
+    gameObjects[2].scale = {0.75f, 0.75f, 0.75f};
+    std::cout << "Game objects: " << gameObjects.size() << " created\n";
+  }
+
   void createUniformBuffers() {
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      auto [buffer, memory] =
-          createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
-                       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-      uniformBuffersMapped.push_back(memory.mapMemory(0, sizeof(UniformBufferObject)));
-      uniformBuffers.push_back(std::move(buffer));
-      uniformBuffersMemory.push_back(std::move(memory));
+    for (auto& obj : gameObjects) {
+      for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        auto [buffer, memory] =
+            createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
+                         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        obj.uniformBuffersMapped.push_back(memory.mapMemory(0, sizeof(UniformBufferObject)));
+        obj.uniformBuffers.push_back(std::move(buffer));
+        obj.uniformBuffersMemory.push_back(std::move(memory));
+      }
     }
   }
 
@@ -1178,68 +1213,80 @@ class HelloTriangleApplication {
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count() * 1000.0f;
     lastTime = currentTime;
 
-    UniformBufferObject ubo{
-        .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(15.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-        .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-        .proj = glm::perspective(glm::radians(45.0f),
-                                 static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-                                 0.1f, 10.0f),
-    };
-    ubo.proj[1][1] *= -1;  // GLM uses OpenGL clip space (Y up); Vulkan is Y down.
-    memcpy(uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+    glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::mat4 proj = glm::perspective(
+        glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+        0.1f, 10.0f);
+    proj[1][1] *= -1;  // GLM uses OpenGL clip space (Y up); Vulkan is Y down.
+
+    for (auto& obj : gameObjects) {
+      // Continuously rotate each object around Z at 15°/s.
+      obj.rotation.z = time * glm::radians(15.0f);
+      UniformBufferObject ubo{
+          .model = obj.getModelMatrix(),
+          .view = view,
+          .proj = proj,
+      };
+      memcpy(obj.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+    }
 
     ComputeUBO cubo{.deltaTime = deltaTime};
     memcpy(computeUniformBuffersMapped[frameIndex], &cubo, sizeof(cubo));
   }
 
   void createDescriptorPool() {
+    auto objectCount = static_cast<uint32_t>(gameObjects.size());
+    auto setCount = objectCount * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{{
-        {.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)},
-        {.type = vk::DescriptorType::eCombinedImageSampler,
-         .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)},
+        {.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount},
+        {.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount},
     }};
     descriptorPool = vk::raii::DescriptorPool(device, vk::DescriptorPoolCreateInfo{
                                                           .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                                                          .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                                                          .maxSets = setCount,
                                                           .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
                                                           .pPoolSizes = poolSizes.data(),
                                                       });
   }
 
   void createDescriptorSets() {
-    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
-    descriptorSets = vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
-                                                          .descriptorPool = *descriptorPool,
-                                                          .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-                                                          .pSetLayouts = layouts.data(),
-                                                      });
+    vk::DescriptorImageInfo imageInfo{
+        .sampler = *textureSampler,
+        .imageView = *textureImageView,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
 
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      vk::DescriptorBufferInfo bufferInfo{
-          .buffer = *uniformBuffers[i],
-          .offset = 0,
-          .range = sizeof(UniformBufferObject),
-      };
-      vk::DescriptorImageInfo imageInfo{
-          .sampler = *textureSampler,
-          .imageView = *textureImageView,
-          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-      };
-      std::array<vk::WriteDescriptorSet, 2> descriptorWrites{{
-          {.dstSet = *descriptorSets[i],
-           .dstBinding = 0,
-           .dstArrayElement = 0,
-           .descriptorCount = 1,
-           .descriptorType = vk::DescriptorType::eUniformBuffer,
-           .pBufferInfo = &bufferInfo},
-          {.dstSet = *descriptorSets[i],
-           .dstBinding = 1,
-           .dstArrayElement = 0,
-           .descriptorCount = 1,
-           .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-           .pImageInfo = &imageInfo},
-      }};
-      device.updateDescriptorSets(descriptorWrites, {});
+    for (auto& obj : gameObjects) {
+      std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
+      obj.descriptorSets =
+          vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
+                                               .descriptorPool = *descriptorPool,
+                                               .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+                                               .pSetLayouts = layouts.data(),
+                                           });
+
+      for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vk::DescriptorBufferInfo bufferInfo{
+            .buffer = *obj.uniformBuffers[i],
+            .offset = 0,
+            .range = sizeof(UniformBufferObject),
+        };
+        std::array<vk::WriteDescriptorSet, 2> descriptorWrites{{
+            {.dstSet = *obj.descriptorSets[i],
+             .dstBinding = 0,
+             .dstArrayElement = 0,
+             .descriptorCount = 1,
+             .descriptorType = vk::DescriptorType::eUniformBuffer,
+             .pBufferInfo = &bufferInfo},
+            {.dstSet = *obj.descriptorSets[i],
+             .dstBinding = 1,
+             .dstArrayElement = 0,
+             .descriptorCount = 1,
+             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+             .pImageInfo = &imageInfo},
+        }};
+        device.updateDescriptorSets(descriptorWrites, {});
+      }
     }
   }
 
@@ -1619,9 +1666,10 @@ class HelloTriangleApplication {
     cmd.setViewport(0, viewport);
     cmd.setScissor(0, vk::Rect2D{.offset = {0, 0}, .extent = swapChainExtent});
 
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, *descriptorSets[frameIndex], {});
-
-    cmd.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    for (auto const& obj : gameObjects) {
+      cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, *obj.descriptorSets[frameIndex], {});
+      cmd.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    }
 
     // Draw particles on top of the scene
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline);
