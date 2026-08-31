@@ -896,7 +896,7 @@ class HelloTriangleApplication {
     if (ktxTexture2_NeedsTranscoding(kTexture)) {
       result = ktxTexture2_TranscodeBasis(kTexture, KTX_TTF_BC7_RGBA, 0);
       if (result != KTX_SUCCESS) {
-        ktxTexture_Destroy(ktxTexture(kTexture));
+        ktxTexture_Destroy(ktxTexture(kTexture));  // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
         throw std::runtime_error("failed to transcode KTX2 texture: " + std::string(ktxErrorString(result)));
       }
     }
@@ -906,15 +906,17 @@ class HelloTriangleApplication {
     mipLevels = kTexture->numLevels;
     textureFormat = static_cast<vk::Format>(kTexture->vkFormat);
 
+    ktxTexture* kBase = ktxTexture(kTexture);  // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
+
     // Determine total data size across all mip levels.
-    vk::DeviceSize totalSize = ktxTexture_GetDataSizeUncompressed(ktxTexture(kTexture));
+    vk::DeviceSize totalSize = ktxTexture_GetDataSizeUncompressed(kBase);
 
     auto [stagingBuffer, stagingBufferMemory] =
         createBuffer(totalSize, vk::BufferUsageFlagBits::eTransferSrc,
                      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* mappedData = stagingBufferMemory.mapMemory(0, totalSize);
-    memcpy(mappedData, ktxTexture_GetData(ktxTexture(kTexture)), static_cast<size_t>(totalSize));
+    memcpy(mappedData, ktxTexture_GetData(kBase), static_cast<size_t>(totalSize));
     stagingBufferMemory.unmapMemory();
 
     // Build one copy region per mip level.
@@ -922,7 +924,7 @@ class HelloTriangleApplication {
     mipCopyRegions.reserve(mipLevels);
     for (uint32_t level = 0; level < mipLevels; ++level) {
       ktx_size_t offset = 0;
-      ktxTexture_GetImageOffset(ktxTexture(kTexture), level, 0, 0, &offset);
+      ktxTexture_GetImageOffset(kBase, level, 0, 0, &offset);
       mipCopyRegions.push_back(vk::BufferImageCopy{
           .bufferOffset = offset,
           .bufferRowLength = 0,
@@ -934,7 +936,7 @@ class HelloTriangleApplication {
       });
     }
 
-    ktxTexture_Destroy(ktxTexture(kTexture));
+    ktxTexture_Destroy(kBase);
 
     vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
     std::tie(textureImage, textureImageMemory) =
@@ -1006,6 +1008,79 @@ class HelloTriangleApplication {
     graphicsQueue.waitIdle();
   }
 
+  // Returns a pointer to the start of an accessor's data within its buffer.
+  static uint8_t const* accessorData(tinygltf::Model const& model, tinygltf::Accessor const& acc) {
+    auto const& bufView = model.bufferViews[acc.bufferView];
+    return model.buffers[bufView.buffer].data.data() + bufView.byteOffset + acc.byteOffset;
+  }
+
+  // Reads a typed element from a raw byte pointer with no pointer cast.
+  template <typename T>
+  static T readAt(uint8_t const* ptr, size_t index) {
+    T val{};
+    memcpy(&val, ptr + index * sizeof(T), sizeof(T));
+    return val;
+  }
+
+  void loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
+                     std::unordered_map<Vertex, uint32_t>& uniqueVertices) {
+    // --- Position attribute ---
+    auto const& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
+    auto const& posView = model.bufferViews[posAccessor.bufferView];
+    uint8_t const* posBytes = accessorData(model, posAccessor);
+    size_t posStride = posView.byteStride ? posView.byteStride : 3 * sizeof(float);
+
+    // --- Texture coordinate attribute ---
+    uint8_t const* uvBytes = nullptr;
+    size_t uvStride = 2 * sizeof(float);
+    if (primitive.attributes.contains("TEXCOORD_0")) {
+      auto const& uvAccessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
+      auto const& uvView = model.bufferViews[uvAccessor.bufferView];
+      uvBytes = accessorData(model, uvAccessor);
+      uvStride = uvView.byteStride ? uvView.byteStride : 2 * sizeof(float);
+    }
+
+    // Build a local remap from glTF vertex index → global deduplicated index.
+    size_t vertexCount = posAccessor.count;
+    std::vector<uint32_t> localRemap(vertexCount);
+    for (size_t i = 0; i < vertexCount; ++i) {
+      Vertex vertex{};
+      float posX = 0.0f; float posY = 0.0f; float posZ = 0.0f;
+      memcpy(&posX, posBytes + i * posStride + 0 * sizeof(float), sizeof(float));
+      memcpy(&posY, posBytes + i * posStride + 1 * sizeof(float), sizeof(float));
+      memcpy(&posZ, posBytes + i * posStride + 2 * sizeof(float), sizeof(float));
+      vertex.pos = {posX, posY, posZ};
+      vertex.color = {1.0f, 1.0f, 1.0f};
+      if (uvBytes != nullptr) {
+        float uvU = 0.0f; float uvV = 0.0f;
+        memcpy(&uvU, uvBytes + i * uvStride + 0 * sizeof(float), sizeof(float));
+        memcpy(&uvV, uvBytes + i * uvStride + 1 * sizeof(float), sizeof(float));
+        // glTF UV origin is top-left (OpenGL convention); flip V for Vulkan.
+        vertex.texCoord = {uvU, 1.0f - uvV};
+      }
+      auto [it, inserted] = uniqueVertices.insert({vertex, static_cast<uint32_t>(vertices.size())});
+      if (inserted) {
+        vertices.push_back(vertex);
+      }
+      localRemap[i] = it->second;
+    }
+
+    // --- Index data: read raw glTF indices and remap through localRemap ---
+    auto const& idxAccessor = model.accessors[primitive.indices];
+    uint8_t const* rawIdx = accessorData(model, idxAccessor);
+    for (size_t i = 0; i < idxAccessor.count; ++i) {
+      uint32_t rawIndex = 0;
+      if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+        rawIndex = readAt<uint16_t>(rawIdx, i);
+      } else if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+        rawIndex = readAt<uint32_t>(rawIdx, i);
+      } else if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+        rawIndex = readAt<uint8_t>(rawIdx, i);
+      }
+      indices.push_back(localRemap[rawIndex]);
+    }
+  }
+
   void loadModel() {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
@@ -1021,60 +1096,9 @@ class HelloTriangleApplication {
     }
 
     std::unordered_map<Vertex, uint32_t> uniqueVertices;
-
     for (auto const& mesh : model.meshes) {
       for (auto const& primitive : mesh.primitives) {
-        // --- Position attribute ---
-        auto const& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
-        auto const& posView = model.bufferViews[posAccessor.bufferView];
-        auto const* posData = reinterpret_cast<float const*>(model.buffers[posView.buffer].data.data() +
-                                                             posView.byteOffset + posAccessor.byteOffset);
-        size_t posStride = posView.byteStride ? posView.byteStride / sizeof(float) : 3;
-
-        // --- Texture coordinate attribute ---
-        float const* uvData = nullptr;
-        size_t uvStride = 2;
-        if (primitive.attributes.count("TEXCOORD_0")) {
-          auto const& uvAccessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
-          auto const& uvView = model.bufferViews[uvAccessor.bufferView];
-          uvData = reinterpret_cast<float const*>(model.buffers[uvView.buffer].data.data() + uvView.byteOffset +
-                                                  uvAccessor.byteOffset);
-          uvStride = uvView.byteStride ? uvView.byteStride / sizeof(float) : 2;
-        }
-
-        // Build a local remap from glTF vertex index → global deduplicated index.
-        size_t vertexCount = posAccessor.count;
-        std::vector<uint32_t> localRemap(vertexCount);
-        for (size_t i = 0; i < vertexCount; ++i) {
-          Vertex vertex{};
-          vertex.pos = {posData[i * posStride], posData[i * posStride + 1], posData[i * posStride + 2]};
-          vertex.color = {1.0f, 1.0f, 1.0f};
-          if (uvData) {
-            // glTF UV origin is top-left (OpenGL convention); flip V for Vulkan.
-            vertex.texCoord = {uvData[i * uvStride], 1.0f - uvData[i * uvStride + 1]};
-          }
-          auto [it, inserted] = uniqueVertices.insert({vertex, static_cast<uint32_t>(vertices.size())});
-          if (inserted) {
-            vertices.push_back(vertex);
-          }
-          localRemap[i] = it->second;
-        }
-
-        // --- Index data: read raw glTF indices and remap through localRemap ---
-        auto const& idxAccessor = model.accessors[primitive.indices];
-        auto const& idxView = model.bufferViews[idxAccessor.bufferView];
-        auto const* rawIdx = model.buffers[idxView.buffer].data.data() + idxView.byteOffset + idxAccessor.byteOffset;
-        for (size_t i = 0; i < idxAccessor.count; ++i) {
-          uint32_t rawIndex = 0;
-          if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-            rawIndex = reinterpret_cast<uint16_t const*>(rawIdx)[i];
-          } else if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-            rawIndex = reinterpret_cast<uint32_t const*>(rawIdx)[i];
-          } else if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
-            rawIndex = reinterpret_cast<uint8_t const*>(rawIdx)[i];
-          }
-          indices.push_back(localRemap[rawIndex]);
-        }
+        loadPrimitive(model, primitive, uniqueVertices);
       }
     }
 
