@@ -1062,14 +1062,17 @@ class HelloTriangleApplication {
     std::vector<uint32_t> localRemap(vertexCount);
     for (size_t i = 0; i < vertexCount; ++i) {
       Vertex vertex{};
-      float posX = 0.0f; float posY = 0.0f; float posZ = 0.0f;
+      float posX = 0.0f;
+      float posY = 0.0f;
+      float posZ = 0.0f;
       memcpy(&posX, posBytes + i * posStride + 0 * sizeof(float), sizeof(float));
       memcpy(&posY, posBytes + i * posStride + 1 * sizeof(float), sizeof(float));
       memcpy(&posZ, posBytes + i * posStride + 2 * sizeof(float), sizeof(float));
       vertex.pos = {posX, posY, posZ};
       vertex.color = {1.0f, 1.0f, 1.0f};
       if (uvBytes != nullptr) {
-        float uvU = 0.0f; float uvV = 0.0f;
+        float uvU = 0.0f;
+        float uvV = 0.0f;
         memcpy(&uvU, uvBytes + i * uvStride + 0 * sizeof(float), sizeof(float));
         memcpy(&uvV, uvBytes + i * uvStride + 1 * sizeof(float), sizeof(float));
         // glTF UV origin is top-left (OpenGL convention); flip V for Vulkan.
@@ -1211,9 +1214,9 @@ class HelloTriangleApplication {
     lastTime = currentTime;
 
     glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f),
-                                      static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-                                      0.1f, 10.0f);
+    glm::mat4 proj = glm::perspective(
+        glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+        0.1f, 10.0f);
     proj[1][1] *= -1;  // GLM uses OpenGL clip space (Y up); Vulkan is Y down.
 
     for (auto& go : gameObjects) {
@@ -1255,11 +1258,12 @@ class HelloTriangleApplication {
 
     for (auto& go : gameObjects) {
       std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
-      go.descriptorSets = vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
-                                                               .descriptorPool = *descriptorPool,
-                                                               .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-                                                               .pSetLayouts = layouts.data(),
-                                                           });
+      go.descriptorSets =
+          vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo{
+                                               .descriptorPool = *descriptorPool,
+                                               .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+                                               .pSetLayouts = layouts.data(),
+                                           });
 
       for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vk::DescriptorBufferInfo bufferInfo{
