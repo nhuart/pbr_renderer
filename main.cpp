@@ -14,11 +14,13 @@
 #include <unordered_map>
 #include <vector>
 
+#define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb/stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <tiny_gltf.h>
 
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+#include <ktx.h>
+#include <ktxvulkan.h>
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #include <vulkan/vulkan_raii.hpp>
@@ -94,8 +96,8 @@ struct ComputeUBO {
   float deltaTime;
 };
 
-const std::string MODEL_PATH = "models/viking_room.obj";
-const std::string TEXTURE_PATH = "textures/viking_room.png";
+const std::string MODEL_PATH = "models/viking_room.glb";
+const std::string TEXTURE_PATH = "textures/viking_room.ktx2";
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -196,6 +198,7 @@ class HelloTriangleApplication {
   vk::raii::ImageView colorImageView = nullptr;
 
   uint32_t mipLevels = 0;
+  vk::Format textureFormat = vk::Format::eR8G8B8A8Srgb;
   vk::raii::Image textureImage = nullptr;
   vk::raii::DeviceMemory textureImageMemory = nullptr;
   vk::raii::ImageView textureImageView = nullptr;
@@ -563,8 +566,7 @@ class HelloTriangleApplication {
   }
 
   void createTextureImageView() {
-    textureImageView =
-        createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
+    textureImageView = createImageView(*textureImage, textureFormat, vk::ImageAspectFlagBits::eColor, mipLevels);
   }
 
   [[nodiscard]] vk::Format findSupportedFormat(std::vector<vk::Format> const& candidates, vk::ImageTiling tiling,
@@ -884,30 +886,64 @@ class HelloTriangleApplication {
   }
 
   void createTextureImage() {
-    int texWidth = 0;
-    int texHeight = 0;
-    int texChannels = 0;
-    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    if (!pixels) {
-      throw std::runtime_error("failed to load texture image!");
+    ktxTexture2* kTexture = nullptr;
+    KTX_error_code result = ktxTexture2_CreateFromNamedFile(
+        TEXTURE_PATH.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
+        &kTexture);
+    if (result != KTX_SUCCESS) {
+      throw std::runtime_error("failed to load KTX2 texture: " + std::string(ktxErrorString(result)));
     }
-    mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
-    vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * 4;
+
+    // Transcode supercompressed formats (e.g. BasisLZ/UASTC) to a GPU-native format.
+    if (ktxTexture2_NeedsTranscoding(kTexture)) {
+      result = ktxTexture2_TranscodeBasis(kTexture, KTX_TTF_BC7_RGBA, 0);
+      if (result != KTX_SUCCESS) {
+        ktxTexture_Destroy(ktxTexture(kTexture));
+        throw std::runtime_error("failed to transcode KTX2 texture: " + std::string(ktxErrorString(result)));
+      }
+    }
+
+    uint32_t texWidth = kTexture->baseWidth;
+    uint32_t texHeight = kTexture->baseHeight;
+    mipLevels = kTexture->numLevels;
+    textureFormat = static_cast<vk::Format>(kTexture->vkFormat);
+
+    // Determine total data size across all mip levels.
+    vk::DeviceSize totalSize = ktxTexture_GetDataSizeUncompressed(ktxTexture(kTexture));
 
     auto [stagingBuffer, stagingBufferMemory] =
-        createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc,
+        createBuffer(totalSize, vk::BufferUsageFlagBits::eTransferSrc,
                      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void* data = stagingBufferMemory.mapMemory(0, imageSize);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    void* mappedData = stagingBufferMemory.mapMemory(0, totalSize);
+    memcpy(mappedData, ktxTexture_GetData(ktxTexture(kTexture)), static_cast<size_t>(totalSize));
     stagingBufferMemory.unmapMemory();
-    stbi_image_free(pixels);
 
-    std::tie(textureImage, textureImageMemory) = createImage(
-        static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), mipLevels, vk::SampleCountFlagBits::e1,
-        vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
+    // Build one copy region per mip level.
+    std::vector<vk::BufferImageCopy> mipCopyRegions;
+    mipCopyRegions.reserve(mipLevels);
+    for (uint32_t level = 0; level < mipLevels; ++level) {
+      ktx_size_t offset = 0;
+      ktxTexture_GetImageOffset(ktxTexture(kTexture), level, 0, 0, &offset);
+      mipCopyRegions.push_back(vk::BufferImageCopy{
+          .bufferOffset = offset,
+          .bufferRowLength = 0,
+          .bufferImageHeight = 0,
+          .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                               .mipLevel = level,
+                               .baseArrayLayer = 0,
+                               .layerCount = 1},
+          .imageOffset = {0, 0, 0},
+          .imageExtent = {std::max(1u, texWidth >> level), std::max(1u, texHeight >> level), 1},
+      });
+    }
+
+    ktxTexture_Destroy(ktxTexture(kTexture));
+
+    vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+    std::tie(textureImage, textureImageMemory) =
+        createImage(texWidth, texHeight, mipLevels, vk::SampleCountFlagBits::e1, textureFormat,
+                    vk::ImageTiling::eOptimal, usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     vk::raii::CommandBuffer cmd = beginSingleTimeCommands();
 
@@ -915,14 +951,17 @@ class HelloTriangleApplication {
                           vk::AccessFlagBits2::eTransferWrite, vk::PipelineStageFlagBits2::eTopOfPipe,
                           vk::PipelineStageFlagBits2::eTransfer, vk::ImageAspectFlagBits::eColor, mipLevels);
 
-    copyBufferToImage(cmd, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth),
-                      static_cast<uint32_t>(texHeight));
+    cmd.copyBufferToImage(*stagingBuffer, *textureImage, vk::ImageLayout::eTransferDstOptimal, mipCopyRegions);
 
-    generateMipmaps(cmd, textureImage, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, mipLevels);
+    transitionImageLayout(cmd, *textureImage, vk::ImageLayout::eTransferDstOptimal,
+                          vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferWrite,
+                          vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
+                          vk::PipelineStageFlagBits2::eFragmentShader, vk::ImageAspectFlagBits::eColor, mipLevels);
 
     endSingleTimeCommands(std::move(cmd));
 
-    std::cout << "Texture image: " << texWidth << "x" << texHeight << " (" << mipLevels << " mip levels) loaded\n";
+    std::cout << "Texture image: " << texWidth << "x" << texHeight << " (" << mipLevels << " mip levels, format "
+              << vk::to_string(textureFormat) << ") loaded\n";
   }
 
   [[nodiscard]] uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
@@ -972,38 +1011,77 @@ class HelloTriangleApplication {
   }
 
   void loadModel() {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
     std::string warn;
     std::string err;
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
-      throw std::runtime_error(warn + err);
+    bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, MODEL_PATH);
+    if (!warn.empty()) {
+      std::cerr << "glTF warning: " << warn << "\n";
+    }
+    if (!ret) {
+      throw std::runtime_error("failed to load glTF model: " + err);
     }
 
     std::unordered_map<Vertex, uint32_t> uniqueVertices;
-    for (auto const& shape : shapes) {
-      for (auto const& index : shape.mesh.indices) {
-        Vertex vertex{};
-        vertex.pos = {
-            attrib.vertices[3 * index.vertex_index + 0],
-            attrib.vertices[3 * index.vertex_index + 1],
-            attrib.vertices[3 * index.vertex_index + 2],
-        };
-        vertex.texCoord = {
-            attrib.texcoords[2 * index.texcoord_index + 0],
-            1.0f - attrib.texcoords[2 * index.texcoord_index + 1],
-        };
-        vertex.color = {1.0f, 1.0f, 1.0f};
 
-        auto [it, inserted] = uniqueVertices.insert({vertex, static_cast<uint32_t>(vertices.size())});
-        if (inserted) {
-          vertices.push_back(vertex);
+    for (auto const& mesh : model.meshes) {
+      for (auto const& primitive : mesh.primitives) {
+        // --- Position attribute ---
+        auto const& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
+        auto const& posView = model.bufferViews[posAccessor.bufferView];
+        auto const* posData = reinterpret_cast<float const*>(
+            model.buffers[posView.buffer].data.data() + posView.byteOffset + posAccessor.byteOffset);
+        size_t posStride = posView.byteStride ? posView.byteStride / sizeof(float) : 3;
+
+        // --- Texture coordinate attribute ---
+        float const* uvData = nullptr;
+        size_t uvStride = 2;
+        if (primitive.attributes.count("TEXCOORD_0")) {
+          auto const& uvAccessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
+          auto const& uvView = model.bufferViews[uvAccessor.bufferView];
+          uvData = reinterpret_cast<float const*>(model.buffers[uvView.buffer].data.data() + uvView.byteOffset +
+                                                  uvAccessor.byteOffset);
+          uvStride = uvView.byteStride ? uvView.byteStride / sizeof(float) : 2;
         }
-        indices.push_back(it->second);
+
+        // Build a local remap from glTF vertex index → global deduplicated index.
+        size_t vertexCount = posAccessor.count;
+        std::vector<uint32_t> localRemap(vertexCount);
+        for (size_t i = 0; i < vertexCount; ++i) {
+          Vertex vertex{};
+          vertex.pos = {posData[i * posStride], posData[i * posStride + 1], posData[i * posStride + 2]};
+          vertex.color = {1.0f, 1.0f, 1.0f};
+          if (uvData) {
+            // glTF UV origin is top-left (OpenGL convention); flip V for Vulkan.
+            vertex.texCoord = {uvData[i * uvStride], 1.0f - uvData[i * uvStride + 1]};
+          }
+          auto [it, inserted] = uniqueVertices.insert({vertex, static_cast<uint32_t>(vertices.size())});
+          if (inserted) {
+            vertices.push_back(vertex);
+          }
+          localRemap[i] = it->second;
+        }
+
+        // --- Index data: read raw glTF indices and remap through localRemap ---
+        auto const& idxAccessor = model.accessors[primitive.indices];
+        auto const& idxView = model.bufferViews[idxAccessor.bufferView];
+        auto const* rawIdx = model.buffers[idxView.buffer].data.data() + idxView.byteOffset + idxAccessor.byteOffset;
+        for (size_t i = 0; i < idxAccessor.count; ++i) {
+          uint32_t rawIndex = 0;
+          if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+            rawIndex = reinterpret_cast<uint16_t const*>(rawIdx)[i];
+          } else if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+            rawIndex = reinterpret_cast<uint32_t const*>(rawIdx)[i];
+          } else if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+            rawIndex = reinterpret_cast<uint8_t const*>(rawIdx)[i];
+          }
+          indices.push_back(localRemap[rawIndex]);
+        }
       }
     }
+
     std::cout << "Model loaded: " << vertices.size() << " unique vertices, " << indices.size() << " indices\n";
   }
 

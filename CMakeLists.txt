@@ -9,11 +9,23 @@ find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(glm REQUIRED)
 
-# stb_image is a header-only library installed via libstb-dev
-find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
+# tinygltf is a header-only library installed via libtinygltf-dev
+find_path(TINYGLTF_INCLUDE_DIR tiny_gltf.h REQUIRED)
 
-# tinyobjloader is a header-only library installed via libtinyobjloader-dev
-find_path(TINYOBJ_INCLUDE_DIR tiny_obj_loader.h REQUIRED)
+# KTX-Software — provides libktx for loading KTX2 textures
+include(FetchContent)
+FetchContent_Declare(
+    ktx
+    GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
+    GIT_TAG        v4.3.2
+    GIT_SHALLOW    TRUE
+    GIT_CONFIG     "filter.lfs.smudge=;filter.lfs.required=false;filter.lfs.clean=;lfs.fetchexclude=*"
+)
+set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TOOLS ON CACHE BOOL "" FORCE)
+set(KTX_FEATURE_GL_UPLOAD OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_VK_UPLOAD OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(ktx)
 
 find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 
@@ -61,8 +73,11 @@ target_compile_definitions(pbr_renderer PRIVATE
     VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS
 )
 
-target_include_directories(pbr_renderer PRIVATE ${Vulkan_INCLUDE_DIRS} ${STB_INCLUDE_DIR} ${TINYOBJ_INCLUDE_DIR})
-target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm)
+# stb headers are under <stb/stb_image.h> on this system; tinygltf expects <stb_image.h>
+find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
+
+target_include_directories(pbr_renderer PRIVATE ${Vulkan_INCLUDE_DIRS} ${TINYGLTF_INCLUDE_DIR} ${STB_INCLUDE_DIR}/stb)
+target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm ktx)
 
 # Copy textures next to the binary so the app can find them at runtime
 add_custom_command(TARGET pbr_renderer POST_BUILD
