@@ -60,7 +60,21 @@ add_custom_command(TARGET shaders POST_BUILD
         "${CMAKE_SOURCE_DIR}/shaders/compiled"
 )
 
-add_executable(pbr_renderer main.cpp)
+add_executable(pbr_renderer
+    main.cpp
+    src/core/instance.cpp
+    src/core/device.cpp
+    src/core/swapchain.cpp
+    src/resources/buffer.cpp
+    src/resources/image.cpp
+    src/resources/texture.cpp
+    src/renderer/graphics_pipeline.cpp
+    src/renderer/descriptors.cpp
+    src/renderer/command_buffer.cpp
+    src/renderer/sync.cpp
+    src/compute/compute_pipeline.cpp
+    src/scene/model_loader.cpp
+)
 add_dependencies(pbr_renderer shaders)
 target_precompile_headers(pbr_renderer PRIVATE
     <vulkan/vulkan_raii.hpp>
@@ -76,7 +90,13 @@ target_compile_definitions(pbr_renderer PRIVATE
 # stb headers are under <stb/stb_image.h> on this system; tinygltf expects <stb_image.h>
 find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
 
-target_include_directories(pbr_renderer PRIVATE ${Vulkan_INCLUDE_DIRS} ${TINYGLTF_INCLUDE_DIR} ${STB_INCLUDE_DIR}/stb)
+target_include_directories(pbr_renderer PRIVATE
+    ${Vulkan_INCLUDE_DIRS}
+    ${TINYGLTF_INCLUDE_DIR}
+    ${STB_INCLUDE_DIR}/stb
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+)
 target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm ktx)
 
 # Copy textures next to the binary so the app can find them at runtime
