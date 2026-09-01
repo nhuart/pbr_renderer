@@ -117,10 +117,14 @@ void Renderer::createUniformBuffers() {
 }
 
 void Renderer::createShaderStorageBuffers() {
+    if (!scene.particles) return;
+
+    uint32_t particleCount = scene.particles->count;
+
     std::default_random_engine rndEngine(static_cast<unsigned>(time(nullptr)));
     std::uniform_real_distribution<float> rndDist(0.0f, 1.0f);
 
-    std::vector<Particle> particles(PARTICLE_COUNT);
+    std::vector<Particle> particles(particleCount);
     for (auto& particle: particles) {
         float radius = 0.25f * std::sqrt(rndDist(rndEngine));
         float theta = rndDist(rndEngine) * 2.0f * std::numbers::pi_v<float>;
@@ -133,7 +137,7 @@ void Renderer::createShaderStorageBuffers() {
                 glm::vec4(rndDist(rndEngine), rndDist(rndEngine), rndDist(rndEngine), 1.0f);
     }
 
-    vk::DeviceSize bufferSize = sizeof(Particle) * PARTICLE_COUNT;
+    vk::DeviceSize bufferSize = sizeof(Particle) * particleCount;
 
     auto [stagingBuffer, stagingMemory] = createBuffer(bufferSize,
             vk::BufferUsageFlagBits::eTransferSrc,
@@ -163,7 +167,7 @@ void Renderer::createShaderStorageBuffers() {
         computeUniformBuffersMemory.push_back(std::move(uboMemory));
     }
 
-    std::cout << "Shader storage buffers: " << PARTICLE_COUNT << " particles, "
+    std::cout << "Shader storage buffers: " << particleCount << " particles, "
               << MAX_FRAMES_IN_FLIGHT << " SSBO pairs\n";
 }
 
@@ -192,6 +196,8 @@ void Renderer::updateUniformBuffer() {
         memcpy(obj.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
     }
 
-    ComputeUBO cubo{ .deltaTime = deltaTime };
-    memcpy(computeUniformBuffersMapped[frameIndex], &cubo, sizeof(cubo));
+    if (scene.particles) {
+        ComputeUBO cubo{ .deltaTime = deltaTime };
+        memcpy(computeUniformBuffersMapped[frameIndex], &cubo, sizeof(cubo));
+    }
 }

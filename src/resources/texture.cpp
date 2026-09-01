@@ -9,8 +9,9 @@
 
 void Renderer::createTextureImage() {
     ktxTexture2* kTexture = nullptr;
-    KTX_error_code result = ktxTexture2_CreateFromNamedFile(TEXTURE_PATH.c_str(),
-            KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
+    KTX_error_code result =
+            ktxTexture2_CreateFromNamedFile(scene.meshInstances.front().texturePath.c_str(),
+                    KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
     if (result != KTX_SUCCESS) {
         throw std::runtime_error(
                 "failed to load KTX2 texture: " + std::string(ktxErrorString(result)));

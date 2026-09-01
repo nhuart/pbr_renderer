@@ -92,12 +92,12 @@ void Renderer::createComputeDescriptorSets() {
         vk::DescriptorBufferInfo ssboLastInfo{
             .buffer = *shaderStorageBuffers[prevFrame],
             .offset = 0,
-            .range = sizeof(Particle) * PARTICLE_COUNT,
+            .range = sizeof(Particle) * scene.particles->count,
         };
         vk::DescriptorBufferInfo ssboCurrInfo{
             .buffer = *shaderStorageBuffers[i],
             .offset = 0,
-            .range = sizeof(Particle) * PARTICLE_COUNT,
+            .range = sizeof(Particle) * scene.particles->count,
         };
         std::array<vk::WriteDescriptorSet, 3> writes{ {
             {

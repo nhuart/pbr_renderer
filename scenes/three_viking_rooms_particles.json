@@ -1,0 +1,26 @@
+{
+    "meshInstances": [
+        {
+            "gltf": "models/viking_room.glb",
+            "texture": "textures/viking_room.ktx2",
+            "position": [0.0, 0.0, 0.0]
+        },
+        {
+            "gltf": "models/viking_room.glb",
+            "texture": "textures/viking_room.ktx2",
+            "position": [-1.5, 0.0, 0.0],
+            "rotation": [0.0, 0.0, 45.0],
+            "scale": [0.75, 0.75, 0.75]
+        },
+        {
+            "gltf": "models/viking_room.glb",
+            "texture": "textures/viking_room.ktx2",
+            "position": [1.5, 0.0, 0.0],
+            "rotation": [0.0, 0.0, -45.0],
+            "scale": [0.75, 0.75, 0.75]
+        }
+    ],
+    "particles": {
+        "count": 8192
+    }
+}

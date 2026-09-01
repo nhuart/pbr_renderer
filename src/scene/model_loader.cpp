@@ -72,26 +72,27 @@ void Renderer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive c
 }
 
 void Renderer::loadModel() {
-    tinygltf::Model model;
-    tinygltf::TinyGLTF loader;
-    std::string warn;
-    std::string err;
+    std::unordered_map<std::string, bool> loaded;
 
-    bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, MODEL_PATH);
-    if (!warn.empty()) {
-        std::cerr << "glTF warning: " << warn << "\n";
-    }
-    if (!ret) {
-        throw std::runtime_error("failed to load glTF model: " + err);
-    }
+    for (auto const& inst: scene.meshInstances) {
+        if (loaded.contains(inst.gltfPath)) continue;
+        loaded[inst.gltfPath] = true;
 
-    std::unordered_map<Vertex, uint32_t> uniqueVertices;
-    for (auto const& mesh: model.meshes) {
-        for (auto const& primitive: mesh.primitives) {
-            loadPrimitive(model, primitive, uniqueVertices);
-        }
-    }
+        tinygltf::Model model;
+        tinygltf::TinyGLTF loader;
+        std::string warn;
+        std::string err;
 
-    std::cout << "Model loaded: " << vertices.size() << " unique vertices, " << indices.size()
-              << " indices\n";
+        bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, inst.gltfPath);
+        if (!warn.empty()) std::cerr << "glTF warning: " << warn << "\n";
+        if (!ret) throw std::runtime_error("failed to load glTF model: " + err);
+
+        std::unordered_map<Vertex, uint32_t> uniqueVertices;
+        for (auto const& mesh: model.meshes)
+            for (auto const& primitive: mesh.primitives)
+                loadPrimitive(model, primitive, uniqueVertices);
+
+        std::cout << "Model loaded (" << inst.gltfPath << "): " << vertices.size()
+                  << " unique vertices, " << indices.size() << " indices\n";
+    }
 }

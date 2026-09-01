@@ -26,14 +26,13 @@ void Renderer::createDescriptorSetLayout() {
 }
 
 void Renderer::setupGameObjects() {
-    gameObjects.resize(3);
-    gameObjects[0].position = { 0.0f, 0.0f, 0.0f };
-    gameObjects[1].position = { -1.5f, 0.0f, 0.0f };
-    gameObjects[1].rotation.z = glm::radians(45.0f);
-    gameObjects[1].scale = { 0.75f, 0.75f, 0.75f };
-    gameObjects[2].position = { 1.5f, 0.0f, 0.0f };
-    gameObjects[2].rotation.z = glm::radians(-45.0f);
-    gameObjects[2].scale = { 0.75f, 0.75f, 0.75f };
+    for (auto const& instance: scene.meshInstances) {
+        GameObject obj;
+        obj.position = instance.position;
+        obj.rotation = glm::radians(instance.rotation);
+        obj.scale = instance.scale;
+        gameObjects.push_back(std::move(obj));
+    }
     std::cout << "Game objects: " << gameObjects.size() << " created\n";
 }
 

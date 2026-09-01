@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <optional>
+#include <string>
 #include <vector>
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
@@ -17,13 +19,30 @@ import vulkan_hpp;
 // Constants
 // ---------------------------------------------------------------------------
 
-inline const std::string MODEL_PATH   = "models/viking_room.glb";
-inline const std::string TEXTURE_PATH = "textures/viking_room.ktx2";
-
-constexpr uint32_t WIDTH            = 800;
-constexpr uint32_t HEIGHT           = 600;
+constexpr uint32_t WIDTH                = 800;
+constexpr uint32_t HEIGHT               = 600;
 constexpr int      MAX_FRAMES_IN_FLIGHT = 2;
-constexpr uint32_t PARTICLE_COUNT   = 8192;
+
+// ---------------------------------------------------------------------------
+// Scene description (loaded from JSON)
+// ---------------------------------------------------------------------------
+
+struct MeshInstanceDesc {
+    std::string gltfPath;
+    std::string texturePath;
+    glm::vec3   position = {0.0f, 0.0f, 0.0f};
+    glm::vec3   rotation = {0.0f, 0.0f, 0.0f}; // degrees
+    glm::vec3   scale    = {1.0f, 1.0f, 1.0f};
+};
+
+struct ParticleSystemDesc {
+    uint32_t count = 8192;
+};
+
+struct Scene {
+    std::vector<MeshInstanceDesc>    meshInstances;
+    std::optional<ParticleSystemDesc> particles;
+};
 
 // ---------------------------------------------------------------------------
 // Vertex

@@ -55,10 +55,12 @@ void Renderer::createComputeCommandBuffers() {
 void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
     auto const& cmd = computeCommandBuffers[frameIdx];
     cmd.begin({});
-    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *computePipeline);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computePipelineLayout, 0,
-            *computeDescriptorSets[frameIdx], {});
-    cmd.dispatch(PARTICLE_COUNT / 256, 1, 1);
+    if (scene.particles) {
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *computePipeline);
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computePipelineLayout, 0,
+                *computeDescriptorSets[frameIdx], {});
+        cmd.dispatch(scene.particles->count / 256, 1, 1);
+    }
     cmd.end();
 }
 
@@ -138,9 +140,11 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         cmd.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     }
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline);
-    cmd.bindVertexBuffers(0, *shaderStorageBuffers[frameIndex], { vk::DeviceSize{ 0 } });
-    cmd.draw(PARTICLE_COUNT, 1, 0, 0);
+    if (scene.particles) {
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline);
+        cmd.bindVertexBuffers(0, *shaderStorageBuffers[frameIndex], { vk::DeviceSize{ 0 } });
+        cmd.draw(scene.particles->count, 1, 0, 0);
+    }
 
     cmd.endRendering();
 

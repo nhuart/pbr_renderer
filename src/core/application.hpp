@@ -12,6 +12,7 @@ import vulkan_hpp;
 #endif
 
 #include "scene/types.hpp"
+#include "scene/scene_loader.hpp"
 
 #include <unordered_map>
 
@@ -32,9 +33,14 @@ constexpr bool ENABLE_VALIDATION_LAYERS = true;
 
 class Renderer {
  public:
+  explicit Renderer(std::string scenePath) : scenePath(std::move(scenePath)) {}
   void run();
 
  private:
+  // --- Scene ---
+  std::string scenePath;
+  Scene   scene;
+
   // --- Window ---
   GLFWwindow* window = nullptr;
 

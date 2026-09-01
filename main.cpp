@@ -8,6 +8,7 @@
 #include "src/core/application.hpp"
 
 void Renderer::run() {
+    scene = loadScene(scenePath);
     initWindow();
     initVulkan();
     mainLoop();
@@ -34,10 +35,10 @@ void Renderer::initVulkan() {
     createSwapChain();
     createImageViews();
     createDescriptorSetLayout();
-    createComputeDescriptorSetLayout();
+    if (scene.particles) createComputeDescriptorSetLayout();
     createGraphicsPipeline();
-    createParticlePipeline();
-    createComputePipeline();
+    if (scene.particles) createParticlePipeline();
+    if (scene.particles) createComputePipeline();
     createCommandPool();
     createColorResources();
     createDepthResources();
@@ -49,12 +50,12 @@ void Renderer::initVulkan() {
     createIndexBuffer();
     setupGameObjects();
     createUniformBuffers();
-    createShaderStorageBuffers();
+    if (scene.particles) createShaderStorageBuffers();
     createDescriptorPool();
     createDescriptorSets();
-    createComputeDescriptorSets();
+    if (scene.particles) createComputeDescriptorSets();
     createCommandBuffers();
-    createComputeCommandBuffers();
+    if (scene.particles) createComputeCommandBuffers();
     createSyncObjects();
 }
 
@@ -72,9 +73,13 @@ void Renderer::cleanup() {
     glfwTerminate();
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        std::cerr << "usage: pbr_renderer <scene.json>\n";
+        return EXIT_FAILURE;
+    }
     try {
-        Renderer app;
+        Renderer app(argv[1]);
         app.run();
     } catch (const std::exception& e) {
         std::cerr << e.what() << "\n";

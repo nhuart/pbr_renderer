@@ -11,31 +11,37 @@ void Renderer::createSyncObjects() {
         presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
         inFlightFences.emplace_back(device,
                 vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
-        computeFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
-        computeInFlightFences.emplace_back(device,
-                vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
+        if (scene.particles) {
+            computeFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+            computeInFlightFences.emplace_back(device,
+                    vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
+        }
     }
 }
 
 void Renderer::drawFrame() {
     // --- Compute pass ---
-    std::ignore = device.waitForFences(*computeInFlightFences[frameIndex], vk::True,
-            std::numeric_limits<uint64_t>::max());
-    device.resetFences(*computeInFlightFences[frameIndex]);
+    if (scene.particles) {
+        std::ignore = device.waitForFences(*computeInFlightFences[frameIndex], vk::True,
+                std::numeric_limits<uint64_t>::max());
+        device.resetFences(*computeInFlightFences[frameIndex]);
+    }
 
     updateUniformBuffer();
 
-    computeCommandBuffers[frameIndex].reset();
-    recordComputeCommandBuffer(frameIndex);
+    if (scene.particles) {
+        computeCommandBuffers[frameIndex].reset();
+        recordComputeCommandBuffer(frameIndex);
 
-    vk::CommandBuffer computeCmdBuf = *computeCommandBuffers[frameIndex];
-    vk::SubmitInfo computeSubmitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = &computeCmdBuf,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &*computeFinishedSemaphores[frameIndex],
-    };
-    computeQueue.submit(computeSubmitInfo, *computeInFlightFences[frameIndex]);
+        vk::CommandBuffer computeCmdBuf = *computeCommandBuffers[frameIndex];
+        vk::SubmitInfo computeSubmitInfo{
+            .commandBufferCount = 1,
+            .pCommandBuffers = &computeCmdBuf,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &*computeFinishedSemaphores[frameIndex],
+        };
+        computeQueue.submit(computeSubmitInfo, *computeInFlightFences[frameIndex]);
+    }
 
     // --- Graphics pass ---
     std::ignore = device.waitForFences(*inFlightFences[frameIndex], vk::True,
@@ -58,11 +64,14 @@ void Renderer::drawFrame() {
     commandBuffers[frameIndex].reset();
     recordCommandBuffer(imageIndex);
 
-    std::array waitSemaphores = { *presentCompleteSemaphores[frameIndex],
-        *computeFinishedSemaphores[frameIndex] };
-    std::array<vk::PipelineStageFlags, 2> waitStages = {
-        vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eVertexInput
+    std::vector<vk::Semaphore> waitSemaphores = { *presentCompleteSemaphores[frameIndex] };
+    std::vector<vk::PipelineStageFlags> waitStages = {
+        vk::PipelineStageFlagBits::eColorAttachmentOutput
     };
+    if (scene.particles) {
+        waitSemaphores.push_back(*computeFinishedSemaphores[frameIndex]);
+        waitStages.push_back(vk::PipelineStageFlagBits::eVertexInput);
+    }
     vk::CommandBuffer cmdBuf = *commandBuffers[frameIndex];
     vk::SubmitInfo submitInfo{
         .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size()),
