@@ -68,18 +68,16 @@ add_custom_command(TARGET shaders POST_BUILD
 
 add_executable(pbr_renderer
     main.cpp
-    src/core/instance.cpp
-    src/core/device.cpp
+    src/core/context.cpp
     src/core/swapchain.cpp
-    src/resources/buffer.cpp
-    src/resources/image.cpp
-    src/resources/texture.cpp
-    src/renderer/graphics_pipeline.cpp
-    src/renderer/descriptors.cpp
-    src/renderer/command_buffer.cpp
-    src/renderer/sync.cpp
-    src/compute/compute_pipeline.cpp
-    src/scene/model_loader.cpp
+    src/core/command_service.cpp
+    src/core/resource_allocator.cpp
+    src/core/sync.cpp
+    src/renderer/renderer.cpp
+    src/renderer/texture_atlas.cpp
+    src/renderer/mesh_buffer.cpp
+    src/renderer/mesh_pipeline.cpp
+    src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )
 add_dependencies(pbr_renderer shaders)

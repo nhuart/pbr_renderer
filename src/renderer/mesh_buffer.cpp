@@ -3,19 +3,28 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
-#include "core/application.hpp"
+#include "renderer/mesh_buffer.hpp"
+#include "core/context.hpp"
+#include "core/command_service.hpp"
+#include "core/resource_allocator.hpp"
 
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
-#include <unordered_map>
 
-uint8_t const* Renderer::accessorData(tinygltf::Model const& model, tinygltf::Accessor const& acc) {
+MeshBuffer::MeshBuffer(VulkanContext const& ctx, CommandService const& cmds,
+        Scene const& scene) {
+    loadMeshes(scene);
+    uploadBuffers(ctx, cmds);
+}
+
+uint8_t const* MeshBuffer::accessorData(tinygltf::Model const& model,
+        tinygltf::Accessor const& acc) {
     auto const& bufView = model.bufferViews[acc.bufferView];
     return model.buffers[bufView.buffer].data.data() + bufView.byteOffset + acc.byteOffset;
 }
 
-void Renderer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
+void MeshBuffer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
         std::unordered_map<Vertex, uint32_t>& uniqueVertices) {
     auto const& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
     auto const& posView = model.bufferViews[posAccessor.bufferView];
@@ -45,7 +54,6 @@ void Renderer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive c
             float uvU = 0.0f, uvV = 0.0f;
             memcpy(&uvU, uvBytes + i * uvStride + 0 * sizeof(float), sizeof(float));
             memcpy(&uvV, uvBytes + i * uvStride + 1 * sizeof(float), sizeof(float));
-            // glTF UV origin is top-left (OpenGL convention); flip V for Vulkan.
             vertex.texCoord = { uvU, 1.0f - uvV };
         }
         auto [it, inserted] =
@@ -71,7 +79,7 @@ void Renderer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive c
     }
 }
 
-void Renderer::loadModel() {
+void MeshBuffer::loadMeshes(Scene const& scene) {
     std::unordered_map<std::string, bool> loaded;
 
     for (auto const& inst: scene.meshInstances) {
@@ -94,5 +102,44 @@ void Renderer::loadModel() {
 
         std::cout << "Model loaded (" << inst.gltfPath << "): " << vertices.size()
                   << " unique vertices, " << indices.size() << " indices\n";
+    }
+}
+
+void MeshBuffer::uploadBuffers(VulkanContext const& ctx, CommandService const& cmds) {
+    // Vertex buffer
+    {
+        vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+        auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, bufferSize,
+                vk::BufferUsageFlagBits::eTransferSrc,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                        vk::MemoryPropertyFlagBits::eHostCoherent);
+        void* data = stagingMemory.mapMemory(0, bufferSize);
+        memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
+        stagingMemory.unmapMemory();
+
+        auto [vbuf, vmem] = vkutil::createBuffer(ctx, bufferSize,
+                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                vk::MemoryPropertyFlagBits::eDeviceLocal);
+        vertexBuffer = std::move(vbuf);
+        vertexBufferMemory = std::move(vmem);
+        vkutil::copyBuffer(ctx, cmds.commandPool, stagingBuffer, vertexBuffer, bufferSize);
+    }
+    // Index buffer
+    {
+        vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+        auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, bufferSize,
+                vk::BufferUsageFlagBits::eTransferSrc,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                        vk::MemoryPropertyFlagBits::eHostCoherent);
+        void* data = stagingMemory.mapMemory(0, bufferSize);
+        memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
+        stagingMemory.unmapMemory();
+
+        auto [ibuf, imem] = vkutil::createBuffer(ctx, bufferSize,
+                vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                vk::MemoryPropertyFlagBits::eDeviceLocal);
+        indexBuffer = std::move(ibuf);
+        indexBufferMemory = std::move(imem);
+        vkutil::copyBuffer(ctx, cmds.commandPool, stagingBuffer, indexBuffer, bufferSize);
     }
 }
