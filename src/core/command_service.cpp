@@ -2,7 +2,8 @@
 #include "core/context.hpp"
 #include "scene/types.hpp"
 
-CommandService::CommandService(VulkanContext const& ctx) : ctx_(&ctx) {
+CommandService::CommandService(VulkanContext const& ctx)
+        : ctx_(&ctx) {
     commandPool = vk::raii::CommandPool(ctx.device,
             vk::CommandPoolCreateInfo{
                 .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -13,19 +14,19 @@ CommandService::CommandService(VulkanContext const& ctx) : ctx_(&ctx) {
 void CommandService::allocateCommandBuffers(VulkanContext const& ctx) {
     commandBuffers =
             vk::raii::CommandBuffers(ctx.device, vk::CommandBufferAllocateInfo{
-                                                      .commandPool = *commandPool,
-                                                      .level = vk::CommandBufferLevel::ePrimary,
-                                                      .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-                                                  });
+                                                     .commandPool = *commandPool,
+                                                     .level = vk::CommandBufferLevel::ePrimary,
+                                                     .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+                                                 });
 }
 
 void CommandService::allocateComputeCommandBuffers(VulkanContext const& ctx) {
     computeCommandBuffers =
             vk::raii::CommandBuffers(ctx.device, vk::CommandBufferAllocateInfo{
-                                                      .commandPool = *commandPool,
-                                                      .level = vk::CommandBufferLevel::ePrimary,
-                                                      .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-                                                  });
+                                                     .commandPool = *commandPool,
+                                                     .level = vk::CommandBufferLevel::ePrimary,
+                                                     .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+                                                 });
 }
 
 vk::raii::CommandBuffer CommandService::beginSingleTimeCommands() const {

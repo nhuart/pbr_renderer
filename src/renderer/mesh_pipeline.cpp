@@ -1,7 +1,7 @@
 #include "renderer/mesh_pipeline.hpp"
 #include "core/context.hpp"
-#include "core/swapchain.hpp"
 #include "core/resource_allocator.hpp"
+#include "core/swapchain.hpp"
 
 #include <array>
 #include <bit>
@@ -127,10 +127,10 @@ MeshPipeline::MeshPipeline(VulkanContext const& ctx, Swapchain const& swapchain)
 
     vk::DescriptorSetLayout dslHandle = *descriptorSetLayout;
     pipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                               .setLayoutCount = 1,
-                                                               .pSetLayouts = &dslHandle,
-                                                               .pushConstantRangeCount = 0,
-                                                           });
+                                                              .setLayoutCount = 1,
+                                                              .pSetLayouts = &dslHandle,
+                                                              .pushConstantRangeCount = 0,
+                                                          });
 
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>

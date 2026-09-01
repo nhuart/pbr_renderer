@@ -1,8 +1,8 @@
 #include "renderer/particle_pipeline.hpp"
-#include "core/context.hpp"
-#include "core/swapchain.hpp"
 #include "core/command_service.hpp"
+#include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "core/swapchain.hpp"
 
 #include <array>
 #include <bit>
@@ -45,8 +45,8 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
     for (auto& particle: particles) {
         float radius = 0.25f * std::sqrt(rndDist(rndEngine));
         float theta = rndDist(rndEngine) * 2.0f * std::numbers::pi_v<float>;
-        float posX = radius * std::cos(theta) * static_cast<float>(HEIGHT) /
-                     static_cast<float>(WIDTH);
+        float posX =
+                radius * std::cos(theta) * static_cast<float>(HEIGHT) / static_cast<float>(WIDTH);
         float posY = radius * std::sin(theta);
         particle.position = glm::vec2(posX, posY);
         particle.velocity = glm::normalize(glm::vec2(posX, posY)) * 0.00025f;
@@ -123,9 +123,9 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
     };
     vk::DescriptorSetLayout cdslHandle = *computeDescriptorSetLayout;
     computePipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                                      .setLayoutCount = 1,
-                                                                      .pSetLayouts = &cdslHandle,
-                                                                  });
+                                                                     .setLayoutCount = 1,
+                                                                     .pSetLayouts = &cdslHandle,
+                                                                 });
     computePipeline = vk::raii::Pipeline(ctx.device, nullptr,
             vk::ComputePipelineCreateInfo{
                 .stage = compStageInfo,
@@ -287,8 +287,8 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
     };
 
     particlePipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                                       .setLayoutCount = 0,
-                                                                   });
+                                                                      .setLayoutCount = 0,
+                                                                  });
 
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>

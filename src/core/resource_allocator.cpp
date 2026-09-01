@@ -37,11 +37,12 @@ std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(VulkanContext c
 void copyBuffer(VulkanContext const& ctx, vk::raii::CommandPool const& pool,
         vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size) {
     vk::raii::CommandBuffer cmd =
-            std::move(ctx.device.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-                                                            .commandPool = *pool,
-                                                            .level = vk::CommandBufferLevel::ePrimary,
-                                                            .commandBufferCount = 1,
-                                                        })
+            std::move(ctx.device
+                              .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                                  .commandPool = *pool,
+                                  .level = vk::CommandBufferLevel::ePrimary,
+                                  .commandBufferCount = 1,
+                              })
                               .front());
 
     cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
@@ -83,8 +84,7 @@ std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(VulkanContext con
     vk::raii::DeviceMemory imageMemory(ctx.device,
             vk::MemoryAllocateInfo{
                 .allocationSize = memRequirements.size,
-                .memoryTypeIndex =
-                        findMemoryType(ctx, memRequirements.memoryTypeBits, properties),
+                .memoryTypeIndex = findMemoryType(ctx, memRequirements.memoryTypeBits, properties),
             });
     image.bindMemory(*imageMemory, 0);
     return { std::move(image), std::move(imageMemory) };
@@ -101,9 +101,8 @@ vk::raii::ImageView createImageView(VulkanContext const& ctx, vk::Image image, v
             });
 }
 
-vk::Format findSupportedFormat(VulkanContext const& ctx,
-        std::vector<vk::Format> const& candidates, vk::ImageTiling tiling,
-        vk::FormatFeatureFlags features) {
+vk::Format findSupportedFormat(VulkanContext const& ctx, std::vector<vk::Format> const& candidates,
+        vk::ImageTiling tiling, vk::FormatFeatureFlags features) {
     for (vk::Format format: candidates) {
         vk::FormatProperties props = ctx.physicalDevice.getFormatProperties(format);
         if ((tiling == vk::ImageTiling::eLinear &&
@@ -125,8 +124,7 @@ vk::Format findDepthFormat(VulkanContext const& ctx) {
 void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image,
         vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess,
         vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 srcStage,
-        vk::PipelineStageFlags2 dstStage, vk::ImageAspectFlags aspectFlags,
-        uint32_t numMipLevels) {
+        vk::PipelineStageFlags2 dstStage, vk::ImageAspectFlags aspectFlags, uint32_t numMipLevels) {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = srcStage,
         .srcAccessMask = srcAccess,
@@ -249,4 +247,4 @@ void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cm
     });
 }
 
-}  // namespace vkutil
+} // namespace vkutil

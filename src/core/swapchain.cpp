@@ -28,18 +28,19 @@ void Swapchain::recreate(VulkanContext const& ctx, GLFWwindow* window) {
 }
 
 void Swapchain::cleanup() {
-    colorImageView   = nullptr;
-    colorImage       = nullptr;
+    colorImageView = nullptr;
+    colorImage = nullptr;
     colorImageMemory = nullptr;
-    depthImageView   = nullptr;
-    depthImage       = nullptr;
+    depthImageView = nullptr;
+    depthImage = nullptr;
     depthImageMemory = nullptr;
     imageViews.clear();
     swapChain = nullptr;
 }
 
 void Swapchain::create(VulkanContext const& ctx, GLFWwindow* window) {
-    vk::SurfaceCapabilitiesKHR capabilities = ctx.physicalDevice.getSurfaceCapabilitiesKHR(*ctx.surface);
+    vk::SurfaceCapabilitiesKHR capabilities =
+            ctx.physicalDevice.getSurfaceCapabilitiesKHR(*ctx.surface);
     auto availableFormats = ctx.physicalDevice.getSurfaceFormatsKHR(*ctx.surface);
     auto availablePresentModes = ctx.physicalDevice.getSurfacePresentModesKHR(*ctx.surface);
 
@@ -96,12 +97,12 @@ void Swapchain::create(VulkanContext const& ctx, GLFWwindow* window) {
 
     for (auto& image: images) {
         imageViews.push_back(vk::raii::ImageView(ctx.device,
-            vk::ImageViewCreateInfo{
-                .image = image,
-                .viewType = vk::ImageViewType::e2D,
-                .format = surfaceFormat.format,
-                .subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 },
-            }));
+                vk::ImageViewCreateInfo{
+                    .image = image,
+                    .viewType = vk::ImageViewType::e2D,
+                    .format = surfaceFormat.format,
+                    .subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 },
+                }));
     }
 
     std::cout << "Swap chain:\n";
@@ -113,27 +114,28 @@ void Swapchain::create(VulkanContext const& ctx, GLFWwindow* window) {
     std::cout << "Image views: " << imageViews.size() << " created\n";
 }
 
-static std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImageLocal(
-        VulkanContext const& ctx, uint32_t width, uint32_t height, uint32_t mipLevels,
-        vk::SampleCountFlagBits samples, vk::Format format, vk::ImageTiling tiling,
-        vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties) {
+static std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImageLocal(VulkanContext const& ctx,
+        uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits samples,
+        vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+        vk::MemoryPropertyFlags properties) {
     vk::raii::Image image(ctx.device, vk::ImageCreateInfo{
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = { width, height, 1 },
-        .mipLevels = mipLevels,
-        .arrayLayers = 1,
-        .samples = samples,
-        .tiling = tiling,
-        .usage = usage,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    });
+                                          .imageType = vk::ImageType::e2D,
+                                          .format = format,
+                                          .extent = { width, height, 1 },
+                                          .mipLevels = mipLevels,
+                                          .arrayLayers = 1,
+                                          .samples = samples,
+                                          .tiling = tiling,
+                                          .usage = usage,
+                                          .sharingMode = vk::SharingMode::eExclusive,
+                                          .initialLayout = vk::ImageLayout::eUndefined,
+                                      });
     vk::MemoryRequirements memReq = image.getMemoryRequirements();
-    vk::raii::DeviceMemory memory(ctx.device, vk::MemoryAllocateInfo{
-        .allocationSize = memReq.size,
-        .memoryTypeIndex = vkutil::findMemoryType(ctx, memReq.memoryTypeBits, properties),
-    });
+    vk::raii::DeviceMemory memory(ctx.device,
+            vk::MemoryAllocateInfo{
+                .allocationSize = memReq.size,
+                .memoryTypeIndex = vkutil::findMemoryType(ctx, memReq.memoryTypeBits, properties),
+            });
     image.bindMemory(*memory, 0);
     return { std::move(image), std::move(memory) };
 }
@@ -141,17 +143,18 @@ static std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImageLocal(
 static vk::raii::ImageView createImageViewLocal(VulkanContext const& ctx, vk::Image image,
         vk::Format format, vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
         uint32_t mipLevels = 1) {
-    return vk::raii::ImageView(ctx.device, vk::ImageViewCreateInfo{
-        .image = image,
-        .viewType = vk::ImageViewType::e2D,
-        .format = format,
-        .subresourceRange = { aspectFlags, 0, mipLevels, 0, 1 },
-    });
+    return vk::raii::ImageView(ctx.device,
+            vk::ImageViewCreateInfo{
+                .image = image,
+                .viewType = vk::ImageViewType::e2D,
+                .format = format,
+                .subresourceRange = { aspectFlags, 0, mipLevels, 0, 1 },
+            });
 }
 
 static vk::Format findDepthFormatLocal(VulkanContext const& ctx) {
-    for (vk::Format format: { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
-             vk::Format::eD24UnormS8Uint }) {
+    for (vk::Format format:
+            { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }) {
         vk::FormatProperties props = ctx.physicalDevice.getFormatProperties(format);
         if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment) ==
                 vk::FormatFeatureFlagBits::eDepthStencilAttachment) {
@@ -178,10 +181,12 @@ void Swapchain::createDepthResources(VulkanContext const& ctx) {
             vk::MemoryPropertyFlagBits::eDeviceLocal);
     depthImage = std::move(img);
     depthImageMemory = std::move(mem);
-    depthImageView = createImageViewLocal(ctx, *depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
+    depthImageView =
+            createImageViewLocal(ctx, *depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
 }
 
-vk::SurfaceFormatKHR Swapchain::chooseFormat(std::vector<vk::SurfaceFormatKHR> const& availableFormats) {
+vk::SurfaceFormatKHR Swapchain::chooseFormat(
+        std::vector<vk::SurfaceFormatKHR> const& availableFormats) {
     auto found = std::ranges::find_if(availableFormats, [](auto const& fmt) {
         return fmt.format == vk::Format::eB8G8R8A8Srgb &&
                fmt.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;

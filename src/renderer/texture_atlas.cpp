@@ -1,6 +1,6 @@
 #include "renderer/texture_atlas.hpp"
-#include "core/context.hpp"
 #include "core/command_service.hpp"
+#include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 
 #include <algorithm>
@@ -13,8 +13,8 @@
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
         std::string const& path) {
     ktxTexture2* kTexture = nullptr;
-    KTX_error_code result = ktxTexture2_CreateFromNamedFile(
-            path.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
+    KTX_error_code result = ktxTexture2_CreateFromNamedFile(path.c_str(),
+            KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
     if (result != KTX_SUCCESS) {
         throw std::runtime_error(
                 "failed to load KTX2 texture: " + std::string(ktxErrorString(result)));

@@ -11,7 +11,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-Renderer::Renderer(std::string scenePath) : scenePath_(std::move(scenePath)) {}
+Renderer::Renderer(std::string scenePath)
+        : scenePath_(std::move(scenePath)) {}
 
 void Renderer::run() {
     scene_ = loadScene(scenePath_);
@@ -105,8 +106,8 @@ void Renderer::updateUniforms() {
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count() * 1000.0f;
     lastTime = currentTime;
 
-    glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f),
-            glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::mat4 view =
+            glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     glm::mat4 proj = glm::perspective(glm::radians(45.0f),
             static_cast<float>(swapchain_->extent.width) /
                     static_cast<float>(swapchain_->extent.height),
@@ -219,8 +220,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     }
 
     if (scene_.particles) {
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                *particlePipeline_->particlePipeline);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline_->particlePipeline);
         cmd.bindVertexBuffers(0, *particlePipeline_->shaderStorageBuffers[frameIndex_],
                 { vk::DeviceSize{ 0 } });
         cmd.draw(scene_.particles->count, 1, 0, 0);
@@ -257,16 +257,15 @@ void Renderer::drawFrame() {
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &*sync_->computeFinishedSemaphores[frameIndex_],
         };
-        ctx_->computeQueue.submit(computeSubmitInfo,
-                *sync_->computeInFlightFences[frameIndex_]);
+        ctx_->computeQueue.submit(computeSubmitInfo, *sync_->computeInFlightFences[frameIndex_]);
     }
 
     std::ignore = ctx_->device.waitForFences(*sync_->inFlightFences[frameIndex_], vk::True,
             std::numeric_limits<uint64_t>::max());
 
-    auto [acquireResult, imageIndex] = swapchain_->swapChain.acquireNextImage(
-            std::numeric_limits<uint64_t>::max(),
-            *sync_->presentCompleteSemaphores[frameIndex_], nullptr);
+    auto [acquireResult, imageIndex] =
+            swapchain_->swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
+                    *sync_->presentCompleteSemaphores[frameIndex_], nullptr);
 
     if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
         recreateSwapchain();

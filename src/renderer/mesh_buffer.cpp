@@ -3,17 +3,16 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
-#include "renderer/mesh_buffer.hpp"
-#include "core/context.hpp"
 #include "core/command_service.hpp"
+#include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "renderer/mesh_buffer.hpp"
 
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 
-MeshBuffer::MeshBuffer(VulkanContext const& ctx, CommandService const& cmds,
-        Scene const& scene) {
+MeshBuffer::MeshBuffer(VulkanContext const& ctx, CommandService const& cmds, Scene const& scene) {
     loadMeshes(scene);
     uploadBuffers(ctx, cmds);
 }
@@ -109,10 +108,10 @@ void MeshBuffer::uploadBuffers(VulkanContext const& ctx, CommandService const& c
     // Vertex buffer
     {
         vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-        auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, bufferSize,
-                vk::BufferUsageFlagBits::eTransferSrc,
-                vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
+        auto [stagingBuffer, stagingMemory] =
+                vkutil::createBuffer(ctx, bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                        vk::MemoryPropertyFlagBits::eHostVisible |
+                                vk::MemoryPropertyFlagBits::eHostCoherent);
         void* data = stagingMemory.mapMemory(0, bufferSize);
         memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
         stagingMemory.unmapMemory();
@@ -127,10 +126,10 @@ void MeshBuffer::uploadBuffers(VulkanContext const& ctx, CommandService const& c
     // Index buffer
     {
         vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-        auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, bufferSize,
-                vk::BufferUsageFlagBits::eTransferSrc,
-                vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
+        auto [stagingBuffer, stagingMemory] =
+                vkutil::createBuffer(ctx, bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                        vk::MemoryPropertyFlagBits::eHostVisible |
+                                vk::MemoryPropertyFlagBits::eHostCoherent);
         void* data = stagingMemory.mapMemory(0, bufferSize);
         memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
         stagingMemory.unmapMemory();
