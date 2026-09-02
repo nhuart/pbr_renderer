@@ -51,8 +51,7 @@ void Renderer::initVulkan() {
     std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 
     mResources.emplace();
-    mMaterial.emplace(*mCtx, *mSwapchain,
-            static_cast<uint32_t>(mScene.meshInstances.size()));
+    mMaterial.emplace(*mCtx, *mSwapchain, static_cast<uint32_t>(mScene.meshInstances.size()));
     for (auto& ro: mRenderObjects) {
         auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);

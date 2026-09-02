@@ -11,7 +11,7 @@ import vulkan_hpp;
 struct VulkanContext;
 
 struct CommandService {
-    vk::raii::CommandPool                commandPool     = nullptr;
+    vk::raii::CommandPool commandPool = nullptr;
     std::vector<vk::raii::CommandBuffer> commandBuffers;
     std::vector<vk::raii::CommandBuffer> computeCommandBuffers;
 

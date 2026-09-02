@@ -16,10 +16,10 @@ struct Swapchain;
 struct TextureAtlas;
 
 struct MaterialInstance {
-    std::vector<vk::raii::Buffer>       uniformBuffers;
+    std::vector<vk::raii::Buffer> uniformBuffers;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
-    std::vector<void*>                  uniformBuffersMapped;
-    vk::raii::DescriptorSets            descriptorSets{nullptr};
+    std::vector<void*> uniformBuffersMapped;
+    vk::raii::DescriptorSets descriptorSets{ nullptr };
 
     MaterialInstance() = default;
     MaterialInstance(MaterialInstance&&) = default;
@@ -31,15 +31,15 @@ struct MaterialInstance {
 };
 
 struct Material {
-    vk::raii::DescriptorSetLayout descriptorSetLayout{nullptr};
-    vk::raii::PipelineLayout      pipelineLayout{nullptr};
-    vk::raii::DescriptorPool      descriptorPool{nullptr};
-    vk::raii::Pipeline            pipeline{nullptr};
+    vk::raii::DescriptorSetLayout descriptorSetLayout{ nullptr };
+    vk::raii::PipelineLayout pipelineLayout{ nullptr };
+    vk::raii::DescriptorPool descriptorPool{ nullptr };
+    vk::raii::Pipeline pipeline{ nullptr };
 
     Material(VulkanContext const& ctx, Swapchain const& swapchain, uint32_t maxInstances);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
-                                                   TextureAtlas const& texture) const;
+            TextureAtlas const& texture) const;
 
 private:
     static std::vector<char> readFile(std::string const& path);

@@ -1,8 +1,8 @@
 #include "renderer/material.hpp"
-#include "renderer/texture_atlas.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "renderer/texture_atlas.hpp"
 
 #include <array>
 #include <bit>
@@ -59,7 +59,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain, uint32_
     // Descriptor pool sized for all instances upfront
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
-        { .type = vk::DescriptorType::eUniformBuffer,       .descriptorCount = setCount },
+        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount },
         { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount },
     } };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,

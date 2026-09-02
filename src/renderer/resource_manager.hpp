@@ -10,13 +10,12 @@ struct VulkanContext;
 struct CommandService;
 
 struct ResourceManager {
-    TextureAtlas const& getTexture(VulkanContext const& ctx,
-                                   CommandService const& cmds,
-                                   std::string const& path) {
+    TextureAtlas const& getTexture(VulkanContext const& ctx, CommandService const& cmds,
+            std::string const& path) {
         auto it = mTextures.find(path);
         if (it != mTextures.end()) return *it->second;
-        auto [inserted, ok] = mTextures.emplace(path,
-                std::make_unique<TextureAtlas>(ctx, cmds, path));
+        auto [inserted, ok] =
+                mTextures.emplace(path, std::make_unique<TextureAtlas>(ctx, cmds, path));
         return *inserted->second;
     }
 
