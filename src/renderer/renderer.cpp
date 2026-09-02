@@ -28,6 +28,9 @@ void Renderer::initWindow() {
     mWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(mWindow, this);
     glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
+    glfwSetMouseButtonCallback(mWindow, mouseButtonCallback);
+    glfwSetCursorPosCallback(mWindow, cursorPosCallback);
+    glfwSetScrollCallback(mWindow, scrollCallback);
 }
 
 void Renderer::initVulkan() {
@@ -84,6 +87,23 @@ void Renderer::cleanup() {
 void Renderer::framebufferResizeCallback(GLFWwindow* window, int /*width*/, int /*height*/) {
     auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
     app->mFramebufferResized = true;
+}
+
+void Renderer::mouseButtonCallback(GLFWwindow* window, int button, int action, int /*mods*/) {
+    auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    double x{}, y{};
+    glfwGetCursorPos(window, &x, &y);
+    app->mOrbitControls.mouseButton(button, action, x, y);
+}
+
+void Renderer::cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+    auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    app->mOrbitControls.mouseMove(app->mCamera, xpos, ypos);
+}
+
+void Renderer::scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
+    auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    app->mOrbitControls.scroll(app->mCamera, yoffset);
 }
 
 void Renderer::recreateSwapchain() {
