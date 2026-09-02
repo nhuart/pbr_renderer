@@ -22,5 +22,5 @@ struct CommandService {
     void endSingleTimeCommands(vk::raii::CommandBuffer cmd) const;
 
 private:
-    VulkanContext const* ctx_ = nullptr;
+    VulkanContext const* mCtx = nullptr;
 };

@@ -12,10 +12,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 Renderer::Renderer(std::string scenePath)
-        : scenePath_(std::move(scenePath)) {}
+        : mScenePath(std::move(scenePath)) {}
 
 void Renderer::run() {
-    scene_ = loadScene(scenePath_);
+    mScene = loadScene(mScenePath);
     initWindow();
     initVulkan();
     mainLoop();
@@ -26,32 +26,32 @@ void Renderer::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    window_ = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-    glfwSetWindowUserPointer(window_, this);
-    glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
+    mWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(mWindow, this);
+    glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
 }
 
 void Renderer::initVulkan() {
-    ctx_.emplace(window_);
-    swapchain_.emplace(*ctx_, window_);
-    cmds_.emplace(*ctx_);
-    cmds_->allocateCommandBuffers(*ctx_);
+    mCtx.emplace(mWindow);
+    mSwapchain.emplace(*mCtx, mWindow);
+    mCmds.emplace(*mCtx);
+    mCmds->allocateCommandBuffers(*mCtx);
 
-    for (auto const& inst: scene_.meshInstances) {
+    for (auto const& inst: mScene.meshInstances) {
         GameObject obj;
         obj.position = inst.position;
         obj.rotation = glm::radians(inst.rotation);
         obj.scale = inst.scale;
-        gameObjects_.push_back(std::move(obj));
+        mGameObjects.push_back(std::move(obj));
     }
-    std::cout << "Game objects: " << gameObjects_.size() << " created\n";
+    std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 
-    texture_.emplace(*ctx_, *cmds_, scene_.meshInstances.front().texturePath);
-    meshBuffer_.emplace(*ctx_, *cmds_, scene_);
+    mTexture.emplace(*mCtx, *mCmds, mScene.meshInstances.front().texturePath);
+    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
-    for (auto& obj: gameObjects_) {
+    for (auto& obj: mGameObjects) {
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            auto [buf, mem] = vkutil::createBuffer(*ctx_, sizeof(UniformBufferObject),
+            auto [buf, mem] = vkutil::createBuffer(*mCtx, sizeof(UniformBufferObject),
                     vk::BufferUsageFlagBits::eUniformBuffer,
                     vk::MemoryPropertyFlagBits::eHostVisible |
                             vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -61,41 +61,41 @@ void Renderer::initVulkan() {
         }
     }
 
-    meshPipeline_.emplace(*ctx_, *swapchain_);
-    meshPipeline_->allocateDescriptorSets(*ctx_, gameObjects_, *texture_->sampler,
-            *texture_->imageView);
+    mMeshPipeline.emplace(*mCtx, *mSwapchain);
+    mMeshPipeline->allocateDescriptorSets(*mCtx, mGameObjects, *mTexture->sampler,
+            *mTexture->imageView);
 
-    if (scene_.particles) {
-        particlePipeline_.emplace(*ctx_, *swapchain_, *cmds_, *scene_.particles);
-        cmds_->allocateComputeCommandBuffers(*ctx_);
+    if (mScene.particles) {
+        mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
+        mCmds->allocateComputeCommandBuffers(*mCtx);
     }
 
-    sync_.emplace(*ctx_, static_cast<uint32_t>(swapchain_->images.size()),
-            scene_.particles.has_value());
+    mSync.emplace(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()),
+            mScene.particles.has_value());
 }
 
 void Renderer::mainLoop() {
-    while (!glfwWindowShouldClose(window_)) {
+    while (!glfwWindowShouldClose(mWindow)) {
         glfwPollEvents();
         drawFrame();
     }
-    ctx_->device.waitIdle();
+    mCtx->device.waitIdle();
 }
 
 void Renderer::cleanup() {
-    glfwDestroyWindow(window_);
+    glfwDestroyWindow(mWindow);
     glfwTerminate();
 }
 
 void Renderer::framebufferResizeCallback(GLFWwindow* window, int /*width*/, int /*height*/) {
     auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
-    app->framebufferResized_ = true;
+    app->mFramebufferResized = true;
 }
 
 void Renderer::recreateSwapchain() {
-    ctx_->device.waitIdle();
-    swapchain_->recreate(*ctx_, window_);
-    sync_->recreatePresent(*ctx_, static_cast<uint32_t>(swapchain_->images.size()));
+    mCtx->device.waitIdle();
+    mSwapchain->recreate(*mCtx, mWindow);
+    mSync->recreatePresent(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()));
 }
 
 void Renderer::updateUniforms() {
@@ -109,57 +109,57 @@ void Renderer::updateUniforms() {
     glm::mat4 view =
             glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     glm::mat4 proj = glm::perspective(glm::radians(45.0f),
-            static_cast<float>(swapchain_->extent.width) /
-                    static_cast<float>(swapchain_->extent.height),
+            static_cast<float>(mSwapchain->extent.width) /
+                    static_cast<float>(mSwapchain->extent.height),
             0.1f, 10.0f);
     proj[1][1] *= -1;
 
-    for (auto& obj: gameObjects_) {
+    for (auto& obj: mGameObjects) {
         obj.rotation.z = time * glm::radians(15.0f);
         UniformBufferObject ubo{
             .model = obj.getModelMatrix(),
             .view = view,
             .proj = proj,
         };
-        memcpy(obj.uniformBuffersMapped[frameIndex_], &ubo, sizeof(ubo));
+        memcpy(obj.uniformBuffersMapped[mFrameIndex], &ubo, sizeof(ubo));
     }
 
-    if (scene_.particles) {
+    if (mScene.particles) {
         ComputeUBO cubo{ .deltaTime = deltaTime };
-        memcpy(particlePipeline_->computeUniformBuffersMapped[frameIndex_], &cubo, sizeof(cubo));
+        memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
     }
 }
 
 void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
-    auto const& cmd = cmds_->computeCommandBuffers[frameIdx];
+    auto const& cmd = mCmds->computeCommandBuffers[frameIdx];
     cmd.begin({});
-    if (scene_.particles) {
-        cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *particlePipeline_->computePipeline);
+    if (mScene.particles) {
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *mParticlePipeline->computePipeline);
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                *particlePipeline_->computePipelineLayout, 0,
-                *particlePipeline_->computeDescriptorSets[frameIdx], {});
-        cmd.dispatch(scene_.particles->count / 256, 1, 1);
+                *mParticlePipeline->computePipelineLayout, 0,
+                *mParticlePipeline->computeDescriptorSets[frameIdx], {});
+        cmd.dispatch(mScene.particles->count / 256, 1, 1);
     }
     cmd.end();
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex) {
-    auto const& cmd = cmds_->commandBuffers[frameIndex_];
+    auto const& cmd = mCmds->commandBuffers[mFrameIndex];
     cmd.begin({});
 
-    vkutil::transitionImageLayout(cmd, swapchain_->images[imageIndex], vk::ImageLayout::eUndefined,
+    vkutil::transitionImageLayout(cmd, mSwapchain->images[imageIndex], vk::ImageLayout::eUndefined,
             vk::ImageLayout::eColorAttachmentOptimal, {},
             vk::AccessFlagBits2::eColorAttachmentWrite,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput);
 
-    vkutil::transitionImageLayout(cmd, *swapchain_->colorImage, vk::ImageLayout::eUndefined,
+    vkutil::transitionImageLayout(cmd, *mSwapchain->colorImage, vk::ImageLayout::eUndefined,
             vk::ImageLayout::eColorAttachmentOptimal, {},
             vk::AccessFlagBits2::eColorAttachmentWrite,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput);
 
-    vkutil::transitionImageLayout(cmd, *swapchain_->depthImage, vk::ImageLayout::eUndefined,
+    vkutil::transitionImageLayout(cmd, *mSwapchain->depthImage, vk::ImageLayout::eUndefined,
             vk::ImageLayout::eDepthAttachmentOptimal,
             vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
             vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -171,10 +171,10 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vk::ClearValue clearColor = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f };
     vk::RenderingAttachmentInfo colorAttachmentInfo{
-        .imageView = *swapchain_->colorImageView,
+        .imageView = *mSwapchain->colorImageView,
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .resolveMode = vk::ResolveModeFlagBits::eAverage,
-        .resolveImageView = *swapchain_->imageViews[imageIndex],
+        .resolveImageView = *mSwapchain->imageViews[imageIndex],
         .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eDontCare,
@@ -182,14 +182,14 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     };
     vk::ClearValue clearDepth = vk::ClearDepthStencilValue{ 1.0f, 0 };
     vk::RenderingAttachmentInfo depthAttachmentInfo{
-        .imageView = *swapchain_->depthImageView,
+        .imageView = *mSwapchain->depthImageView,
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eDontCare,
         .clearValue = clearDepth,
     };
     vk::RenderingInfo renderingInfo{
-        .renderArea = { .offset = { 0, 0 }, .extent = swapchain_->extent },
+        .renderArea = { .offset = { 0, 0 }, .extent = mSwapchain->extent },
         .layerCount = 1,
         .colorAttachmentCount = 1,
         .pColorAttachments = &colorAttachmentInfo,
@@ -198,37 +198,37 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     cmd.beginRendering(renderingInfo);
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *meshPipeline_->pipeline);
-    cmd.bindVertexBuffers(0, *meshBuffer_->vertexBuffer, { vk::DeviceSize{ 0 } });
-    cmd.bindIndexBuffer(*meshBuffer_->indexBuffer, 0, vk::IndexType::eUint32);
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mMeshPipeline->pipeline);
+    cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
+    cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
 
     vk::Viewport viewport{
         .x = 0.0f,
         .y = 0.0f,
-        .width = static_cast<float>(swapchain_->extent.width),
-        .height = static_cast<float>(swapchain_->extent.height),
+        .width = static_cast<float>(mSwapchain->extent.width),
+        .height = static_cast<float>(mSwapchain->extent.height),
         .minDepth = 0.0f,
         .maxDepth = 1.0f,
     };
     cmd.setViewport(0, viewport);
-    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = swapchain_->extent });
+    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = mSwapchain->extent });
 
-    for (auto const& obj: gameObjects_) {
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *meshPipeline_->pipelineLayout, 0,
-                *obj.descriptorSets[frameIndex_], {});
-        cmd.drawIndexed(static_cast<uint32_t>(meshBuffer_->indices.size()), 1, 0, 0, 0);
+    for (auto const& obj: mGameObjects) {
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mMeshPipeline->pipelineLayout, 0,
+                *obj.descriptorSets[mFrameIndex], {});
+        cmd.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1, 0, 0, 0);
     }
 
-    if (scene_.particles) {
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline_->particlePipeline);
-        cmd.bindVertexBuffers(0, *particlePipeline_->shaderStorageBuffers[frameIndex_],
+    if (mScene.particles) {
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mParticlePipeline->particlePipeline);
+        cmd.bindVertexBuffers(0, *mParticlePipeline->shaderStorageBuffers[mFrameIndex],
                 { vk::DeviceSize{ 0 } });
-        cmd.draw(scene_.particles->count, 1, 0, 0);
+        cmd.draw(mScene.particles->count, 1, 0, 0);
     }
 
     cmd.endRendering();
 
-    vkutil::transitionImageLayout(cmd, swapchain_->images[imageIndex],
+    vkutil::transitionImageLayout(cmd, mSwapchain->images[imageIndex],
             vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
             vk::AccessFlagBits2::eColorAttachmentWrite, {},
             vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -238,34 +238,34 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 }
 
 void Renderer::drawFrame() {
-    if (scene_.particles) {
-        std::ignore = ctx_->device.waitForFences(*sync_->computeInFlightFences[frameIndex_],
+    if (mScene.particles) {
+        std::ignore = mCtx->device.waitForFences(*mSync->computeInFlightFences[mFrameIndex],
                 vk::True, std::numeric_limits<uint64_t>::max());
-        ctx_->device.resetFences(*sync_->computeInFlightFences[frameIndex_]);
+        mCtx->device.resetFences(*mSync->computeInFlightFences[mFrameIndex]);
     }
 
     updateUniforms();
 
-    if (scene_.particles) {
-        cmds_->computeCommandBuffers[frameIndex_].reset();
-        recordComputeCommandBuffer(frameIndex_);
+    if (mScene.particles) {
+        mCmds->computeCommandBuffers[mFrameIndex].reset();
+        recordComputeCommandBuffer(mFrameIndex);
 
-        vk::CommandBuffer computeCmdBuf = *cmds_->computeCommandBuffers[frameIndex_];
+        vk::CommandBuffer computeCmdBuf = *mCmds->computeCommandBuffers[mFrameIndex];
         vk::SubmitInfo computeSubmitInfo{
             .commandBufferCount = 1,
             .pCommandBuffers = &computeCmdBuf,
             .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &*sync_->computeFinishedSemaphores[frameIndex_],
+            .pSignalSemaphores = &*mSync->computeFinishedSemaphores[mFrameIndex],
         };
-        ctx_->computeQueue.submit(computeSubmitInfo, *sync_->computeInFlightFences[frameIndex_]);
+        mCtx->computeQueue.submit(computeSubmitInfo, *mSync->computeInFlightFences[mFrameIndex]);
     }
 
-    std::ignore = ctx_->device.waitForFences(*sync_->inFlightFences[frameIndex_], vk::True,
+    std::ignore = mCtx->device.waitForFences(*mSync->inFlightFences[mFrameIndex], vk::True,
             std::numeric_limits<uint64_t>::max());
 
     auto [acquireResult, imageIndex] =
-            swapchain_->swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
-                    *sync_->presentCompleteSemaphores[frameIndex_], nullptr);
+            mSwapchain->swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
+                    *mSync->presentCompleteSemaphores[mFrameIndex], nullptr);
 
     if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
         recreateSwapchain();
@@ -275,20 +275,20 @@ void Renderer::drawFrame() {
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    ctx_->device.resetFences(*sync_->inFlightFences[frameIndex_]);
+    mCtx->device.resetFences(*mSync->inFlightFences[mFrameIndex]);
 
-    cmds_->commandBuffers[frameIndex_].reset();
+    mCmds->commandBuffers[mFrameIndex].reset();
     recordCommandBuffer(imageIndex);
 
-    std::vector<vk::Semaphore> waitSemaphores = { *sync_->presentCompleteSemaphores[frameIndex_] };
+    std::vector<vk::Semaphore> waitSemaphores = { *mSync->presentCompleteSemaphores[mFrameIndex] };
     std::vector<vk::PipelineStageFlags> waitStages = {
         vk::PipelineStageFlagBits::eColorAttachmentOutput
     };
-    if (scene_.particles) {
-        waitSemaphores.push_back(*sync_->computeFinishedSemaphores[frameIndex_]);
+    if (mScene.particles) {
+        waitSemaphores.push_back(*mSync->computeFinishedSemaphores[mFrameIndex]);
         waitStages.push_back(vk::PipelineStageFlagBits::eVertexInput);
     }
-    vk::CommandBuffer cmdBuf = *cmds_->commandBuffers[frameIndex_];
+    vk::CommandBuffer cmdBuf = *mCmds->commandBuffers[mFrameIndex];
     vk::SubmitInfo submitInfo{
         .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size()),
         .pWaitSemaphores = waitSemaphores.data(),
@@ -296,26 +296,26 @@ void Renderer::drawFrame() {
         .commandBufferCount = 1,
         .pCommandBuffers = &cmdBuf,
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &*sync_->renderFinishedSemaphores[imageIndex],
+        .pSignalSemaphores = &*mSync->renderFinishedSemaphores[imageIndex],
     };
-    ctx_->graphicsQueue.submit(submitInfo, *sync_->inFlightFences[frameIndex_]);
+    mCtx->graphicsQueue.submit(submitInfo, *mSync->inFlightFences[mFrameIndex]);
 
-    vk::SwapchainKHR swapChainHandle = *swapchain_->swapChain;
+    vk::SwapchainKHR swapChainHandle = *mSwapchain->swapChain;
     vk::PresentInfoKHR presentInfo{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &*sync_->renderFinishedSemaphores[imageIndex],
+        .pWaitSemaphores = &*mSync->renderFinishedSemaphores[imageIndex],
         .swapchainCount = 1,
         .pSwapchains = &swapChainHandle,
         .pImageIndices = &imageIndex,
     };
-    vk::Result presentResult = ctx_->graphicsQueue.presentKHR(presentInfo);
+    vk::Result presentResult = mCtx->graphicsQueue.presentKHR(presentInfo);
     if (presentResult == vk::Result::eErrorOutOfDateKHR ||
-            presentResult == vk::Result::eSuboptimalKHR || framebufferResized_) {
-        framebufferResized_ = false;
+            presentResult == vk::Result::eSuboptimalKHR || mFramebufferResized) {
+        mFramebufferResized = false;
         recreateSwapchain();
     } else if (presentResult != vk::Result::eSuccess) {
         throw std::runtime_error("failed to present swap chain image!");
     }
 
-    frameIndex_ = (frameIndex_ + 1) % MAX_FRAMES_IN_FLIGHT;
+    mFrameIndex = (mFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 }
