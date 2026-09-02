@@ -28,6 +28,9 @@ void Renderer::initWindow() {
     mWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(mWindow, this);
     glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
+    glfwSetMouseButtonCallback(mWindow, mouseButtonCallback);
+    glfwSetCursorPosCallback(mWindow, cursorPosCallback);
+    glfwSetScrollCallback(mWindow, scrollCallback);
 }
 
 void Renderer::initVulkan() {
@@ -86,6 +89,23 @@ void Renderer::framebufferResizeCallback(GLFWwindow* window, int /*width*/, int 
     app->mFramebufferResized = true;
 }
 
+void Renderer::mouseButtonCallback(GLFWwindow* window, int button, int action, int /*mods*/) {
+    auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    double x{}, y{};
+    glfwGetCursorPos(window, &x, &y);
+    app->mOrbitControls.mouseButton(button, action, x, y);
+}
+
+void Renderer::cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+    auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    app->mOrbitControls.mouseMove(app->mCamera, xpos, ypos);
+}
+
+void Renderer::scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
+    auto* app = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    app->mOrbitControls.scroll(app->mCamera, yoffset);
+}
+
 void Renderer::recreateSwapchain() {
     mCtx->device.waitIdle();
     mSwapchain->recreate(*mCtx, mWindow);
@@ -93,10 +113,8 @@ void Renderer::recreateSwapchain() {
 }
 
 void Renderer::updateUniforms() {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    static auto lastTime = startTime;
+    static auto lastTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float>(currentTime - startTime).count();
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count() * 1000.0f;
     lastTime = currentTime;
 
@@ -106,8 +124,7 @@ void Renderer::updateUniforms() {
     glm::mat4 proj = mCamera.projMatrix(aspect);
 
     for (auto& ro: mRenderObjects) {
-        auto& obj = mGameObjects[ro.gameObjectIndex];
-        obj.rotation.z = time * glm::radians(15.0f);
+        auto const& obj = mGameObjects[ro.gameObjectIndex];
         UniformBufferObject ubo{
             .model = obj.getModelMatrix(),
             .view = view,
@@ -161,7 +178,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                     vk::PipelineStageFlagBits2::eLateFragmentTests,
             vk::ImageAspectFlagBits::eDepth);
 
-    vk::ClearValue clearColor = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f };
+    vk::ClearValue clearColor = vk::ClearColorValue{ 1.0f, 1.0f, 1.0f, 1.0f };
     vk::RenderingAttachmentInfo colorAttachmentInfo{
         .imageView = *mSwapchain->colorImageView,
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,

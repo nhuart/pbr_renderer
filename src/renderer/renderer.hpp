@@ -13,6 +13,7 @@
 #include "core/sync.hpp"
 #include "renderer/camera.hpp"
 #include "renderer/mesh_buffer.hpp"
+#include "renderer/orbit_controls.hpp"
 #include "renderer/particle_pipeline.hpp"
 #include "renderer/render_object.hpp"
 #include "renderer/resource_manager.hpp"
@@ -28,6 +29,7 @@ private:
     std::string mScenePath;
     Scene mScene;
     Camera mCamera;
+    OrbitControls mOrbitControls;
     GLFWwindow* mWindow = nullptr;
     uint32_t mFrameIndex = 0;
     bool mFramebufferResized = false;
@@ -53,4 +55,7 @@ private:
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
+    static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+    static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
+    static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 };

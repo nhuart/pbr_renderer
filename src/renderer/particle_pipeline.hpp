@@ -30,7 +30,7 @@ struct ParticlePipeline {
     std::vector<void*> computeUniformBuffersMapped;
 
     ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-            CommandService const& cmds, ParticleSystemDesc const& desc);
+            CommandService const& cmds, ParticleSystem const& particleSystem);
 
 private:
     static std::vector<char> readFile(std::string const& path);

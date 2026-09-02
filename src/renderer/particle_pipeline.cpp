@@ -34,8 +34,8 @@ vk::raii::ShaderModule ParticlePipeline::createShaderModule(VulkanContext const&
 }
 
 ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-        CommandService const& cmds, ParticleSystemDesc const& desc) {
-    uint32_t particleCount = desc.count;
+        CommandService const& cmds, ParticleSystem const& particleSystem) {
+    uint32_t particleCount = particleSystem.count;
 
     // --- SSBO ---
     std::default_random_engine rndEngine(static_cast<unsigned>(time(nullptr)));
@@ -232,11 +232,11 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
         .pDynamicStates = dynamicStates.data(),
     };
 
-    auto bindingDesc = Particle::getBindingDescription();
+    auto particlesBinding = Particle::getBindingDescription();
     auto attrDescs = Particle::getAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
         .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &bindingDesc,
+        .pVertexBindingDescriptions = &particlesBinding,
         .vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size()),
         .pVertexAttributeDescriptions = attrDescs.data(),
     };
