@@ -178,7 +178,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                     vk::PipelineStageFlagBits2::eLateFragmentTests,
             vk::ImageAspectFlagBits::eDepth);
 
-    vk::ClearValue clearColor = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f };
+    vk::ClearValue clearColor = vk::ClearColorValue{ 1.0f, 1.0f, 1.0f, 1.0f };
     vk::RenderingAttachmentInfo colorAttachmentInfo{
         .imageView = *mSwapchain->colorImageView,
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,

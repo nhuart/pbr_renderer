@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include <vulkan/vulkan_raii.hpp>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/hash.hpp>
@@ -21,7 +23,7 @@ constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 // Scene description (loaded from JSON)
 // ---------------------------------------------------------------------------
 
-struct MeshInstanceDesc {
+struct MeshInstance {
     std::string gltfPath;
     std::string texturePath;
     glm::vec3 position = { 0.0f, 0.0f, 0.0f };
@@ -29,13 +31,13 @@ struct MeshInstanceDesc {
     glm::vec3 scale = { 1.0f, 1.0f, 1.0f };
 };
 
-struct ParticleSystemDesc {
+struct ParticleSystem {
     uint32_t count = 8192;
 };
 
 struct Scene {
-    std::vector<MeshInstanceDesc> meshInstances;
-    std::optional<ParticleSystemDesc> particles;
+    std::vector<MeshInstance> meshInstances;
+    std::optional<ParticleSystem> particles;
 };
 
 // ---------------------------------------------------------------------------
