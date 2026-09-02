@@ -93,10 +93,8 @@ void Renderer::recreateSwapchain() {
 }
 
 void Renderer::updateUniforms() {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    static auto lastTime = startTime;
+    static auto lastTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float>(currentTime - startTime).count();
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count() * 1000.0f;
     lastTime = currentTime;
 
@@ -106,8 +104,7 @@ void Renderer::updateUniforms() {
     glm::mat4 proj = mCamera.projMatrix(aspect);
 
     for (auto& ro: mRenderObjects) {
-        auto& obj = mGameObjects[ro.gameObjectIndex];
-        obj.rotation.z = time * glm::radians(15.0f);
+        auto const& obj = mGameObjects[ro.gameObjectIndex];
         UniformBufferObject ubo{
             .model = obj.getModelMatrix(),
             .view = view,
