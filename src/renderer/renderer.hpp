@@ -7,16 +7,17 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include "scene/types.hpp"
-#include "scene/scene_loader.hpp"
+#include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/swapchain.hpp"
-#include "core/command_service.hpp"
 #include "core/sync.hpp"
-#include "renderer/texture_atlas.hpp"
+#include "renderer/camera.hpp"
 #include "renderer/mesh_buffer.hpp"
-#include "renderer/mesh_pipeline.hpp"
 #include "renderer/particle_pipeline.hpp"
+#include "renderer/render_object.hpp"
+#include "renderer/resource_manager.hpp"
+#include "scene/scene_loader.hpp"
+#include "scene/types.hpp"
 
 class Renderer {
 public:
@@ -24,21 +25,23 @@ public:
     void run();
 
 private:
-    std::string scenePath_;
-    Scene       scene_;
-    GLFWwindow* window_             = nullptr;
-    uint32_t    frameIndex_         = 0;
-    bool        framebufferResized_ = false;
+    std::string mScenePath;
+    Scene mScene;
+    Camera mCamera;
+    GLFWwindow* mWindow = nullptr;
+    uint32_t mFrameIndex = 0;
+    bool mFramebufferResized = false;
 
-    std::optional<VulkanContext>    ctx_;
-    std::optional<Swapchain>        swapchain_;
-    std::optional<CommandService>   cmds_;
-    std::optional<SyncObjects>      sync_;
-    std::optional<TextureAtlas>     texture_;
-    std::optional<MeshBuffer>       meshBuffer_;
-    std::optional<MeshPipeline>     meshPipeline_;
-    std::optional<ParticlePipeline> particlePipeline_;
-    std::vector<GameObject>         gameObjects_;
+    std::optional<VulkanContext> mCtx;
+    std::optional<Swapchain> mSwapchain;
+    std::optional<CommandService> mCmds;
+    std::optional<SyncObjects> mSync;
+    std::optional<ResourceManager> mResources;
+    std::optional<MeshBuffer> mMeshBuffer;
+    std::optional<Material> mMaterial;
+    std::optional<ParticlePipeline> mParticlePipeline;
+    std::vector<GameObject> mGameObjects;
+    std::vector<RenderObject> mRenderObjects;
 
     void initWindow();
     void initVulkan();

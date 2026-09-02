@@ -3,7 +3,7 @@
 #include "scene/types.hpp"
 
 CommandService::CommandService(VulkanContext const& ctx)
-        : ctx_(&ctx) {
+        : mCtx(&ctx) {
     commandPool = vk::raii::CommandPool(ctx.device,
             vk::CommandPoolCreateInfo{
                 .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -30,7 +30,7 @@ void CommandService::allocateComputeCommandBuffers(VulkanContext const& ctx) {
 }
 
 vk::raii::CommandBuffer CommandService::beginSingleTimeCommands() const {
-    vk::raii::CommandBuffer cmd = std::move(vk::raii::CommandBuffers(ctx_->device,
+    vk::raii::CommandBuffer cmd = std::move(vk::raii::CommandBuffers(mCtx->device,
             vk::CommandBufferAllocateInfo{
                 .commandPool = *commandPool,
                 .level = vk::CommandBufferLevel::ePrimary,
@@ -44,11 +44,11 @@ vk::raii::CommandBuffer CommandService::beginSingleTimeCommands() const {
 void CommandService::endSingleTimeCommands(vk::raii::CommandBuffer cmd) const {
     cmd.end();
     vk::CommandBuffer cmdHandle = *cmd;
-    ctx_->graphicsQueue.submit(
+    mCtx->graphicsQueue.submit(
             vk::SubmitInfo{
                 .commandBufferCount = 1,
                 .pCommandBuffers = &cmdHandle,
             },
             nullptr);
-    ctx_->graphicsQueue.waitIdle();
+    mCtx->graphicsQueue.waitIdle();
 }

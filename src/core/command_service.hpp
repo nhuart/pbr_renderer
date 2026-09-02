@@ -11,7 +11,7 @@ import vulkan_hpp;
 struct VulkanContext;
 
 struct CommandService {
-    vk::raii::CommandPool                commandPool     = nullptr;
+    vk::raii::CommandPool commandPool = nullptr;
     std::vector<vk::raii::CommandBuffer> commandBuffers;
     std::vector<vk::raii::CommandBuffer> computeCommandBuffers;
 
@@ -22,5 +22,5 @@ struct CommandService {
     void endSingleTimeCommands(vk::raii::CommandBuffer cmd) const;
 
 private:
-    VulkanContext const* ctx_ = nullptr;
+    VulkanContext const* mCtx = nullptr;
 };

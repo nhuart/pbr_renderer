@@ -20,8 +20,8 @@ namespace vkutil {
         VulkanContext const& ctx, vk::DeviceSize size, vk::BufferUsageFlags usage,
         vk::MemoryPropertyFlags props);
 
-void copyBuffer(VulkanContext const& ctx, vk::raii::CommandPool const& pool,
-        vk::raii::Buffer& src, vk::raii::Buffer& dst, vk::DeviceSize size);
+void copyBuffer(VulkanContext const& ctx, vk::raii::CommandPool const& pool, vk::raii::Buffer& src,
+        vk::raii::Buffer& dst, vk::DeviceSize size);
 
 [[nodiscard]] std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(
         VulkanContext const& ctx, uint32_t w, uint32_t h, uint32_t mipLevels,
@@ -29,8 +29,7 @@ void copyBuffer(VulkanContext const& ctx, vk::raii::CommandPool const& pool,
         vk::ImageUsageFlags usage, vk::MemoryPropertyFlags props);
 
 [[nodiscard]] vk::raii::ImageView createImageView(VulkanContext const& ctx, vk::Image image,
-        vk::Format format,
-        vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
+        vk::Format format, vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
         uint32_t mipLevels = 1);
 
 [[nodiscard]] vk::Format findSupportedFormat(VulkanContext const& ctx,
@@ -43,8 +42,7 @@ void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image,
         vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess,
         vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 srcStage,
         vk::PipelineStageFlags2 dstStage,
-        vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
-        uint32_t mipLevels = 1);
+        vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor, uint32_t mipLevels = 1);
 
 void copyBufferToImage(vk::raii::CommandBuffer const& cmd, vk::raii::Buffer const& buffer,
         vk::raii::Image const& image, uint32_t w, uint32_t h);
@@ -53,4 +51,4 @@ void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cm
         vk::raii::Image const& image, vk::Format format, int32_t texWidth, int32_t texHeight,
         uint32_t mipLevels);
 
-}  // namespace vkutil
+} // namespace vkutil

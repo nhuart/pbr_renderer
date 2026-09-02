@@ -14,17 +14,17 @@ import vulkan_hpp;
 struct VulkanContext;
 
 struct Swapchain {
-    vk::raii::SwapchainKHR           swapChain       = nullptr;
-    std::vector<vk::Image>           images;
-    vk::SurfaceFormatKHR             surfaceFormat;
-    vk::Extent2D                     extent;
+    vk::raii::SwapchainKHR swapChain = nullptr;
+    std::vector<vk::Image> images;
+    vk::SurfaceFormatKHR surfaceFormat;
+    vk::Extent2D extent;
     std::vector<vk::raii::ImageView> imageViews;
-    vk::raii::Image                  colorImage       = nullptr;
-    vk::raii::DeviceMemory           colorImageMemory = nullptr;
-    vk::raii::ImageView              colorImageView   = nullptr;
-    vk::raii::Image                  depthImage       = nullptr;
-    vk::raii::DeviceMemory           depthImageMemory = nullptr;
-    vk::raii::ImageView              depthImageView   = nullptr;
+    vk::raii::Image colorImage = nullptr;
+    vk::raii::DeviceMemory colorImageMemory = nullptr;
+    vk::raii::ImageView colorImageView = nullptr;
+    vk::raii::Image depthImage = nullptr;
+    vk::raii::DeviceMemory depthImageMemory = nullptr;
+    vk::raii::ImageView depthImageView = nullptr;
 
     Swapchain(VulkanContext const& ctx, GLFWwindow* window);
     void recreate(VulkanContext const& ctx, GLFWwindow* window);
@@ -35,7 +35,7 @@ private:
     void createColorResources(VulkanContext const& ctx);
     void createDepthResources(VulkanContext const& ctx);
     static vk::SurfaceFormatKHR chooseFormat(std::vector<vk::SurfaceFormatKHR> const&);
-    static vk::PresentModeKHR   choosePresentMode(std::vector<vk::PresentModeKHR> const&);
-    static vk::Extent2D         chooseExtent(vk::SurfaceCapabilitiesKHR const&, GLFWwindow*);
-    static uint32_t             chooseMinImageCount(vk::SurfaceCapabilitiesKHR const&);
+    static vk::PresentModeKHR choosePresentMode(std::vector<vk::PresentModeKHR> const&);
+    static vk::Extent2D chooseExtent(vk::SurfaceCapabilitiesKHR const&, GLFWwindow*);
+    static uint32_t chooseMinImageCount(vk::SurfaceCapabilitiesKHR const&);
 };

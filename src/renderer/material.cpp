@@ -1,15 +1,21 @@
-#include "renderer/mesh_pipeline.hpp"
+#include "renderer/material.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "renderer/texture_atlas.hpp"
 
 #include <array>
 #include <bit>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 
-std::vector<char> MeshPipeline::readFile(std::string const& filename) {
+void MaterialInstance::updateUBO(uint32_t frameIndex, UniformBufferObject const& ubo) {
+    memcpy(uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+}
+
+std::vector<char> Material::readFile(std::string const& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
         throw std::runtime_error("failed to open file: " + filename);
@@ -20,7 +26,7 @@ std::vector<char> MeshPipeline::readFile(std::string const& filename) {
     return buffer;
 }
 
-vk::raii::ShaderModule MeshPipeline::createShaderModule(VulkanContext const& ctx,
+vk::raii::ShaderModule Material::createShaderModule(VulkanContext const& ctx,
         std::vector<char> const& code) const {
     return { ctx.device, vk::ShaderModuleCreateInfo{
                              .codeSize = code.size(),
@@ -28,7 +34,7 @@ vk::raii::ShaderModule MeshPipeline::createShaderModule(VulkanContext const& ctx
                          } };
 }
 
-MeshPipeline::MeshPipeline(VulkanContext const& ctx, Swapchain const& swapchain) {
+Material::Material(VulkanContext const& ctx, Swapchain const& swapchain, uint32_t maxInstances) {
     // Descriptor set layout
     std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
         {
@@ -48,6 +54,20 @@ MeshPipeline::MeshPipeline(VulkanContext const& ctx, Swapchain const& swapchain)
             vk::DescriptorSetLayoutCreateInfo{
                 .bindingCount = static_cast<uint32_t>(bindings.size()),
                 .pBindings = bindings.data(),
+            });
+
+    // Descriptor pool sized for all instances upfront
+    auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
+        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount },
+        { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount },
+    } };
+    descriptorPool = vk::raii::DescriptorPool(ctx.device,
+            vk::DescriptorPoolCreateInfo{
+                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                .maxSets = setCount,
+                .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+                .pPoolSizes = poolSizes.data(),
             });
 
     // Graphics pipeline
@@ -161,69 +181,60 @@ MeshPipeline::MeshPipeline(VulkanContext const& ctx, Swapchain const& swapchain)
     std::cout << "Graphics pipeline: created\n";
 }
 
-void MeshPipeline::allocateDescriptorSets(VulkanContext const& ctx,
-        std::vector<GameObject>& objects, vk::Sampler sampler, vk::ImageView imageView) {
-    auto objectCount = static_cast<uint32_t>(objects.size());
-    auto setCount = objectCount * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
-        {
-            .type = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = setCount,
-        },
-        {
-            .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = setCount,
-        },
-    } };
-    descriptorPool = vk::raii::DescriptorPool(ctx.device,
-            vk::DescriptorPoolCreateInfo{
-                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                .maxSets = setCount,
-                .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-                .pPoolSizes = poolSizes.data(),
-            });
+MaterialInstance Material::createInstance(VulkanContext const& ctx,
+        TextureAtlas const& texture) const {
+    MaterialInstance inst;
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        auto [buf, mem] = vkutil::createBuffer(ctx, sizeof(UniformBufferObject),
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                        vk::MemoryPropertyFlagBits::eHostCoherent);
+        inst.uniformBuffersMapped.push_back(mem.mapMemory(0, sizeof(UniformBufferObject)));
+        inst.uniformBuffers.push_back(std::move(buf));
+        inst.uniformBuffersMemory.push_back(std::move(mem));
+    }
 
     vk::DescriptorImageInfo imageInfo{
-        .sampler = sampler,
-        .imageView = imageView,
+        .sampler = *texture.sampler,
+        .imageView = *texture.imageView,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
-    for (auto& obj: objects) {
-        std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
-        obj.descriptorSets = vk::raii::DescriptorSets(ctx.device,
-                vk::DescriptorSetAllocateInfo{
-                    .descriptorPool = *descriptorPool,
-                    .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-                    .pSetLayouts = layouts.data(),
-                });
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
+    inst.descriptorSets = vk::raii::DescriptorSets(ctx.device,
+            vk::DescriptorSetAllocateInfo{
+                .descriptorPool = *descriptorPool,
+                .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+                .pSetLayouts = layouts.data(),
+            });
 
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vk::DescriptorBufferInfo bufferInfo{
-                .buffer = *obj.uniformBuffers[i],
-                .offset = 0,
-                .range = sizeof(UniformBufferObject),
-            };
-            std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {
-                {
-                    .dstSet = *obj.descriptorSets[i],
-                    .dstBinding = 0,
-                    .dstArrayElement = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = vk::DescriptorType::eUniformBuffer,
-                    .pBufferInfo = &bufferInfo,
-                },
-                {
-                    .dstSet = *obj.descriptorSets[i],
-                    .dstBinding = 1,
-                    .dstArrayElement = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                    .pImageInfo = &imageInfo,
-                },
-            } };
-            ctx.device.updateDescriptorSets(descriptorWrites, {});
-        }
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vk::DescriptorBufferInfo bufferInfo{
+            .buffer = *inst.uniformBuffers[i],
+            .offset = 0,
+            .range = sizeof(UniformBufferObject),
+        };
+        std::array<vk::WriteDescriptorSet, 2> writes{ {
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .pBufferInfo = &bufferInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = &imageInfo,
+            },
+        } };
+        ctx.device.updateDescriptorSets(writes, {});
     }
-    std::cout << "Descriptor sets: " << setCount << " allocated\n";
+
+    return inst;
 }

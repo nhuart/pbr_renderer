@@ -12,12 +12,12 @@ struct VulkanContext;
 struct CommandService;
 
 struct TextureAtlas {
-    uint32_t               mipLevels   = 0;
-    vk::Format             format      = vk::Format::eR8G8B8A8Srgb;
-    vk::raii::Image        image       = nullptr;
+    uint32_t mipLevels = 0;
+    vk::Format format = vk::Format::eR8G8B8A8Srgb;
+    vk::raii::Image image = nullptr;
     vk::raii::DeviceMemory imageMemory = nullptr;
-    vk::raii::ImageView    imageView   = nullptr;
-    vk::raii::Sampler      sampler     = nullptr;
+    vk::raii::ImageView imageView = nullptr;
+    vk::raii::Sampler sampler = nullptr;
 
     TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, std::string const& path);
 };
