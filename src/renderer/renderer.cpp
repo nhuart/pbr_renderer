@@ -6,7 +6,6 @@
 #include <limits>
 #include <stdexcept>
 
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -37,33 +36,29 @@ void Renderer::initVulkan() {
     mCmds.emplace(*mCtx);
     mCmds->allocateCommandBuffers(*mCtx);
 
-    for (auto const& inst: mScene.meshInstances) {
+    for (uint32_t i = 0; i < mScene.meshInstances.size(); ++i) {
+        auto const& inst = mScene.meshInstances[i];
         GameObject obj;
         obj.position = inst.position;
         obj.rotation = glm::radians(inst.rotation);
         obj.scale = inst.scale;
         mGameObjects.push_back(std::move(obj));
+
+        RenderObject ro;
+        ro.gameObjectIndex = i;
+        mRenderObjects.push_back(std::move(ro));
     }
     std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 
-    mTexture.emplace(*mCtx, *mCmds, mScene.meshInstances.front().texturePath);
-    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
-
-    for (auto& obj: mGameObjects) {
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            auto [buf, mem] = vkutil::createBuffer(*mCtx, sizeof(UniformBufferObject),
-                    vk::BufferUsageFlagBits::eUniformBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible |
-                            vk::MemoryPropertyFlagBits::eHostCoherent);
-            obj.uniformBuffersMapped.push_back(mem.mapMemory(0, sizeof(UniformBufferObject)));
-            obj.uniformBuffers.push_back(std::move(buf));
-            obj.uniformBuffersMemory.push_back(std::move(mem));
-        }
+    mResources.emplace();
+    mMaterial.emplace(*mCtx, *mSwapchain,
+            static_cast<uint32_t>(mScene.meshInstances.size()));
+    for (auto& ro: mRenderObjects) {
+        auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
+        ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
+        ro.materialInstance = mMaterial->createInstance(*mCtx, *ro.texture);
     }
-
-    mMeshPipeline.emplace(*mCtx, *mSwapchain);
-    mMeshPipeline->allocateDescriptorSets(*mCtx, mGameObjects, *mTexture->sampler,
-            *mTexture->imageView);
+    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
     if (mScene.particles) {
         mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
@@ -106,22 +101,20 @@ void Renderer::updateUniforms() {
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count() * 1000.0f;
     lastTime = currentTime;
 
-    glm::mat4 view =
-            glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f),
-            static_cast<float>(mSwapchain->extent.width) /
-                    static_cast<float>(mSwapchain->extent.height),
-            0.1f, 10.0f);
-    proj[1][1] *= -1;
+    float aspect = static_cast<float>(mSwapchain->extent.width) /
+                   static_cast<float>(mSwapchain->extent.height);
+    glm::mat4 view = mCamera.viewMatrix();
+    glm::mat4 proj = mCamera.projMatrix(aspect);
 
-    for (auto& obj: mGameObjects) {
+    for (auto& ro: mRenderObjects) {
+        auto& obj = mGameObjects[ro.gameObjectIndex];
         obj.rotation.z = time * glm::radians(15.0f);
         UniformBufferObject ubo{
             .model = obj.getModelMatrix(),
             .view = view,
             .proj = proj,
         };
-        memcpy(obj.uniformBuffersMapped[mFrameIndex], &ubo, sizeof(ubo));
+        ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
 
     if (mScene.particles) {
@@ -198,7 +191,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     cmd.beginRendering(renderingInfo);
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mMeshPipeline->pipeline);
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mMaterial->pipeline);
     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
     cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
 
@@ -213,9 +206,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     cmd.setViewport(0, viewport);
     cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = mSwapchain->extent });
 
-    for (auto const& obj: mGameObjects) {
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mMeshPipeline->pipelineLayout, 0,
-                *obj.descriptorSets[mFrameIndex], {});
+    for (auto const& ro: mRenderObjects) {
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mMaterial->pipelineLayout, 0,
+                *ro.materialInstance.descriptorSets[mFrameIndex], {});
         cmd.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1, 0, 0, 0);
     }
 

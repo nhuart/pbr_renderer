@@ -13,9 +13,10 @@
 #include "core/swapchain.hpp"
 #include "core/command_service.hpp"
 #include "core/sync.hpp"
-#include "renderer/texture_atlas.hpp"
+#include "renderer/camera.hpp"
+#include "renderer/render_object.hpp"
+#include "renderer/resource_manager.hpp"
 #include "renderer/mesh_buffer.hpp"
-#include "renderer/mesh_pipeline.hpp"
 #include "renderer/particle_pipeline.hpp"
 
 class Renderer {
@@ -26,6 +27,7 @@ public:
 private:
     std::string mScenePath;
     Scene       mScene;
+    Camera      mCamera;
     GLFWwindow* mWindow             = nullptr;
     uint32_t    mFrameIndex         = 0;
     bool        mFramebufferResized = false;
@@ -34,11 +36,12 @@ private:
     std::optional<Swapchain>        mSwapchain;
     std::optional<CommandService>   mCmds;
     std::optional<SyncObjects>      mSync;
-    std::optional<TextureAtlas>     mTexture;
+    std::optional<ResourceManager>  mResources;
     std::optional<MeshBuffer>       mMeshBuffer;
-    std::optional<MeshPipeline>     mMeshPipeline;
+    std::optional<Material>         mMaterial;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::vector<GameObject>         mGameObjects;
+    std::vector<RenderObject>       mRenderObjects;
 
     void initWindow();
     void initVulkan();

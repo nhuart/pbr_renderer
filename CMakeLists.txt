@@ -76,7 +76,7 @@ add_executable(pbr_renderer
     src/renderer/renderer.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
-    src/renderer/mesh_pipeline.cpp
+    src/renderer/material.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )
