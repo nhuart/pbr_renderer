@@ -3,8 +3,8 @@
 #include <fstream>
 #include <stdexcept>
 
-#include <nlohmann/json.hpp>
 #include "types.hpp"
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 

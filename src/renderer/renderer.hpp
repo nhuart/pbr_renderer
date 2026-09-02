@@ -15,6 +15,7 @@
 #include "renderer/mesh_buffer.hpp"
 #include "renderer/orbit_controls.hpp"
 #include "renderer/particle_pipeline.hpp"
+#include "renderer/render_graph.hpp"
 #include "renderer/render_object.hpp"
 #include "renderer/resource_manager.hpp"
 #include "scene/scene_loader.hpp"
@@ -34,6 +35,9 @@ private:
     uint32_t mFrameIndex = 0;
     bool mFramebufferResized = false;
 
+    RenderGraph mRenderGraph;
+    RenderGraphImageHandle mSwapchainImageHandle{}; // updated per-frame via updateImportedImage
+
     std::optional<VulkanContext> mCtx;
     std::optional<Swapchain> mSwapchain;
     std::optional<CommandService> mCmds;
@@ -52,6 +56,7 @@ private:
     void drawFrame();
     void updateUniforms();
     void recreateSwapchain();
+    void buildRenderGraph();
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
