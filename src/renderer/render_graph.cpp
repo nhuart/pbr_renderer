@@ -1,23 +1,9 @@
 #include "renderer/render_graph.hpp"
 
-RenderGraphImageHandle RenderGraph::declareImage(std::string name, RenderGraphImageDesc desc) {
+RenderGraphImageHandle RenderGraph::importImage(std::string /*name*/, vk::Image image,
+        vk::ImageView view, RenderGraphImage desc, vk::ImageLayout initialLayout) {
     RenderGraphImageHandle handle{ static_cast<uint32_t>(mImages.size()) };
-    mImages.push_back({ .desc = desc });
-    mImageNames.push_back(std::move(name));
-    return handle;
-}
-
-RenderGraphImageHandle RenderGraph::importImage(std::string name, vk::Image image,
-        vk::ImageView view, RenderGraphImageDesc desc, vk::ImageLayout initialLayout) {
-    RenderGraphImageHandle handle{ static_cast<uint32_t>(mImages.size()) };
-    RenderGraphPhysicalImage physicalImage;
-    physicalImage.image = image;
-    physicalImage.viewHandle = view;
-    physicalImage.currentLayout = initialLayout;
-    physicalImage.desc = desc;
-    physicalImage.imported = true;
-    mImages.push_back(std::move(physicalImage));
-    mImageNames.push_back(std::move(name));
+    mImages.push_back({ .image = image, .viewHandle = view, .currentLayout = initialLayout, .desc = desc });
     return handle;
 }
 
@@ -26,26 +12,49 @@ void RenderGraph::updateImportedImage(RenderGraphImageHandle handle, vk::Image i
     auto& physicalImage = mImages[handle.index];
     physicalImage.image = image;
     physicalImage.viewHandle = view;
-    for (auto& compiledPass: mCompiledPasses)
-        for (auto& barrier: compiledPass.preBarriers)
+    for (auto& pass: mPasses)
+        for (auto& barrier: pass.preBarriers)
             if (barrier.resourceIndex == handle.index) barrier.image = image;
 }
 
-RenderGraphPassBuilder RenderGraph::addPass(std::string name) {
+RenderGraph& RenderGraph::addPass(std::string name) {
     mPasses.push_back(RenderGraphPass{ .name = std::move(name) });
-    return RenderGraphPassBuilder{ *this, mPasses.back() };
+    return *this;
 }
 
-void RenderGraph::compile(VulkanContext const& ctx) {
-    allocateImages(ctx);
+RenderGraph& RenderGraph::writesColor(RenderGraphImageHandle handle) {
+    mPasses.back().colorWrites.push_back(handle);
+    return *this;
+}
+
+RenderGraph& RenderGraph::writesDepth(RenderGraphImageHandle handle) {
+    mPasses.back().depthWrite = handle;
+    return *this;
+}
+
+RenderGraph& RenderGraph::reads(RenderGraphImageHandle handle) {
+    mPasses.back().reads.push_back(handle);
+    return *this;
+}
+
+RenderGraph& RenderGraph::resolvesTo(RenderGraphImageHandle handle) {
+    mPasses.back().resolveTarget = handle;
+    return *this;
+}
+
+RenderGraph& RenderGraph::execute(std::function<void(vk::raii::CommandBuffer const&)> fn) {
+    mPasses.back().execute = std::move(fn);
+    return *this;
+}
+
+void RenderGraph::compile(VulkanContext const& /*ctx*/) {
     buildBarriers();
 }
 
 void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
-    for (auto const& compiledPass: mCompiledPasses) {
-        insertBarriers(commandBuffer, compiledPass.preBarriers);
+    for (auto const& pass: mPasses) {
+        insertBarriers(commandBuffer, pass.preBarriers);
 
-        auto const& pass = *compiledPass.pass;
         if (!pass.execute) continue;
 
         std::vector<vk::RenderingAttachmentInfo> colorAttachments;
@@ -80,9 +89,9 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
             };
         }
 
-        vk::Extent2D extent = resolveExtent(pass);
+        vk::Extent2D ext = resolveExtent(pass);
         commandBuffer.beginRendering(vk::RenderingInfo{
-            .renderArea = { .offset = { 0, 0 }, .extent = extent },
+            .renderArea = { .offset = { 0, 0 }, .extent = ext },
             .layerCount = 1,
             .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
             .pColorAttachments = colorAttachments.data(),
@@ -101,28 +110,13 @@ vk::Extent2D RenderGraph::extent(RenderGraphImageHandle handle) const {
     return mImages[handle.index].desc.extent;
 }
 
-void RenderGraph::allocateImages(VulkanContext const& ctx) {
-    for (auto& physicalImage: mImages) {
-        if (physicalImage.imported) continue;
-        auto const& imageDesc = physicalImage.desc;
-        auto [image, memory] =
-                vkutil::createImage(ctx, imageDesc.extent.width, imageDesc.extent.height, 1,
-                        imageDesc.samples, imageDesc.format, vk::ImageTiling::eOptimal,
-                        imageDesc.usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
-        physicalImage.ownedImage = std::move(image);
-        physicalImage.memory = std::move(memory);
-        physicalImage.image = *physicalImage.ownedImage;
-        physicalImage.ownedView = vkutil::createImageView(ctx, physicalImage.image,
-                imageDesc.format, imageDesc.aspect);
-    }
-}
-
 void RenderGraph::buildBarriers() {
-    mCompiledPasses.clear();
     std::vector<vk::ImageLayout> layouts(mImages.size(), vk::ImageLayout::eUndefined);
+    for (size_t i = 0; i < mImages.size(); ++i)
+        layouts[i] = mImages[i].currentLayout;
 
-    for (auto const& pass: mPasses) {
-        RenderGraphCompiledPass compiledPass{ .pass = &pass };
+    for (auto& pass: mPasses) {
+        pass.preBarriers.clear();
 
         auto addBarrier = [&](RenderGraphImageHandle imageHandle, vk::ImageLayout newLayout,
                                   vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 dstStage) {
@@ -131,7 +125,7 @@ void RenderGraph::buildBarriers() {
             vk::ImageLayout oldLayout = layouts[imageHandle.index];
             if (oldLayout == newLayout) return;
             auto [srcAccess, srcStage] = accessForLayout(oldLayout);
-            compiledPass.preBarriers.push_back({
+            pass.preBarriers.push_back({
                 .image = physicalImage.image,
                 .resourceIndex = imageHandle.index,
                 .oldLayout = oldLayout,
@@ -162,18 +156,17 @@ void RenderGraph::buildBarriers() {
         for (auto imageHandle: pass.reads)
             addBarrier(imageHandle, vk::ImageLayout::eShaderReadOnlyOptimal,
                     vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eFragmentShader);
-
-        mCompiledPasses.push_back(std::move(compiledPass));
     }
 
-    // Final transition: swapchain resolve target → present
-    for (auto& physicalImage: mImages) {
-        if (!physicalImage.imported) continue;
-        uint32_t resourceIndex = static_cast<uint32_t>(&physicalImage - mImages.data());
-        if (layouts[resourceIndex] == vk::ImageLayout::eColorAttachmentOptimal) {
-            mCompiledPasses.back().preBarriers.push_back({
+    // Transition imported images that ended as color attachments to present layout.
+    for (size_t i = 0; i < mImages.size(); ++i) {
+        if (layouts[i] != vk::ImageLayout::eColorAttachmentOptimal) continue;
+        auto& physicalImage = mImages[i];
+        if (physicalImage.desc.usage & vk::ImageUsageFlagBits::eColorAttachment &&
+                physicalImage.desc.samples == vk::SampleCountFlagBits::e1) {
+            mPasses.back().preBarriers.push_back({
                 .image = physicalImage.image,
-                .resourceIndex = resourceIndex,
+                .resourceIndex = static_cast<uint32_t>(i),
                 .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
                 .newLayout = vk::ImageLayout::ePresentSrcKHR,
                 .srcAccess = vk::AccessFlagBits2::eColorAttachmentWrite,

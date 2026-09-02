@@ -70,7 +70,7 @@ void Renderer::initVulkan() {
     mSync.emplace(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()),
             mScene.particles.has_value());
 
-    buildRenderGraph(0);
+    buildRenderGraph();
 }
 
 void Renderer::mainLoop() {
@@ -112,7 +112,7 @@ void Renderer::recreateSwapchain() {
     mCtx->device.waitIdle();
     mSwapchain->recreate(*mCtx, mWindow);
     mSync->recreatePresent(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()));
-    buildRenderGraph(0);
+    buildRenderGraph();
 }
 
 void Renderer::updateUniforms() {
@@ -155,16 +155,16 @@ void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
     cmd.end();
 }
 
-void Renderer::buildRenderGraph(uint32_t imageIndex) {
+void Renderer::buildRenderGraph() {
     mRenderGraph = RenderGraph{};
 
     vk::Extent2D swapchainExtent = mSwapchain->extent;
 
     // Import swapchain-provided images — the graph records transitions but does not own them.
-    // Use index 0 for initial build; updateImportedImage() updates the backing each frame.
-    mSwapchainImageHandle = mRenderGraph.importImage("swapchain", mSwapchain->images[imageIndex],
-            *mSwapchain->imageViews[imageIndex],
-            RenderGraphImageDesc{
+    // updateImportedImage() updates the swapchain backing each frame.
+    mSwapchainImageHandle = mRenderGraph.importImage("swapchain", mSwapchain->images[0],
+            *mSwapchain->imageViews[0],
+            RenderGraphImage{
                 .format = mSwapchain->surfaceFormat.format,
                 .extent = swapchainExtent,
                 .usage = vk::ImageUsageFlagBits::eColorAttachment,
@@ -174,7 +174,7 @@ void Renderer::buildRenderGraph(uint32_t imageIndex) {
 
     auto colorImage =
             mRenderGraph.importImage("color", *mSwapchain->colorImage, *mSwapchain->colorImageView,
-                    RenderGraphImageDesc{
+                    RenderGraphImage{
                         .format = mSwapchain->surfaceFormat.format,
                         .extent = swapchainExtent,
                         .usage = vk::ImageUsageFlagBits::eColorAttachment,
@@ -184,7 +184,7 @@ void Renderer::buildRenderGraph(uint32_t imageIndex) {
 
     auto depthImage =
             mRenderGraph.importImage("depth", *mSwapchain->depthImage, *mSwapchain->depthImageView,
-                    RenderGraphImageDesc{
+                    RenderGraphImage{
                         .format = vkutil::findDepthFormat(*mCtx),
                         .extent = swapchainExtent,
                         .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,

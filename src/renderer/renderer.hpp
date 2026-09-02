@@ -56,7 +56,7 @@ private:
     void drawFrame();
     void updateUniforms();
     void recreateSwapchain();
-    void buildRenderGraph(uint32_t imageIndex);
+    void buildRenderGraph();
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
