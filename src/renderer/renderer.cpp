@@ -69,6 +69,8 @@ void Renderer::initVulkan() {
 
     mSync.emplace(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()),
             mScene.particles.has_value());
+
+    buildRenderGraph(0);
 }
 
 void Renderer::mainLoop() {
@@ -110,6 +112,7 @@ void Renderer::recreateSwapchain() {
     mCtx->device.waitIdle();
     mSwapchain->recreate(*mCtx, mWindow);
     mSync->recreatePresent(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()));
+    buildRenderGraph(0);
 }
 
 void Renderer::updateUniforms() {
@@ -152,98 +155,93 @@ void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
     cmd.end();
 }
 
+void Renderer::buildRenderGraph(uint32_t imageIndex) {
+    mRenderGraph = RenderGraph{};
+
+    vk::Extent2D swapchainExtent = mSwapchain->extent;
+
+    // Import swapchain-provided images — the graph records transitions but does not own them.
+    // Use index 0 for initial build; updateImportedImage() updates the backing each frame.
+    mSwapchainImageHandle = mRenderGraph.importImage("swapchain", mSwapchain->images[imageIndex],
+            *mSwapchain->imageViews[imageIndex],
+            RenderGraphImageDesc{
+                .format = mSwapchain->surfaceFormat.format,
+                .extent = swapchainExtent,
+                .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                .aspect = vk::ImageAspectFlagBits::eColor,
+                .samples = vk::SampleCountFlagBits::e1,
+            });
+
+    auto colorImage =
+            mRenderGraph.importImage("color", *mSwapchain->colorImage, *mSwapchain->colorImageView,
+                    RenderGraphImageDesc{
+                        .format = mSwapchain->surfaceFormat.format,
+                        .extent = swapchainExtent,
+                        .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                        .aspect = vk::ImageAspectFlagBits::eColor,
+                        .samples = mCtx->msaaSamples,
+                    });
+
+    auto depthImage =
+            mRenderGraph.importImage("depth", *mSwapchain->depthImage, *mSwapchain->depthImageView,
+                    RenderGraphImageDesc{
+                        .format = vkutil::findDepthFormat(*mCtx),
+                        .extent = swapchainExtent,
+                        .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                        .aspect = vk::ImageAspectFlagBits::eDepth,
+                        .samples = mCtx->msaaSamples,
+                    });
+
+    mRenderGraph.addPass("ForwardPass")
+            .writesColor(colorImage)
+            .resolvesTo(mSwapchainImageHandle)
+            .writesDepth(depthImage)
+            .execute([this](vk::raii::CommandBuffer const& commandBuffer) {
+                vk::Extent2D drawExtent = mSwapchain->extent;
+                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mMaterial->pipeline);
+                commandBuffer.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer,
+                        { vk::DeviceSize{ 0 } });
+                commandBuffer.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
+                commandBuffer.setViewport(0, vk::Viewport{
+                                                 .x = 0.0f,
+                                                 .y = 0.0f,
+                                                 .width = static_cast<float>(drawExtent.width),
+                                                 .height = static_cast<float>(drawExtent.height),
+                                                 .minDepth = 0.0f,
+                                                 .maxDepth = 1.0f,
+                                             });
+                commandBuffer.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = drawExtent });
+
+                for (auto const& renderObject: mRenderObjects) {
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                            *mMaterial->pipelineLayout, 0,
+                            *renderObject.materialInstance.descriptorSets[mFrameIndex], {});
+                    commandBuffer.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1,
+                            0, 0, 0);
+                }
+
+                if (mScene.particles) {
+                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                            *mParticlePipeline->particlePipeline);
+                    commandBuffer.bindVertexBuffers(0,
+                            *mParticlePipeline->shaderStorageBuffers[mFrameIndex],
+                            { vk::DeviceSize{ 0 } });
+                    commandBuffer.draw(mScene.particles->count, 1, 0, 0);
+                }
+            });
+
+    mRenderGraph.compile(*mCtx);
+}
+
 void Renderer::recordCommandBuffer(uint32_t imageIndex) {
-    auto const& cmd = mCmds->commandBuffers[mFrameIndex];
-    cmd.begin({});
+    // Point the imported swapchain slot at the current frame's image — no graph rebuild.
+    mRenderGraph.updateImportedImage(mSwapchainImageHandle, mSwapchain->images[imageIndex],
+            *mSwapchain->imageViews[imageIndex]);
 
-    vkutil::transitionImageLayout(cmd, mSwapchain->images[imageIndex], vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eColorAttachmentOptimal, {},
-            vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-
-    vkutil::transitionImageLayout(cmd, *mSwapchain->colorImage, vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eColorAttachmentOptimal, {},
-            vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-
-    vkutil::transitionImageLayout(cmd, *mSwapchain->depthImage, vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eDepthAttachmentOptimal,
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-                    vk::PipelineStageFlagBits2::eLateFragmentTests,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-                    vk::PipelineStageFlagBits2::eLateFragmentTests,
-            vk::ImageAspectFlagBits::eDepth);
-
-    vk::ClearValue clearColor = vk::ClearColorValue{ 1.0f, 1.0f, 1.0f, 1.0f };
-    vk::RenderingAttachmentInfo colorAttachmentInfo{
-        .imageView = *mSwapchain->colorImageView,
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .resolveMode = vk::ResolveModeFlagBits::eAverage,
-        .resolveImageView = *mSwapchain->imageViews[imageIndex],
-        .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .clearValue = clearColor,
-    };
-    vk::ClearValue clearDepth = vk::ClearDepthStencilValue{ 1.0f, 0 };
-    vk::RenderingAttachmentInfo depthAttachmentInfo{
-        .imageView = *mSwapchain->depthImageView,
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .clearValue = clearDepth,
-    };
-    vk::RenderingInfo renderingInfo{
-        .renderArea = { .offset = { 0, 0 }, .extent = mSwapchain->extent },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachmentInfo,
-        .pDepthAttachment = &depthAttachmentInfo,
-    };
-
-    cmd.beginRendering(renderingInfo);
-
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mMaterial->pipeline);
-    cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
-    cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
-
-    vk::Viewport viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(mSwapchain->extent.width),
-        .height = static_cast<float>(mSwapchain->extent.height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    };
-    cmd.setViewport(0, viewport);
-    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = mSwapchain->extent });
-
-    for (auto const& ro: mRenderObjects) {
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mMaterial->pipelineLayout, 0,
-                *ro.materialInstance.descriptorSets[mFrameIndex], {});
-        cmd.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1, 0, 0, 0);
-    }
-
-    if (mScene.particles) {
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mParticlePipeline->particlePipeline);
-        cmd.bindVertexBuffers(0, *mParticlePipeline->shaderStorageBuffers[mFrameIndex],
-                { vk::DeviceSize{ 0 } });
-        cmd.draw(mScene.particles->count, 1, 0, 0);
-    }
-
-    cmd.endRendering();
-
-    vkutil::transitionImageLayout(cmd, mSwapchain->images[imageIndex],
-            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
-            vk::AccessFlagBits2::eColorAttachmentWrite, {},
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::PipelineStageFlagBits2::eBottomOfPipe);
-
-    cmd.end();
+    auto const& commandBuffer = mCmds->commandBuffers[mFrameIndex];
+    commandBuffer.begin({});
+    mRenderGraph.execute(commandBuffer);
+    commandBuffer.end();
 }
 
 void Renderer::drawFrame() {

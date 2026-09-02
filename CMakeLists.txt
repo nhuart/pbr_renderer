@@ -74,6 +74,7 @@ add_executable(pbr_renderer
     src/core/resource_allocator.cpp
     src/core/sync.cpp
     src/renderer/renderer.cpp
+    src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
     src/renderer/material.cpp
