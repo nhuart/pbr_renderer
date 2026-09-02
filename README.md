@@ -3,26 +3,41 @@ PBR renderer in c++ with vulkan
 
 ## Development
 
+### Prerequisites
+
+- CMake 3.20+
+- Vulkan SDK 1.4+ at `~/vulkansdk/1.4.x/`
+- `clang-format`, `clang-tidy` (`sudo apt install clang-format clang-tidy`)
+- `glfw3`, `glm`, `libtinygltf-dev` (`sudo apt install libglfw3-dev libglm-dev libtinygltf-dev`)
+- KTX-Software and nlohmann/json are fetched automatically by CMake via FetchContent
+
+### First-time setup
+
 ```bash
-make build-debug 
-make build-release 
-make run
-make format
-make lint
+make configure-debug    # generate build/debug with compile_commands.json
+make configure-release  # generate build/release
 ```
 
-## Build types
-
-- **Debug** — Vulkan validation layers enabled. Errors and warnings are printed to stderr at runtime.
-- **Release** — Validation layers disabled. Optimized for performance.
-
-## Running a scene
-
-A scene file must be passed as the first argument:
+### Build
 
 ```bash
-make run-debug SCENE=scenes/viking_room.json
-make run-release SCENE=scenes/three_viking_rooms_particles.json
+make build-debug    # debug build (Vulkan validation layers enabled)
+make build-release  # optimized build
+```
+
+### Run
+
+```bash
+make run-debug   SCENE=scenes/viking_room.json
+make run-release SCENE=scenes/viking_room.json
+```
+
+### Code quality
+
+```bash
+make format     # clang-format all .cpp/.hpp/.h in-place
+make lint       # clang-tidy static analysis (read-only)
+make lint-fix   # clang-tidy with auto-fix
 ```
 
 ## Scene format
@@ -70,28 +85,9 @@ Omitting the `particles` key disables all compute and particle rendering infrast
 
 ```
 src/
-  core/        Raw Vulkan: device, swapchain, memory, sync
-    context.hpp/.cpp          VulkanContext — instance, physical/logical device, queues, surface
-    swapchain.hpp/.cpp        Swapchain — images, image views, MSAA color/depth attachments
-    command_service.hpp/.cpp  CommandService — command pool, per-frame command buffers
-    resource_allocator.hpp/.cpp  vkutil:: free functions — createBuffer, createImage, etc.
-    sync.hpp/.cpp             SyncObjects — semaphores and fences
-
-  renderer/    Pipelines and GPU resources
-    renderer.hpp/.cpp         Renderer — thin orchestrator, owns all subsystems, frame loop
-    mesh_pipeline.hpp/.cpp    MeshPipeline — descriptor layout, graphics pipeline, descriptor sets
-    mesh_buffer.hpp/.cpp      MeshBuffer — glTF loading, vertex/index GPU buffers
-    texture_atlas.hpp/.cpp    TextureAtlas — texture image, view, sampler
-    particle_pipeline.hpp/.cpp  ParticlePipeline — SSBOs, compute pipeline, particle graphics
-
-  scene/       CPU-side data
-    types.hpp                 Vertex, GameObject, Scene, UBO structs
-    scene_loader.hpp/.cpp     loadScene() — parses JSON into Scene
-
-scenes/        Scene definition files
-shaders/       GLSL source + compiled SPIR-V
-models/        glTF assets
-textures/      KTX2 textures
+  core/      Raw Vulkan — device, swapchain, memory, sync primitives
+  renderer/  GPU resources — camera, materials, meshes, textures, particles
+  scene/     CPU data — scene graph, JSON loading, UBO types
 ```
 
 Dependency flow: `scene/` ← `core/` ← `renderer/`. Nothing in `core/` knows about pipelines; nothing in `scene/` touches Vulkan.
@@ -104,10 +100,3 @@ Dependency flow: `scene/` ← `core/` ← `renderer/`. Nothing in `core/` knows 
 - [ ] Add fallbacks for devices that don't support Vulkan 1.3 features: use traditional render passes (`vkCreateRenderPass` / `vkCmdBeginRenderPass`) instead of dynamic rendering (`VK_KHR_dynamic_rendering` / `vkCmdBeginRenderingKHR`), and similarly fall back for other 1.3-only features (e.g. synchronization2, extended dynamic state). Gate at startup with `vkGetPhysicalDeviceProperties2` version check.
 - [ ] Use Vulkan [profiles](https://github.com/KhronosGroup/Vulkan-Profiles) (`VP_KHR_roadmap_2022`, or a custom profile) to declare and test the exact feature/extension requirements at initialization. Profiles provide a portable, machine-readable capability contract and a built-in simulation layer to test fallback paths on hardware that would otherwise satisfy the requirements.
 
-## Linting
-
-Requires `clang-tidy` and `clang-format`:
-
-```bash
-sudo apt install clang-tidy clang-format
-```
