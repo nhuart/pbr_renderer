@@ -25,10 +25,10 @@ build-release:
 	cmake --build build/release -- --no-print-directory
 
 run-debug:
-	./build/debug/pbr_renderer $(SCENE)
+	./build/debug/pbr_renderer $(SCENE) $(ARGS)
 
 run-release:
-	./build/release/pbr_renderer $(SCENE)
+	./build/release/pbr_renderer $(SCENE) $(ARGS)
 
 format:
 	find . -path ./build -prune -o \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print | xargs clang-format -i

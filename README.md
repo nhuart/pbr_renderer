@@ -32,6 +32,12 @@ make run-debug   SCENE=scenes/viking_room.json
 make run-release SCENE=scenes/viking_room.json
 ```
 
+To capture a screenshot on the first rendered frame, pass `--screenshot` via `ARGS`:
+
+```bash
+make run-release SCENE=scenes/viking_room.json ARGS="--screenshot output.png"
+```
+
 ### Code quality
 
 ```bash

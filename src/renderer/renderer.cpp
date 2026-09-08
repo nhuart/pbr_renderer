@@ -7,13 +7,16 @@
 #include <map>
 #include <stdexcept>
 
+#include <stb_image_write.h>
+
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-Renderer::Renderer(std::string scenePath)
-        : mScenePath(std::move(scenePath)) {}
+Renderer::Renderer(std::string scenePath, std::string screenshotPath)
+        : mScenePath(std::move(scenePath))
+        , mScreenshotPath(std::move(screenshotPath)) {}
 
 void Renderer::run() {
     mScene = loadScene(mScenePath);
@@ -170,6 +173,80 @@ void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
         cmd.dispatch(mScene.particles->count / 256, 1, 1);
     }
     cmd.end();
+}
+
+void Renderer::captureScreenshot(uint32_t imageIndex) {
+    uint32_t width = mSwapchain->extent.width;
+    uint32_t height = mSwapchain->extent.height;
+    vk::DeviceSize bufferSize = vk::DeviceSize(width) * height * 4;
+
+    auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, bufferSize,
+            vk::BufferUsageFlagBits::eTransferDst,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    vk::raii::CommandBuffer cmd = std::move(mCtx->device
+            .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                .commandPool = *mCmds->commandPool,
+                .level = vk::CommandBufferLevel::ePrimary,
+                .commandBufferCount = 1,
+            })
+            .front());
+
+    cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+
+    vk::Image srcImage = mSwapchain->images[imageIndex];
+
+    vkutil::transitionImageLayout(cmd, srcImage,
+            vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eTransferSrcOptimal,
+            vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eBottomOfPipe, vk::PipelineStageFlagBits2::eTransfer);
+
+    vk::BufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = { width, height, 1 },
+    };
+    cmd.copyImageToBuffer(srcImage, vk::ImageLayout::eTransferSrcOptimal, *readbackBuffer, region);
+
+    vkutil::transitionImageLayout(cmd, srcImage,
+            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::ePresentSrcKHR,
+            vk::AccessFlagBits2::eTransferRead, vk::AccessFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eBottomOfPipe);
+
+    cmd.end();
+
+    vk::raii::Fence fence(mCtx->device, vk::FenceCreateInfo{});
+    vk::CommandBuffer cmdHandle = *cmd;
+    mCtx->graphicsQueue.submit(vk::SubmitInfo{
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmdHandle,
+    }, *fence);
+
+    std::ignore = mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
+
+    // Copy pixels out of the mapped buffer into a plain vector
+    void* mapped = readbackMemory.mapMemory(0, bufferSize);
+    auto* src = static_cast<uint8_t*>(mapped);
+    std::vector<uint8_t> rgba(bufferSize);
+    for (uint32_t i = 0; i < width * height; ++i) {
+        rgba[i * 4 + 0] = src[i * 4 + 2]; // R <- B  (swapchain is BGRA)
+        rgba[i * 4 + 1] = src[i * 4 + 1]; // G
+        rgba[i * 4 + 2] = src[i * 4 + 0]; // B <- R
+        rgba[i * 4 + 3] = 255;
+    }
+    readbackMemory.unmapMemory();
+
+    stbi_write_png(mScreenshotPath.c_str(), static_cast<int>(width), static_cast<int>(height), 4,
+            rgba.data(), static_cast<int>(width) * 4);
+    std::cout << "Screenshot saved: " << mScreenshotPath << "\n";
 }
 
 void Renderer::buildRenderGraph() {
@@ -334,6 +411,12 @@ void Renderer::drawFrame() {
         .pImageIndices = &imageIndex,
     };
     vk::Result presentResult = mCtx->graphicsQueue.presentKHR(presentInfo);
+
+    if (!mScreenshotPath.empty() && presentResult == vk::Result::eSuccess) {
+        captureScreenshot(imageIndex);
+        mScreenshotPath.clear();
+    }
+
     if (presentResult == vk::Result::eErrorOutOfDateKHR ||
             presentResult == vk::Result::eSuboptimalKHR || mFramebufferResized) {
         mFramebufferResized = false;
