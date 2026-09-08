@@ -32,6 +32,8 @@ struct MeshInstance {
     glm::vec3 position = { 0.0f, 0.0f, 0.0f };
     glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
     glm::vec3 scale = { 1.0f, 1.0f, 1.0f };
+    float metallic = 0.0f;
+    float roughness = 0.5f;
 };
 
 struct ParticleSystem {
@@ -113,6 +115,7 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 normalMatrix;
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
+    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f };  // x = metallic, y = roughness
 };
 
 struct ComputeUBO {

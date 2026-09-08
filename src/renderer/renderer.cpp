@@ -139,13 +139,16 @@ void Renderer::updateUniforms() {
         auto const& obj = mGameObjects[ro.gameObjectIndex];
         glm::vec3 camPos = mCamera.position();
         glm::mat4 model = obj.getModelMatrix();
+        auto const& meshInst = mScene.meshInstances[ro.gameObjectIndex];
+
         UniformBufferObject ubo{
             .model = model,
             .view = view,
             .proj = proj,
             .normalMatrix = glm::transpose(glm::inverse(model)),
-            .baseColor = mScene.meshInstances[ro.gameObjectIndex].baseColor,
+            .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
+            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, 0.0f, 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }

@@ -50,6 +50,8 @@ Scene loadScene(std::string const& path) {
         if (inst.contains("position")) meshInstance.position = vecFromJson(inst["position"]);
         if (inst.contains("rotation")) meshInstance.rotation = vecFromJson(inst["rotation"]);
         if (inst.contains("scale")) meshInstance.scale = vecFromJson(inst["scale"]);
+        if (inst.contains("metallic")) meshInstance.metallic = inst["metallic"].get<float>();
+        if (inst.contains("roughness")) meshInstance.roughness = inst["roughness"].get<float>();
         scene.meshInstances.push_back(std::move(meshInstance));
     }
 
