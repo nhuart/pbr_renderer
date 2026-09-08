@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,7 +45,7 @@ private:
     std::optional<SyncObjects> mSync;
     std::optional<ResourceManager> mResources;
     std::optional<MeshBuffer> mMeshBuffer;
-    std::optional<Material> mMaterial;
+    std::map<std::string, Material> mMaterials;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::vector<GameObject> mGameObjects;
     std::vector<RenderObject> mRenderObjects;

@@ -34,14 +34,16 @@ vk::raii::ShaderModule Material::createShaderModule(VulkanContext const& ctx,
                          } };
 }
 
-Material::Material(VulkanContext const& ctx, Swapchain const& swapchain, uint32_t maxInstances) {
+Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
+        std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename) {
+    constexpr uint32_t maxInstances = 64;
     // Descriptor set layout
     std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
         {
             .binding = 0,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eVertex,
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         },
         {
             .binding = 1,
@@ -71,8 +73,8 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain, uint32_
             });
 
     // Graphics pipeline
-    auto vertCode = readFile("shaders/compiled/triangle.vert.spv");
-    auto fragCode = readFile("shaders/compiled/triangle.frag.spv");
+    auto vertCode = readFile("shaders/compiled/" + vertexShaderFilename + ".vert.spv");
+    auto fragCode = readFile("shaders/compiled/" + fragmentShaderFilename + ".frag.spv");
     vk::raii::ShaderModule vertModule = createShaderModule(ctx, vertCode);
     vk::raii::ShaderModule fragModule = createShaderModule(ctx, fragCode);
 

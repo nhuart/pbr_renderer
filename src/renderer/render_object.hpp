@@ -7,5 +7,6 @@ struct TextureAtlas;
 struct RenderObject {
     uint32_t gameObjectIndex = 0;
     TextureAtlas const* texture = nullptr;
+    Material const* material = nullptr;
     MaterialInstance materialInstance;
 };

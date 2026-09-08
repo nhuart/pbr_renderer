@@ -36,7 +36,9 @@ struct Material {
     vk::raii::DescriptorPool descriptorPool{ nullptr };
     vk::raii::Pipeline pipeline{ nullptr };
 
-    Material(VulkanContext const& ctx, Swapchain const& swapchain, uint32_t maxInstances);
+    Material(VulkanContext const& ctx, Swapchain const& swapchain,
+            std::string const& vertexShaderFilename,
+            std::string const& fragmentShaderFilename);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             TextureAtlas const& texture) const;

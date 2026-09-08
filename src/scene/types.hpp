@@ -26,8 +26,11 @@ constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 struct MeshInstance {
     std::string gltfPath;
     std::string texturePath;
+    std::string vertexShader;
+    std::string fragmentShader;
+    glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     glm::vec3 position = { 0.0f, 0.0f, 0.0f };
-    glm::vec3 rotation = { 0.0f, 0.0f, 0.0f }; // degrees
+    glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
     glm::vec3 scale = { 1.0f, 1.0f, 1.0f };
 };
 
@@ -48,9 +51,12 @@ struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
+    glm::vec3 normal;
+    glm::vec4 tangent; // xyz = tangent direction, w = handedness (+1 or -1)
 
     bool operator==(Vertex const& other) const {
-        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+        return pos == other.pos && color == other.color && texCoord == other.texCoord &&
+               normal == other.normal && tangent == other.tangent;
     }
 
     static vk::VertexInputBindingDescription getBindingDescription() {
@@ -59,7 +65,7 @@ struct Vertex {
             .inputRate = vk::VertexInputRate::eVertex };
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions() {
+    static std::array<vk::VertexInputAttributeDescription, 5> getAttributeDescriptions() {
         return { { { .location = 0,
                        .binding = 0,
                        .format = vk::Format::eR32G32B32Sfloat,
@@ -71,7 +77,15 @@ struct Vertex {
             { .location = 2,
                 .binding = 0,
                 .format = vk::Format::eR32G32Sfloat,
-                .offset = offsetof(Vertex, texCoord) } } };
+                .offset = offsetof(Vertex, texCoord) },
+            { .location = 3,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32Sfloat,
+                .offset = offsetof(Vertex, normal) },
+            { .location = 4,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = offsetof(Vertex, tangent) } } };
     }
 };
 
@@ -79,8 +93,11 @@ namespace std {
 template<>
 struct hash<Vertex> {
     size_t operator()(Vertex const& vtx) const {
-        return ((hash<glm::vec3>()(vtx.pos) ^ (hash<glm::vec3>()(vtx.color) << 1)) >> 1) ^
-               (hash<glm::vec2>()(vtx.texCoord) << 1);
+        size_t h = hash<glm::vec3>()(vtx.pos);
+        h = (h ^ (hash<glm::vec3>()(vtx.color) << 1)) >> 1;
+        h = (h ^ (hash<glm::vec2>()(vtx.texCoord) << 1)) >> 1;
+        h = (h ^ (hash<glm::vec3>()(vtx.normal) << 1)) >> 1;
+        return h;
     }
 };
 } // namespace std
@@ -93,6 +110,9 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    alignas(16) glm::mat4 normalMatrix;
+    alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
 };
 
 struct ComputeUBO {

@@ -39,6 +39,24 @@ void MeshBuffer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive
         uvStride = uvView.byteStride ? uvView.byteStride : 2 * sizeof(float);
     }
 
+    uint8_t const* normalBytes = nullptr;
+    size_t normalStride = 3 * sizeof(float);
+    if (primitive.attributes.contains("NORMAL")) {
+        auto const& normalAccessor = model.accessors[primitive.attributes.at("NORMAL")];
+        auto const& normalView = model.bufferViews[normalAccessor.bufferView];
+        normalBytes = accessorData(model, normalAccessor);
+        normalStride = normalView.byteStride ? normalView.byteStride : 3 * sizeof(float);
+    }
+
+    uint8_t const* tangentBytes = nullptr;
+    size_t tangentStride = 4 * sizeof(float);
+    if (primitive.attributes.contains("TANGENT")) {
+        auto const& tangentAccessor = model.accessors[primitive.attributes.at("TANGENT")];
+        auto const& tangentView = model.bufferViews[tangentAccessor.bufferView];
+        tangentBytes = accessorData(model, tangentAccessor);
+        tangentStride = tangentView.byteStride ? tangentView.byteStride : 4 * sizeof(float);
+    }
+
     size_t vertexCount = posAccessor.count;
     std::vector<uint32_t> localRemap(vertexCount);
     for (size_t i = 0; i < vertexCount; ++i) {
@@ -54,6 +72,17 @@ void MeshBuffer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive
             memcpy(&uvU, uvBytes + i * uvStride + 0 * sizeof(float), sizeof(float));
             memcpy(&uvV, uvBytes + i * uvStride + 1 * sizeof(float), sizeof(float));
             vertex.texCoord = { uvU, 1.0f - uvV };
+        }
+        if (normalBytes != nullptr) {
+            memcpy(&vertex.normal.x, normalBytes + i * normalStride + 0 * sizeof(float), sizeof(float));
+            memcpy(&vertex.normal.y, normalBytes + i * normalStride + 1 * sizeof(float), sizeof(float));
+            memcpy(&vertex.normal.z, normalBytes + i * normalStride + 2 * sizeof(float), sizeof(float));
+        }
+        if (tangentBytes != nullptr) {
+            memcpy(&vertex.tangent.x, tangentBytes + i * tangentStride + 0 * sizeof(float), sizeof(float));
+            memcpy(&vertex.tangent.y, tangentBytes + i * tangentStride + 1 * sizeof(float), sizeof(float));
+            memcpy(&vertex.tangent.z, tangentBytes + i * tangentStride + 2 * sizeof(float), sizeof(float));
+            memcpy(&vertex.tangent.w, tangentBytes + i * tangentStride + 3 * sizeof(float), sizeof(float));
         }
         auto [it, inserted] =
                 uniqueVertices.insert({ vertex, static_cast<uint32_t>(vertices.size()) });

@@ -122,3 +122,65 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
     std::cout << "Texture sampler: created (max anisotropy: "
               << properties.limits.maxSamplerAnisotropy << ")\n";
 }
+
+TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
+        uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    mipLevels = 1;
+    format = vk::Format::eR8G8B8A8Srgb;
+
+    uint32_t white = (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(b) << 16) |
+                     (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(r);
+    vk::DeviceSize size = sizeof(white);
+
+    auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, size,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    void* data = stagingMemory.mapMemory(0, size);
+    memcpy(data, &white, static_cast<size_t>(size));
+    stagingMemory.unmapMemory();
+
+    auto [img, imgMem] = vkutil::createImage(ctx, 1, 1, 1, vk::SampleCountFlagBits::e1,
+            format, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+    image = std::move(img);
+    imageMemory = std::move(imgMem);
+
+    vk::raii::CommandBuffer cmd = cmds.beginSingleTimeCommands();
+    vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eTransferDstOptimal, {}, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eTopOfPipe, vk::PipelineStageFlagBits2::eTransfer);
+    vk::BufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = { 1, 1, 1 },
+    };
+    cmd.copyBufferToImage(*stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, region);
+    vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferWrite,
+            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
+            vk::PipelineStageFlagBits2::eFragmentShader);
+    cmds.endSingleTimeCommands(std::move(cmd));
+
+    imageView = vkutil::createImageView(ctx, *image, format);
+
+    sampler = vk::raii::Sampler(ctx.device,
+            vk::SamplerCreateInfo{
+                .magFilter = vk::Filter::eNearest,
+                .minFilter = vk::Filter::eNearest,
+                .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                .addressModeU = vk::SamplerAddressMode::eRepeat,
+                .addressModeV = vk::SamplerAddressMode::eRepeat,
+                .addressModeW = vk::SamplerAddressMode::eRepeat,
+                .anisotropyEnable = vk::False,
+                .maxAnisotropy = 1.0f,
+                .compareEnable = vk::False,
+                .compareOp = vk::CompareOp::eAlways,
+                .minLod = 0.0f,
+                .maxLod = 0.0f,
+                .borderColor = vk::BorderColor::eIntOpaqueWhite,
+            });
+}
