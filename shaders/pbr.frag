@@ -6,8 +6,8 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 proj;
     mat4 normalMatrix;
     vec4 baseColor;
-    vec4 cameraPos;   // xyz = world position
-    vec4 pbrParams;   // x = metallic, y = roughness
+    vec4 cameraPos;
+    vec4 pbrParams;
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
