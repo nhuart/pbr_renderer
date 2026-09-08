@@ -10,7 +10,7 @@ struct Camera {
     glm::dvec3 target = { 0.0, 0.0, 0.0 };
     glm::dvec3 up = { 0.0, 0.0, 1.0 };
     double azimuth = 45.0;   // degrees, around Z
-    double elevation = 35.0; // degrees, above XY plane
+    double elevation = 30.0; // degrees, above XY plane
     double radius = 3.5;
     double fovDegrees = 45.0;
     double nearPlane = 0.1;

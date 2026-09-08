@@ -3,6 +3,8 @@
         {
             "gltf": "models/viking_room.glb",
             "texture": "textures/viking_room.ktx2",
+            "vertexShader": "standard",
+            "fragmentShader": "lambertian",
             "position": [0.0, 0.0, 0.0]
         }
     ]

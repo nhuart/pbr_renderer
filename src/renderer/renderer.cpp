@@ -4,7 +4,9 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <stdexcept>
+
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
@@ -54,11 +56,18 @@ void Renderer::initVulkan() {
     std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 
     mResources.emplace();
-    mMaterial.emplace(*mCtx, *mSwapchain, static_cast<uint32_t>(mScene.meshInstances.size()));
+
+    for (auto const& inst: mScene.meshInstances) {
+        auto key = inst.vertexShader + "+" + inst.fragmentShader;
+        if (!mMaterials.contains(key))
+            mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader));
+    }
+
     for (auto& ro: mRenderObjects) {
         auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
-        ro.materialInstance = mMaterial->createInstance(*mCtx, *ro.texture);
+        ro.material = &mMaterials.at(inst.vertexShader + "+" + inst.fragmentShader);
+        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture);
     }
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
@@ -128,10 +137,15 @@ void Renderer::updateUniforms() {
 
     for (auto& ro: mRenderObjects) {
         auto const& obj = mGameObjects[ro.gameObjectIndex];
+        glm::vec3 camPos = mCamera.position();
+        glm::mat4 model = obj.getModelMatrix();
         UniformBufferObject ubo{
-            .model = obj.getModelMatrix(),
+            .model = model,
             .view = view,
             .proj = proj,
+            .normalMatrix = glm::transpose(glm::inverse(model)),
+            .baseColor = mScene.meshInstances[ro.gameObjectIndex].baseColor,
+            .cameraPos = glm::vec4(camPos, 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
@@ -198,7 +212,6 @@ void Renderer::buildRenderGraph() {
             .writesDepth(depthImage)
             .execute([this](vk::raii::CommandBuffer const& commandBuffer) {
                 vk::Extent2D drawExtent = mSwapchain->extent;
-                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mMaterial->pipeline);
                 commandBuffer.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer,
                         { vk::DeviceSize{ 0 } });
                 commandBuffer.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
@@ -213,8 +226,10 @@ void Renderer::buildRenderGraph() {
                 commandBuffer.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = drawExtent });
 
                 for (auto const& renderObject: mRenderObjects) {
+                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                *renderObject.material->pipeline);
                     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *mMaterial->pipelineLayout, 0,
+                            *renderObject.material->pipelineLayout, 0,
                             *renderObject.materialInstance.descriptorSets[mFrameIndex], {});
                     commandBuffer.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1,
                             0, 0, 0);

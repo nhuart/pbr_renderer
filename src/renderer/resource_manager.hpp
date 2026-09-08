@@ -14,8 +14,13 @@ struct ResourceManager {
             std::string const& path) {
         auto it = mTextures.find(path);
         if (it != mTextures.end()) return *it->second;
-        auto [inserted, ok] =
-                mTextures.emplace(path, std::make_unique<TextureAtlas>(ctx, cmds, path));
+        std::unique_ptr<TextureAtlas> tex;
+        if (path.empty()) {
+            tex = std::make_unique<TextureAtlas>(ctx, cmds, 255, 255, 255);
+        } else {
+            tex = std::make_unique<TextureAtlas>(ctx, cmds, path);
+        }
+        auto [inserted, ok] = mTextures.emplace(path, std::move(tex));
         return *inserted->second;
     }
 
