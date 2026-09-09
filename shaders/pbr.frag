@@ -60,7 +60,7 @@ void main() {
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     // Single directional light
-    vec3 lightDir      = normalize(vec3(1.0, 1.0, 2.0));
+    vec3 lightDir      = normalize(vec3(1.0, 2.0, 1.0));
     vec3 lightColor    = vec3(3.0);
 
     vec3 L = lightDir;
