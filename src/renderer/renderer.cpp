@@ -184,7 +184,7 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
 
     auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, bufferSize,
             vk::BufferUsageFlagBits::eTransferDst,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCached);
 
     vk::raii::CommandBuffer cmd =
             std::move(mCtx->device
@@ -239,6 +239,8 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
             mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
 
     auto* pixels = static_cast<uint8_t*>(readbackMemory.mapMemory(0, bufferSize));
+    mCtx->device.invalidateMappedMemoryRanges(
+            vk::MappedMemoryRange{ .memory = *readbackMemory, .offset = 0, .size = bufferSize });
     for (uint32_t i = 0; i < width * height; ++i) {
         std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]); // BGRA -> RGBA
         pixels[i * 4 + 3] = 255;
