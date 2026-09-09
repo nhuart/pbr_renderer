@@ -123,8 +123,8 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
               << properties.limits.maxSamplerAnisotropy << ")\n";
 }
 
-TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
-        uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t r,
+        uint8_t g, uint8_t b, uint8_t a) {
     mipLevels = 1;
     format = vk::Format::eR8G8B8A8Srgb;
 
@@ -139,8 +139,8 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
     memcpy(data, &white, static_cast<size_t>(size));
     stagingMemory.unmapMemory();
 
-    auto [img, imgMem] = vkutil::createImage(ctx, 1, 1, 1, vk::SampleCountFlagBits::e1,
-            format, vk::ImageTiling::eOptimal,
+    auto [img, imgMem] = vkutil::createImage(ctx, 1, 1, 1, vk::SampleCountFlagBits::e1, format,
+            vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
     image = std::move(img);
@@ -167,20 +167,19 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
 
     imageView = vkutil::createImageView(ctx, *image, format);
 
-    sampler = vk::raii::Sampler(ctx.device,
-            vk::SamplerCreateInfo{
-                .magFilter = vk::Filter::eNearest,
-                .minFilter = vk::Filter::eNearest,
-                .mipmapMode = vk::SamplerMipmapMode::eNearest,
-                .addressModeU = vk::SamplerAddressMode::eRepeat,
-                .addressModeV = vk::SamplerAddressMode::eRepeat,
-                .addressModeW = vk::SamplerAddressMode::eRepeat,
-                .anisotropyEnable = vk::False,
-                .maxAnisotropy = 1.0f,
-                .compareEnable = vk::False,
-                .compareOp = vk::CompareOp::eAlways,
-                .minLod = 0.0f,
-                .maxLod = 0.0f,
-                .borderColor = vk::BorderColor::eIntOpaqueWhite,
-            });
+    sampler = vk::raii::Sampler(ctx.device, vk::SamplerCreateInfo{
+                                                .magFilter = vk::Filter::eNearest,
+                                                .minFilter = vk::Filter::eNearest,
+                                                .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                                                .addressModeU = vk::SamplerAddressMode::eRepeat,
+                                                .addressModeV = vk::SamplerAddressMode::eRepeat,
+                                                .addressModeW = vk::SamplerAddressMode::eRepeat,
+                                                .anisotropyEnable = vk::False,
+                                                .maxAnisotropy = 1.0f,
+                                                .compareEnable = vk::False,
+                                                .compareOp = vk::CompareOp::eAlways,
+                                                .minLod = 0.0f,
+                                                .maxLod = 0.0f,
+                                                .borderColor = vk::BorderColor::eIntOpaqueWhite,
+                                            });
 }

@@ -3,7 +3,8 @@
 RenderGraphImageHandle RenderGraph::importImage(std::string /*name*/, vk::Image image,
         vk::ImageView view, RenderGraphImage desc, vk::ImageLayout initialLayout) {
     RenderGraphImageHandle handle{ static_cast<uint32_t>(mImages.size()) };
-    mImages.push_back({ .image = image, .viewHandle = view, .currentLayout = initialLayout, .desc = desc });
+    mImages.push_back(
+            { .image = image, .viewHandle = view, .currentLayout = initialLayout, .desc = desc });
     return handle;
 }
 
@@ -47,9 +48,7 @@ RenderGraph& RenderGraph::execute(std::function<void(vk::raii::CommandBuffer con
     return *this;
 }
 
-void RenderGraph::compile(VulkanContext const& /*ctx*/) {
-    buildBarriers();
-}
+void RenderGraph::compile(VulkanContext const& /*ctx*/) { buildBarriers(); }
 
 void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
     for (auto const& pass: mPasses) {
@@ -112,8 +111,7 @@ vk::Extent2D RenderGraph::extent(RenderGraphImageHandle handle) const {
 
 void RenderGraph::buildBarriers() {
     std::vector<vk::ImageLayout> layouts(mImages.size(), vk::ImageLayout::eUndefined);
-    for (size_t i = 0; i < mImages.size(); ++i)
-        layouts[i] = mImages[i].currentLayout;
+    for (size_t i = 0; i < mImages.size(); ++i) layouts[i] = mImages[i].currentLayout;
 
     for (auto& pass: mPasses) {
         pass.preBarriers.clear();

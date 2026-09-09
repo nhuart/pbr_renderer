@@ -9,8 +9,8 @@
 struct Camera {
     glm::dvec3 target;
     glm::dvec3 up = { 0.0, 1.0, 0.0 };
-    double azimuth;    // degrees, around Y
-    double elevation;  // degrees, above XZ plane
+    double azimuth;   // degrees, around Y
+    double elevation; // degrees, above XZ plane
     double radius;
     double fovDegrees;
     double nearPlane;
@@ -19,8 +19,8 @@ struct Camera {
     [[nodiscard]] glm::dvec3 position() const {
         double az = glm::radians(azimuth);
         double el = glm::radians(elevation);
-        return target + radius * glm::dvec3(std::cos(el) * std::cos(az),
-                                         std::sin(el), std::cos(el) * std::sin(az));
+        return target + radius * glm::dvec3(std::cos(el) * std::cos(az), std::sin(el),
+                                         std::cos(el) * std::sin(az));
     }
 
     [[nodiscard]] glm::mat4 viewMatrix() const {

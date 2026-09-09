@@ -20,6 +20,6 @@ struct TextureAtlas {
     vk::raii::Sampler sampler = nullptr;
 
     TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, std::string const& path);
-    TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
-            uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255);
+    TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t r, uint8_t g,
+            uint8_t b, uint8_t a = 255);
 };

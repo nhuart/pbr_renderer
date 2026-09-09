@@ -15,8 +15,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 Renderer::Renderer(std::string scenePath, std::string screenshotPath)
-        : mScenePath(std::move(scenePath))
-        , mScreenshotPath(std::move(screenshotPath)) {}
+        : mScenePath(std::move(scenePath)),
+          mScreenshotPath(std::move(screenshotPath)) {}
 
 void Renderer::run() {
     mScene = loadScene(mScenePath);
@@ -64,7 +64,8 @@ void Renderer::initVulkan() {
     for (auto const& inst: mScene.meshInstances) {
         auto key = inst.vertexShader + "+" + inst.fragmentShader;
         if (!mMaterials.contains(key))
-            mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader));
+            mMaterials.emplace(key,
+                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader));
     }
 
     for (auto& ro: mRenderObjects) {
@@ -185,22 +186,23 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
             vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    vk::raii::CommandBuffer cmd = std::move(mCtx->device
-            .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-                .commandPool = *mCmds->commandPool,
-                .level = vk::CommandBufferLevel::ePrimary,
-                .commandBufferCount = 1,
-            })
-            .front());
+    vk::raii::CommandBuffer cmd =
+            std::move(mCtx->device
+                              .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                                  .commandPool = *mCmds->commandPool,
+                                  .level = vk::CommandBufferLevel::ePrimary,
+                                  .commandBufferCount = 1,
+                              })
+                              .front());
 
     cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 
     vk::Image srcImage = mSwapchain->images[imageIndex];
 
-    vkutil::transitionImageLayout(cmd, srcImage,
-            vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eTransferSrcOptimal,
-            vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferRead,
-            vk::PipelineStageFlagBits2::eBottomOfPipe, vk::PipelineStageFlagBits2::eTransfer);
+    vkutil::transitionImageLayout(cmd, srcImage, vk::ImageLayout::ePresentSrcKHR,
+            vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits2::eNone,
+            vk::AccessFlagBits2::eTransferRead, vk::PipelineStageFlagBits2::eBottomOfPipe,
+            vk::PipelineStageFlagBits2::eTransfer);
 
     vk::BufferImageCopy region{
         .bufferOffset = 0,
@@ -217,21 +219,24 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     };
     cmd.copyImageToBuffer(srcImage, vk::ImageLayout::eTransferSrcOptimal, *readbackBuffer, region);
 
-    vkutil::transitionImageLayout(cmd, srcImage,
-            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::ePresentSrcKHR,
-            vk::AccessFlagBits2::eTransferRead, vk::AccessFlagBits2::eNone,
-            vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eBottomOfPipe);
+    vkutil::transitionImageLayout(cmd, srcImage, vk::ImageLayout::eTransferSrcOptimal,
+            vk::ImageLayout::ePresentSrcKHR, vk::AccessFlagBits2::eTransferRead,
+            vk::AccessFlagBits2::eNone, vk::PipelineStageFlagBits2::eTransfer,
+            vk::PipelineStageFlagBits2::eBottomOfPipe);
 
     cmd.end();
 
     vk::raii::Fence fence(mCtx->device, vk::FenceCreateInfo{});
     vk::CommandBuffer cmdHandle = *cmd;
-    mCtx->graphicsQueue.submit(vk::SubmitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cmdHandle,
-    }, *fence);
+    mCtx->graphicsQueue.submit(
+            vk::SubmitInfo{
+                .commandBufferCount = 1,
+                .pCommandBuffers = &cmdHandle,
+            },
+            *fence);
 
-    std::ignore = mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
+    std::ignore =
+            mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
 
     auto* pixels = static_cast<uint8_t*>(readbackMemory.mapMemory(0, bufferSize));
     for (uint32_t i = 0; i < width * height; ++i) {
@@ -251,15 +256,15 @@ void Renderer::buildRenderGraph() {
 
     // Import swapchain-provided images — the graph records transitions but does not own them.
     // updateImportedImage() updates the swapchain backing each frame.
-    mSwapchainImageHandle = mRenderGraph.importImage("swapchain", mSwapchain->images[0],
-            *mSwapchain->imageViews[0],
-            RenderGraphImage{
-                .format = mSwapchain->surfaceFormat.format,
-                .extent = swapchainExtent,
-                .usage = vk::ImageUsageFlagBits::eColorAttachment,
-                .aspect = vk::ImageAspectFlagBits::eColor,
-                .samples = vk::SampleCountFlagBits::e1,
-            });
+    mSwapchainImageHandle =
+            mRenderGraph.importImage("swapchain", mSwapchain->images[0], *mSwapchain->imageViews[0],
+                    RenderGraphImage{
+                        .format = mSwapchain->surfaceFormat.format,
+                        .extent = swapchainExtent,
+                        .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                        .aspect = vk::ImageAspectFlagBits::eColor,
+                        .samples = vk::SampleCountFlagBits::e1,
+                    });
 
     auto colorImage =
             mRenderGraph.importImage("color", *mSwapchain->colorImage, *mSwapchain->colorImageView,
@@ -302,7 +307,7 @@ void Renderer::buildRenderGraph() {
 
                 for (auto const& renderObject: mRenderObjects) {
                     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                *renderObject.material->pipeline);
+                            *renderObject.material->pipeline);
                     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *renderObject.material->pipelineLayout, 0,
                             *renderObject.materialInstance.descriptorSets[mFrameIndex], {});
