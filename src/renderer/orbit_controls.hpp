@@ -24,7 +24,7 @@ struct OrbitControls {
         mLastX = x;
         mLastY = y;
 
-        if (mLeftDown) camera.orbit(-dx * orbitSensitivity, dy * orbitSensitivity);
+        if (mLeftDown) camera.orbit(dx * orbitSensitivity, dy * orbitSensitivity);
         else if (mRightDown)
             camera.pan(dx, dy);
     }

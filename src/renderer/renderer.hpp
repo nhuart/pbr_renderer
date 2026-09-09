@@ -24,11 +24,12 @@
 
 class Renderer {
 public:
-    explicit Renderer(std::string scenePath);
+    explicit Renderer(std::string scenePath, std::string screenshotPath = {});
     void run();
 
 private:
     std::string mScenePath;
+    std::string mScreenshotPath;
     Scene mScene;
     Camera mCamera;
     OrbitControls mOrbitControls;
@@ -60,6 +61,7 @@ private:
     void buildRenderGraph();
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);
+    void captureScreenshot(uint32_t imageIndex);
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);

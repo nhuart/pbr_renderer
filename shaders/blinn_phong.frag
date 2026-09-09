@@ -24,7 +24,7 @@ const float shininess = 64.0;
 const float specularStrength = 0.5;
 
 void main() {
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 2.0));
+    vec3 lightDir = normalize(vec3(1.0, 2.0, 1.0));
     vec3 normal = normalize(fragNormal);
     vec3 viewDir = normalize(ubo.cameraPos.xyz - fragWorldPos);
     float diffuse = max(dot(normal, lightDir), 0.0);

@@ -40,6 +40,7 @@ set(SHADER_SOURCES
     shaders/lambertian.frag
     shaders/phong.frag
     shaders/blinn_phong.frag
+    shaders/pbr.frag
     shaders/particle.vert
     shaders/particle.frag
     shaders/particle.comp
