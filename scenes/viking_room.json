@@ -1,11 +1,21 @@
 {
+    "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "azimuth": 45.0,
+        "elevation": 30.0,
+        "radius": 3.5,
+        "fov": 45.0,
+        "near": 0.1,
+        "far": 100.0
+    },
     "meshInstances": [
         {
             "gltf": "models/viking_room.glb",
             "texture": "textures/viking_room.ktx2",
             "vertexShader": "standard",
             "fragmentShader": "lambertian",
-            "position": [0.0, 0.0, 0.0]
+            "position": [0.0, 0.0, 0.0],
+            "rotation": [-90.0, 0.0, -45.0]
         }
     ]
 }
