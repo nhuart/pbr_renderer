@@ -13,6 +13,21 @@ static glm::vec3 vecFromJson(json const& j) {
 }
 
 static void validateScene(Scene const& scene, std::string const& path) {
+    if (!scene.camera)
+        throw std::runtime_error("scene missing 'camera': " + path);
+
+    auto const& cam = *scene.camera;
+    if (cam.radius <= 0.0)
+        throw std::runtime_error("camera.radius must be > 0: " + path);
+    if (cam.fovDegrees <= 0.0 || cam.fovDegrees >= 180.0)
+        throw std::runtime_error("camera.fov must be in (0, 180): " + path);
+    if (cam.nearPlane <= 0.0)
+        throw std::runtime_error("camera.near must be > 0: " + path);
+    if (cam.farPlane <= cam.nearPlane)
+        throw std::runtime_error("camera.far must be > camera.near: " + path);
+    if (cam.elevation <= -90.0 || cam.elevation >= 90.0)
+        throw std::runtime_error("camera.elevation must be in (-90, 90): " + path);
+
     if (scene.meshInstances.empty() && !scene.particles)
         throw std::runtime_error("scene has no meshInstances or particles: " + path);
 
@@ -59,6 +74,20 @@ Scene loadScene(std::string const& path) {
         ParticleSystem p;
         p.count = j["particles"].value("count", 8192u);
         scene.particles = p;
+    }
+
+    {
+        auto const& c = j.at("camera");
+        auto const& t = c.at("target");
+        Camera cam;
+        cam.target    = { t[0].get<double>(), t[1].get<double>(), t[2].get<double>() };
+        cam.azimuth   = c.at("azimuth").get<double>();
+        cam.elevation = c.at("elevation").get<double>();
+        cam.radius    = c.at("radius").get<double>();
+        cam.fovDegrees = c.at("fov").get<double>();
+        cam.nearPlane = c.at("near").get<double>();
+        cam.farPlane  = c.at("far").get<double>();
+        scene.camera  = cam;
     }
 
     validateScene(scene, path);

@@ -7,14 +7,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 struct Camera {
-    glm::dvec3 target = { 0.0, 0.0, 0.0 };
+    glm::dvec3 target;
     glm::dvec3 up = { 0.0, 1.0, 0.0 };
-    double azimuth = 45.0;   // degrees, around Y
-    double elevation = 30.0; // degrees, above XZ plane
-    double radius = 3.5;
-    double fovDegrees = 45.0;
-    double nearPlane = 0.1;
-    double farPlane = 100.0;
+    double azimuth;    // degrees, around Y
+    double elevation;  // degrees, above XZ plane
+    double radius;
+    double fovDegrees;
+    double nearPlane;
+    double farPlane;
 
     [[nodiscard]] glm::dvec3 position() const {
         double az = glm::radians(azimuth);

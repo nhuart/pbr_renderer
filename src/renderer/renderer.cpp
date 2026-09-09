@@ -20,6 +20,7 @@ Renderer::Renderer(std::string scenePath, std::string screenshotPath)
 
 void Renderer::run() {
     mScene = loadScene(mScenePath);
+    mCamera = *mScene.camera;
     initWindow();
     initVulkan();
     mainLoop();
