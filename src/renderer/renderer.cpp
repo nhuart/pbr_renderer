@@ -20,7 +20,7 @@ Renderer::Renderer(std::string scenePath, std::string screenshotPath)
 
 void Renderer::run() {
     mScene = loadScene(mScenePath);
-    mCamera = *mScene.camera;
+    mCamera = mScene.camera;
     initWindow();
     initVulkan();
     mainLoop();
@@ -233,20 +233,14 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
 
     std::ignore = mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
 
-    // Copy pixels out of the mapped buffer into a plain vector
-    void* mapped = readbackMemory.mapMemory(0, bufferSize);
-    auto* src = static_cast<uint8_t*>(mapped);
-    std::vector<uint8_t> rgba(bufferSize);
+    auto* pixels = static_cast<uint8_t*>(readbackMemory.mapMemory(0, bufferSize));
     for (uint32_t i = 0; i < width * height; ++i) {
-        rgba[i * 4 + 0] = src[i * 4 + 2]; // R <- B  (swapchain is BGRA)
-        rgba[i * 4 + 1] = src[i * 4 + 1]; // G
-        rgba[i * 4 + 2] = src[i * 4 + 0]; // B <- R
-        rgba[i * 4 + 3] = 255;
+        std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]); // BGRA -> RGBA
+        pixels[i * 4 + 3] = 255;
     }
-    readbackMemory.unmapMemory();
-
     stbi_write_png(mScreenshotPath.c_str(), static_cast<int>(width), static_cast<int>(height), 4,
-            rgba.data(), static_cast<int>(width) * 4);
+            pixels, static_cast<int>(width) * 4);
+    readbackMemory.unmapMemory();
     std::cout << "Screenshot saved: " << mScreenshotPath << "\n";
 }
 

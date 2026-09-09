@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 #include "renderer/renderer.hpp"
 
@@ -11,7 +12,7 @@ int main(int argc, char* argv[]) {
     }
     std::string screenshotPath;
     for (int i = 2; i < argc - 1; ++i) {
-        if (std::string(argv[i]) == "--screenshot") {
+        if (std::string_view(argv[i]) == "--screenshot") {
             screenshotPath = argv[i + 1];
         }
     }

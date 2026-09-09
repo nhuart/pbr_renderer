@@ -11,7 +11,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/hash.hpp>
 
-#include "renderer/camera.hpp"
+#include "core/camera.hpp"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -45,7 +45,7 @@ struct ParticleSystem {
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
-    std::optional<Camera> camera;
+    Camera camera;
 };
 
 // ---------------------------------------------------------------------------
