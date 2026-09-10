@@ -1,9 +1,11 @@
 {
-    "light": {
-        "type": "directional",
-        "direction": [1.0, 2.0, 1.0],
-        "color": [3.0, 3.0, 3.0]
-    },
+    "lights": [
+        {
+            "type": "directional",
+            "direction": [1.0, 2.0, 1.0],
+            "color": [3.0, 3.0, 3.0]
+        }
+    ],
     "camera": {
         "target": [0.0, 0.0, 0.0],
         "azimuth": 45.0,

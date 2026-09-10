@@ -7,14 +7,22 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 normalMatrix;
     vec4 baseColor;
     vec4 cameraPos;
-    vec4 pbrParams;   // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot,3=point)
-    vec4 lightDir;    // xyz = normalized direction
-    vec4 lightColor;  // xyz = RGB color/intensity
-    vec4 lightPos;    // xyz = position (spot and point lights)
-    vec4 lightParams; // spot: x=scale, y=offset (cone); spot+point: z=invRange
+    vec4 pbrParams; // x=metallic, y=roughness
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
+
+struct GpuLight {
+    vec4 colorAndType;     // xyz=RGB intensity, w=type (1=directional,2=spot,3=point)
+    vec4 positionAndRange; // xyz=position, w=invRange (spot/point)
+    vec4 directionAndCone; // xyz=direction
+    vec4 coneParams;       // x=scale, y=offset (spot only)
+};
+
+layout(binding = 2) uniform LightUBO {
+    uvec4 counts; // x = number of active lights
+    GpuLight lights[8];
+} lights;
 
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
@@ -71,56 +79,54 @@ void main() {
     // Dialectric F0 = 0.04; metals use albedo as F0
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    int lightType = int(ubo.pbrParams.z);
-
-    vec3 L = vec3(0.0);
-    vec3 lightColor = vec3(0.0);
-    float attenuation = 1.0;
-
-    if (lightType == 1) {
-        // Directional light
-        L = ubo.lightDir.xyz;
-        lightColor = ubo.lightColor.xyz;
-    } else if (lightType == 2) {
-        // Spot light
-        vec3 toLight = ubo.lightPos.xyz - fragWorldPos;
-        float distSq = dot(toLight, toLight);
-        L = toLight / sqrt(distSq);
-        lightColor = ubo.lightColor.xyz;
-        attenuation = windowedFalloff(distSq, ubo.lightParams.z);
-
-        // Cone attenuation: precomputed scale/offset, result squared for smooth penumbra
-        float cosTheta = dot(-L, ubo.lightDir.xyz);
-        float cone     = clamp(cosTheta * ubo.lightParams.x + ubo.lightParams.y, 0.0, 1.0);
-        attenuation   *= cone * cone;
-    } else if (lightType == 3) {
-        // Point light
-        vec3 toLight = ubo.lightPos.xyz - fragWorldPos;
-        float distSq = dot(toLight, toLight);
-        L = toLight / sqrt(distSq);
-        lightColor = ubo.lightColor.xyz;
-        attenuation = windowedFalloff(distSq, ubo.lightParams.z);
-    }
-
-    vec3 H = normalize(V + L);
-
     float NdotV = max(dot(N, V), 0.0001);
-    float NdotL = max(dot(N, L), 0.0);
-    float NdotH = max(dot(N, H), 0.0);
-    float HdotV = max(dot(H, V), 0.0);
 
-    // Cook-Torrance specular BRDF
-    float D = distributionGGX(NdotH, roughness);
-    float G = geometrySmith(NdotV, NdotL, roughness);
-    vec3  F = fresnelSchlick(HdotV, F0);
+    vec3 Lo = vec3(0.0);
 
-    vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.0001);
+    int numLights = int(lights.counts.x);
+    for (int i = 0; i < numLights; i++) {
+        GpuLight light = lights.lights[i];
+        int lightType = int(light.colorAndType.w);
+        vec3 lightColor = light.colorAndType.xyz;
 
-    // Energy-conserving diffuse: metals have no diffuse
-    vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
-    vec3 diffuse = kD * albedo / PI;
+        vec3 L = vec3(0.0);
+        float attenuation = 1.0;
 
-    vec3 Lo = (diffuse + specular) * lightColor * attenuation * NdotL;
+        if (lightType == 1) {
+            L = light.directionAndCone.xyz;
+        } else if (lightType == 2) {
+            vec3 toLight = light.positionAndRange.xyz - fragWorldPos;
+            float distSq = dot(toLight, toLight);
+            L = toLight / sqrt(distSq);
+            attenuation = windowedFalloff(distSq, light.positionAndRange.w);
+            float cosTheta = dot(-L, light.directionAndCone.xyz);
+            float cone = clamp(cosTheta * light.coneParams.x + light.coneParams.y, 0.0, 1.0);
+            attenuation *= cone * cone;
+        } else if (lightType == 3) {
+            vec3 toLight = light.positionAndRange.xyz - fragWorldPos;
+            float distSq = dot(toLight, toLight);
+            L = toLight / sqrt(distSq);
+            attenuation = windowedFalloff(distSq, light.positionAndRange.w);
+        }
+
+        vec3 H = normalize(V + L);
+        float NdotL = max(dot(N, L), 0.0);
+        float NdotH = max(dot(N, H), 0.0);
+        float HdotV = max(dot(H, V), 0.0);
+
+        // Cook-Torrance specular BRDF
+        float D = distributionGGX(NdotH, roughness);
+        float G = geometrySmith(NdotV, NdotL, roughness);
+        vec3  F = fresnelSchlick(HdotV, F0);
+
+        vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.0001);
+
+        // Energy-conserving diffuse: metals have no diffuse
+        vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
+        vec3 diffuse = kD * albedo / PI;
+
+        Lo += (diffuse + specular) * lightColor * attenuation * NdotL;
+    }
 
     // Ambient approximation (no IBL yet)
     vec3 ambient = vec3(0.03) * albedo;

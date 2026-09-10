@@ -68,7 +68,7 @@ using Light = std::variant<DirectionalLight, SpotLight, PointLight>;
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
-    std::optional<Light> light;
+    std::vector<Light> lights;
     Camera camera;
 };
 
@@ -135,6 +135,22 @@ struct hash<Vertex> {
 // GPU data structs
 // ---------------------------------------------------------------------------
 
+constexpr uint32_t MAX_LIGHTS = 8;
+
+// Packed GPU representation of one light (matches the GLSL struct exactly).
+// lightType: 1=directional, 2=spot, 3=point
+struct GpuLight {
+    alignas(16) glm::vec4 colorAndType;  // xyz=RGB intensity, w=lightType
+    alignas(16) glm::vec4 positionAndRange; // xyz=position, w=invRange (spot/point)
+    alignas(16) glm::vec4 directionAndCone; // xyz=direction, w=unused
+    alignas(16) glm::vec4 coneParams;    // x=scale, y=offset (spot only)
+};
+
+struct LightUBO {
+    alignas(16) glm::uvec4 counts; // x = active light count (uvec4 for std140 padding)
+    GpuLight lights[MAX_LIGHTS];
+};
+
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
@@ -142,11 +158,7 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 normalMatrix;
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
-    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot,3=point)
-    alignas(16) glm::vec4 lightDir = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = normalized direction (world space)
-    alignas(16) glm::vec4 lightColor = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = RGB color/intensity
-    alignas(16) glm::vec4 lightPos = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = position (spot and point lights)
-    alignas(16) glm::vec4 lightParams = { 0.0f, 0.0f, 0.0f, 0.0f }; // spot: x=scale, y=offset (cone); spot+point: z=invRange
+    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness
 };
 
 struct ComputeUBO {

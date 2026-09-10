@@ -79,8 +79,7 @@ Scene loadScene(std::string const& path) {
         scene.particles = particles;
     }
 
-    if (j.contains("light")) {
-        auto const& lightJson = j["light"];
+    auto parseLight = [&](json const& lightJson) -> Light {
         if (!lightJson.contains("type"))
             throw std::runtime_error("light.type is required: " + path);
         std::string lightType = lightJson.at("type").get<std::string>();
@@ -96,7 +95,7 @@ Scene loadScene(std::string const& path) {
             DirectionalLight light;
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
-            scene.light = light;
+            return light;
         } else if (lightType == "spot") {
             require("position");
             require("direction");
@@ -111,7 +110,7 @@ Scene loadScene(std::string const& path) {
             light.innerConeAngle = lightJson["innerConeAngle"].get<float>();
             light.outerConeAngle = lightJson["outerConeAngle"].get<float>();
             light.range = lightJson["range"].get<float>();
-            scene.light = light;
+            return light;
         } else if (lightType == "point") {
             require("position");
             require("color");
@@ -120,10 +119,17 @@ Scene loadScene(std::string const& path) {
             light.position = vec3FromJson(lightJson["position"]);
             light.color = vec3FromJson(lightJson["color"]);
             light.range = lightJson["range"].get<float>();
-            scene.light = light;
+            return light;
         } else {
             throw std::runtime_error("unknown light.type '" + lightType + "': " + path);
         }
+    };
+
+    if (j.contains("lights")) {
+        for (auto const& lightJson: j["lights"])
+            scene.lights.push_back(parseLight(lightJson));
+    } else if (j.contains("light")) {
+        scene.lights.push_back(parseLight(j["light"]));
     }
 
     auto const& cameraJson = j.at("camera");

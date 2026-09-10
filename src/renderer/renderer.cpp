@@ -62,6 +62,16 @@ void Renderer::initVulkan() {
     mResources.emplace();
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        auto [buf, mem] = vkutil::createBuffer(*mCtx, sizeof(LightUBO),
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                        vk::MemoryPropertyFlagBits::eHostCoherent);
+        mLightBuffersMapped.push_back(mem.mapMemory(0, sizeof(LightUBO)));
+        mLightBuffers.push_back(std::move(buf));
+        mLightBuffersMemory.push_back(std::move(mem));
+    }
+
     auto makeKey = [](MeshInstance const& inst, bool ds) {
         return inst.vertexShader + "+" + inst.fragmentShader + (ds ? "+ds" : "");
     };
@@ -80,7 +90,7 @@ void Renderer::initVulkan() {
         ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
         ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
-        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture);
+        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffers);
     }
 
     if (mScene.particles) {
@@ -149,41 +159,38 @@ void Renderer::updateUniforms() {
 
     glm::vec3 camPos = mCamera.position();
 
-    float lightType = 0.0f;
-    glm::vec4 lightDir = {};
-    glm::vec4 lightColor = {};
-    glm::vec4 lightPos = {};
-    glm::vec4 lightParams = {};
-
-    if (mScene.light) {
+    // Build the light UBO once per frame and upload to this frame's shared buffer.
+    LightUBO lightUbo{};
+    uint32_t lightCount = 0;
+    for (auto const& light: mScene.lights) {
+        if (lightCount >= MAX_LIGHTS) break;
+        GpuLight& g = lightUbo.lights[lightCount++];
         std::visit(
             [&](auto const& l) {
                 using T = std::decay_t<decltype(l)>;
                 if constexpr (std::is_same_v<T, DirectionalLight>) {
-                    lightType = 1.0f;
-                    lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
-                    lightColor = glm::vec4(l.color, 0.0f);
+                    g.colorAndType = glm::vec4(l.color, 1.0f);
+                    g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
                 } else if constexpr (std::is_same_v<T, SpotLight>) {
-                    lightType = 2.0f;
-                    lightPos = glm::vec4(l.position, 0.0f);
-                    lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
-                    lightColor = glm::vec4(l.color, 0.0f);
                     float cosInner = glm::cos(glm::radians(l.innerConeAngle));
                     float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
                     float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
                     float offset = -cosOuter * scale;
                     float invRange = 1.0f / glm::max(l.range, 1e-4f);
-                    lightParams = glm::vec4(scale, offset, invRange, 0.0f);
+                    g.colorAndType = glm::vec4(l.color, 2.0f);
+                    g.positionAndRange = glm::vec4(l.position, invRange);
+                    g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
+                    g.coneParams = glm::vec4(scale, offset, 0.0f, 0.0f);
                 } else if constexpr (std::is_same_v<T, PointLight>) {
-                    lightType = 3.0f;
-                    lightPos = glm::vec4(l.position, 0.0f);
-                    lightColor = glm::vec4(l.color, 0.0f);
                     float invRange = 1.0f / glm::max(l.range, 1e-4f);
-                    lightParams = glm::vec4(0.0f, 0.0f, invRange, 0.0f);
+                    g.colorAndType = glm::vec4(l.color, 3.0f);
+                    g.positionAndRange = glm::vec4(l.position, invRange);
                 }
             },
-            *mScene.light);
+            light);
     }
+    lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
+    memcpy(mLightBuffersMapped[mFrameIndex], &lightUbo, sizeof(lightUbo));
 
     for (auto& ro: mRenderObjects) {
         auto const& obj = mGameObjects[ro.gameObjectIndex];
@@ -197,11 +204,7 @@ void Renderer::updateUniforms() {
             .normalMatrix = glm::transpose(glm::inverse(model)),
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
-            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, lightType, 0.0f),
-            .lightDir = lightDir,
-            .lightColor = lightColor,
-            .lightPos = lightPos,
-            .lightParams = lightParams,
+            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, 0.0f, 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }

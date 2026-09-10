@@ -47,6 +47,9 @@ private:
     std::optional<ResourceManager> mResources;
     std::optional<MeshBuffer> mMeshBuffer;
     std::map<std::string, Material> mMaterials;
+    std::vector<vk::raii::Buffer> mLightBuffers;
+    std::vector<vk::raii::DeviceMemory> mLightBuffersMemory;
+    std::vector<void*> mLightBuffersMapped;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::vector<GameObject> mGameObjects;
     std::vector<RenderObject> mRenderObjects;
