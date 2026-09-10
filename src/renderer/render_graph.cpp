@@ -64,7 +64,7 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
                 .storeOp = vk::AttachmentStoreOp::eDontCare,
-                .clearValue = vk::ClearColorValue{ 1.0f, 1.0f, 1.0f, 1.0f },
+                .clearValue = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f },
             };
             if (pass.resolveTarget.isValid()) {
                 auto& resolveImage = mImages[pass.resolveTarget.index];

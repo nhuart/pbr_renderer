@@ -1,4 +1,7 @@
-.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint
+.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint \
+	screenshot-all \
+	screenshot-stanford-bunny-pbr screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian \
+	screenshot-viking-room screenshot-viking-room-particles
 
 help:
 	@echo "Available commands:"
@@ -9,6 +12,13 @@ help:
 	@echo "  make format           - Format all source files with clang-format"
 	@echo "  make lint             - Run clang-tidy static analysis"
 	@echo "  make lint-fix         - Run clang-tidy and apply fixes automatically"
+	@echo "  make screenshot-all   - Capture screenshots for all scenes"
+	@echo "  make screenshot-stanford-bunny-pbr        - Stanford bunny PBR"
+	@echo "  make screenshot-stanford-bunny-phong      - Stanford bunny Phong"
+	@echo "  make screenshot-stanford-bunny-blinn-phong - Stanford bunny Blinn-Phong"
+	@echo "  make screenshot-stanford-bunny-lambertian  - Stanford bunny Lambertian"
+	@echo "  make screenshot-viking-room               - Viking room (single)"
+	@echo "  make screenshot-viking-room-particles     - Three viking rooms with particles"
 
 .DEFAULT_GOAL := help
 
@@ -38,3 +48,23 @@ lint:
 
 lint-fix:
 	run-clang-tidy -p build/debug -quiet -fix -j$(shell nproc) "^$(CURDIR)/src/.*\.cpp$$"
+
+screenshot-stanford-bunny-pbr:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr.json ARGS='--screenshot results/standford_bunny/pbr.png'
+
+screenshot-stanford-bunny-phong:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_phong.json ARGS='--screenshot results/standford_bunny/phong.png'
+
+screenshot-stanford-bunny-blinn-phong:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_blinn_phong.json ARGS='--screenshot results/standford_bunny/blinn_phong.png'
+
+screenshot-stanford-bunny-lambertian:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_lambertian.json ARGS='--screenshot results/standford_bunny/lambertian.png'
+
+screenshot-viking-room:
+	$(MAKE) run-debug SCENE=scenes/viking_room.json ARGS='--screenshot results/viking_room/single.png'
+
+screenshot-viking-room-particles:
+	$(MAKE) run-debug SCENE=scenes/three_viking_rooms_particles.json ARGS='--screenshot results/viking_room/three_rooms.png'
+
+screenshot-all: screenshot-stanford-bunny-pbr screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-viking-room screenshot-viking-room-particles
