@@ -190,8 +190,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     std::cout << "Graphics pipeline: created\n";
 }
 
-MaterialInstance Material::createInstance(VulkanContext const& ctx,
-        TextureAtlas const& texture,
+MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
         std::vector<vk::raii::Buffer> const& lightBuffers) const {
     MaterialInstance inst;
 

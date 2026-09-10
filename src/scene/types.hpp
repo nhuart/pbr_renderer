@@ -140,10 +140,10 @@ constexpr uint32_t MAX_LIGHTS = 8;
 // Packed GPU representation of one light (matches the GLSL struct exactly).
 // lightType: 1=directional, 2=spot, 3=point
 struct GpuLight {
-    alignas(16) glm::vec4 colorAndType;  // xyz=RGB intensity, w=lightType
+    alignas(16) glm::vec4 colorAndType;     // xyz=RGB intensity, w=lightType
     alignas(16) glm::vec4 positionAndRange; // xyz=position, w=invRange (spot/point)
     alignas(16) glm::vec4 directionAndCone; // xyz=direction, w=unused
-    alignas(16) glm::vec4 coneParams;    // x=scale, y=offset (spot only)
+    alignas(16) glm::vec4 coneParams;       // x=scale, y=offset (spot only)
 };
 
 struct LightUBO {

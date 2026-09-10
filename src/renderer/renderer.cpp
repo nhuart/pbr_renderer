@@ -79,10 +79,10 @@ void Renderer::initVulkan() {
     for (auto const& inst: mScene.meshInstances) {
         bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
         auto key = makeKey(inst, doubleSided);
-        if (!mMaterials.contains(key))
-            mMaterials.emplace(key,
-                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader,
-                            doubleSided));
+        if (!mMaterials.contains(key)) {
+            mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader,
+                                            inst.fragmentShader, doubleSided));
+        }
     }
 
     for (auto& ro: mRenderObjects) {
@@ -163,31 +163,33 @@ void Renderer::updateUniforms() {
     LightUBO lightUbo{};
     uint32_t lightCount = 0;
     for (auto const& light: mScene.lights) {
-        if (lightCount >= MAX_LIGHTS) break;
+        if (lightCount >= MAX_LIGHTS) {
+            break;
+        }
         GpuLight& g = lightUbo.lights[lightCount++];
         std::visit(
-            [&](auto const& l) {
-                using T = std::decay_t<decltype(l)>;
-                if constexpr (std::is_same_v<T, DirectionalLight>) {
-                    g.colorAndType = glm::vec4(l.color, 1.0f);
-                    g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
-                } else if constexpr (std::is_same_v<T, SpotLight>) {
-                    float cosInner = glm::cos(glm::radians(l.innerConeAngle));
-                    float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
-                    float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
-                    float offset = -cosOuter * scale;
-                    float invRange = 1.0f / glm::max(l.range, 1e-4f);
-                    g.colorAndType = glm::vec4(l.color, 2.0f);
-                    g.positionAndRange = glm::vec4(l.position, invRange);
-                    g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
-                    g.coneParams = glm::vec4(scale, offset, 0.0f, 0.0f);
-                } else if constexpr (std::is_same_v<T, PointLight>) {
-                    float invRange = 1.0f / glm::max(l.range, 1e-4f);
-                    g.colorAndType = glm::vec4(l.color, 3.0f);
-                    g.positionAndRange = glm::vec4(l.position, invRange);
-                }
-            },
-            light);
+                [&](auto const& l) {
+                    using T = std::decay_t<decltype(l)>;
+                    if constexpr (std::is_same_v<T, DirectionalLight>) {
+                        g.colorAndType = glm::vec4(l.color, 1.0f);
+                        g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
+                    } else if constexpr (std::is_same_v<T, SpotLight>) {
+                        float cosInner = glm::cos(glm::radians(l.innerConeAngle));
+                        float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
+                        float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
+                        float offset = -cosOuter * scale;
+                        float invRange = 1.0f / glm::max(l.range, 1e-4f);
+                        g.colorAndType = glm::vec4(l.color, 2.0f);
+                        g.positionAndRange = glm::vec4(l.position, invRange);
+                        g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
+                        g.coneParams = glm::vec4(scale, offset, 0.0f, 0.0f);
+                    } else if constexpr (std::is_same_v<T, PointLight>) {
+                        float invRange = 1.0f / glm::max(l.range, 1e-4f);
+                        g.colorAndType = glm::vec4(l.color, 3.0f);
+                        g.positionAndRange = glm::vec4(l.position, invRange);
+                    }
+                },
+                light);
     }
     lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
     memcpy(mLightBuffersMapped[mFrameIndex], &lightUbo, sizeof(lightUbo));

@@ -41,8 +41,7 @@ struct Material {
             bool doubleSided = false);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
-            TextureAtlas const& texture,
-            std::vector<vk::raii::Buffer> const& lightBuffers) const;
+            TextureAtlas const& texture, std::vector<vk::raii::Buffer> const& lightBuffers) const;
 
 private:
     static std::vector<char> readFile(std::string const& path);
