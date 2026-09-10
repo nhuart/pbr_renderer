@@ -1,6 +1,6 @@
 .PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint \
 	screenshot-all \
-	screenshot-stanford-bunny-pbr screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian \
+	screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian \
 	screenshot-viking-room screenshot-viking-room-particles
 
 help:
@@ -13,7 +13,7 @@ help:
 	@echo "  make lint             - Run clang-tidy static analysis"
 	@echo "  make lint-fix         - Run clang-tidy and apply fixes automatically"
 	@echo "  make screenshot-all   - Capture screenshots for all scenes"
-	@echo "  make screenshot-stanford-bunny-pbr        - Stanford bunny PBR (directional light)"
+	@echo "  make screenshot-stanford-bunny-pbr-directional - Stanford bunny PBR (directional light)"
 	@echo "  make screenshot-stanford-bunny-pbr-spot   - Stanford bunny PBR (spot light)"
 	@echo "  make screenshot-stanford-bunny-pbr-point  - Stanford bunny PBR (point light)"
 	@echo "  make screenshot-stanford-bunny-phong      - Stanford bunny Phong"
@@ -51,8 +51,8 @@ lint:
 lint-fix:
 	run-clang-tidy -p build/debug -quiet -fix -j$(shell nproc) "^$(CURDIR)/src/.*\.cpp$$"
 
-screenshot-stanford-bunny-pbr:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr.json ARGS='--screenshot results/standford_bunny/pbr.png'
+screenshot-stanford-bunny-pbr-directional:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_directional.json ARGS='--screenshot results/standford_bunny/pbr_directional.png'
 
 screenshot-stanford-bunny-pbr-spot:
 	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_spot.json ARGS='--screenshot results/standford_bunny/pbr_spot.png'
@@ -75,4 +75,4 @@ screenshot-viking-room:
 screenshot-viking-room-particles:
 	$(MAKE) run-debug SCENE=scenes/three_viking_rooms_particles.json ARGS='--screenshot results/viking_room/three_rooms.png'
 
-screenshot-all: screenshot-stanford-bunny-pbr screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-viking-room screenshot-viking-room-particles
+screenshot-all: screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-viking-room screenshot-viking-room-particles

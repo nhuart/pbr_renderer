@@ -17,6 +17,14 @@
             "position": [0.03, -1.19, -0.28],
             "rotation": [-90.0, 0.0, 45.0],
             "scale": [10.0, 10.0, 10.0]
+        },
+        {
+            "gltf": "models/plane.glb",
+            "vertexShader": "standard",
+            "fragmentShader": "lambertian",
+            "baseColor": [0.6, 0.6, 0.6, 1.0],
+            "position": [0.03, -0.857, -0.28],
+            "scale": [3.0, 3.0, 3.0]
         }
     ]
 }
