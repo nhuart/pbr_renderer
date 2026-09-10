@@ -56,7 +56,12 @@ struct SpotLight {
     float outerConeAngle; // degrees
 };
 
-using Light = std::variant<DirectionalLight, SpotLight>;
+struct PointLight {
+    glm::vec3 position;
+    glm::vec3 color;
+};
+
+using Light = std::variant<DirectionalLight, SpotLight, PointLight>;
 
 struct Scene {
     std::vector<MeshInstance> meshInstances;

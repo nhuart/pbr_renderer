@@ -112,6 +112,15 @@ Scene loadScene(std::string const& path) {
             light.innerConeAngle = lightJson["innerConeAngle"].get<float>();
             light.outerConeAngle = lightJson["outerConeAngle"].get<float>();
             scene.light = light;
+        } else if (lightType == "point") {
+            if (!lightJson.contains("position"))
+                throw std::runtime_error("light.position is required for point light: " + path);
+            if (!lightJson.contains("color"))
+                throw std::runtime_error("light.color is required for point light: " + path);
+            PointLight light;
+            light.position = vec3FromJson(lightJson["position"]);
+            light.color = vec3FromJson(lightJson["color"]);
+            scene.light = light;
         } else {
             throw std::runtime_error("unknown light.type '" + lightType + "': " + path);
         }

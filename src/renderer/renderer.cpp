@@ -175,6 +175,10 @@ void Renderer::updateUniforms() {
                         float inner = glm::cos(glm::radians(l.innerConeAngle));
                         float outer = glm::cos(glm::radians(l.outerConeAngle));
                         lightParams = glm::vec4(inner, outer, 0.0f, 0.0f);
+                    } else if constexpr (std::is_same_v<T, PointLight>) {
+                        lightType = 3.0f;
+                        lightPos = glm::vec4(l.position, 0.0f);
+                        lightColor = glm::vec4(l.color, 0.0f);
                     }
                 },
                 *mScene.light);

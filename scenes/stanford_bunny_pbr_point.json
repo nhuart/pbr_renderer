@@ -1,0 +1,39 @@
+{
+    "light": {
+        "type": "point",
+        "position": [1.5, 0.5, 1.5],
+        "color": [20.0, 20.0, 20.0]
+    },
+    "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "azimuth": 45.0,
+        "elevation": 30.0,
+        "radius": 3.5,
+        "fov": 45.0,
+        "near": 0.1,
+        "far": 100.0
+    },
+    "meshInstances": [
+        {
+            "gltf": "models/stanford_bunny.glb",
+            "vertexShader": "standard",
+            "fragmentShader": "pbr",
+            "baseColor": [0.8, 0.7, 0.6, 1.0],
+            "metallic": 0.0,
+            "roughness": 0.4,
+            "position": [0.03, -1.19, -0.28],
+            "rotation": [-90.0, 0.0, 45.0],
+            "scale": [10.0, 10.0, 10.0]
+        },
+        {
+            "gltf": "models/plane.glb",
+            "vertexShader": "standard",
+            "fragmentShader": "pbr",
+            "baseColor": [0.6, 0.6, 0.6, 1.0],
+            "metallic": 0.0,
+            "roughness": 0.8,
+            "position": [0.03, -0.857, -0.28],
+            "scale": [3.0, 1.0, 3.0]
+        }
+    ]
+}

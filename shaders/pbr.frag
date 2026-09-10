@@ -91,6 +91,15 @@ void main() {
         float cosOuter  = ubo.lightParams.y;
         float epsilon   = max(cosInner - cosOuter, 1e-4);
         attenuation    *= clamp((cosTheta - cosOuter) / epsilon, 0.0, 1.0);
+    } else if (lightType == 3) {
+        // Point light
+        vec3 toLight = ubo.lightPos.xyz - fragWorldPos;
+        float dist = length(toLight);
+        L = toLight / dist;
+        lightColor = ubo.lightColor.xyz;
+
+        // Inverse-square falloff
+        attenuation = 1.0 / (dist * dist);
     }
 
     vec3 H = normalize(V + L);
