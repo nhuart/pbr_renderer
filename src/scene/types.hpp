@@ -3,6 +3,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -47,10 +48,20 @@ struct DirectionalLight {
     glm::vec3 color;
 };
 
+struct SpotLight {
+    glm::vec3 position;
+    glm::vec3 direction;
+    glm::vec3 color;
+    float innerConeAngle; // degrees
+    float outerConeAngle; // degrees
+};
+
+using Light = std::variant<DirectionalLight, SpotLight>;
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
-    std::optional<DirectionalLight> light;
+    std::optional<Light> light;
     Camera camera;
 };
 
@@ -124,9 +135,11 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 normalMatrix;
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
-    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x = metallic, y = roughness
-    alignas(16) glm::vec4 lightDir = { 1.0f, 2.0f, 1.0f, 0.0f };  // xyz = direction (world space)
-    alignas(16) glm::vec4 lightColor = { 3.0f, 3.0f, 3.0f, 0.0f }; // xyz = RGB color/intensity
+    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot)
+    alignas(16) glm::vec4 lightDir = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = normalized direction (world space)
+    alignas(16) glm::vec4 lightColor = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = RGB color/intensity
+    alignas(16) glm::vec4 lightPos = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = position (spot only)
+    alignas(16) glm::vec4 lightParams = { 0.0f, 0.0f, 0.0f, 0.0f }; // x=innerCutoff cos, y=outerCutoff cos (spot only)
 };
 
 struct ComputeUBO {

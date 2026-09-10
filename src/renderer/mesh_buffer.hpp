@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstring>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -21,9 +22,16 @@ struct Accessor;
 struct VulkanContext;
 struct CommandService;
 
+struct MeshIndexRange {
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
+    bool doubleSided = false;
+};
+
 struct MeshBuffer {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    std::unordered_map<std::string, MeshIndexRange> meshRanges;
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
     vk::raii::Buffer indexBuffer = nullptr;

@@ -35,7 +35,8 @@ vk::raii::ShaderModule Material::createShaderModule(VulkanContext const& ctx,
 }
 
 Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
-        std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename) {
+        std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
+        bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
     // Descriptor set layout
     std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
@@ -119,7 +120,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         .depthClampEnable = vk::False,
         .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eBack,
+        .cullMode = doubleSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = vk::False,
         .lineWidth = 1.0f,

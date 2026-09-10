@@ -130,11 +130,18 @@ void MeshBuffer::loadMeshes(Scene const& scene) {
         if (!warn.empty()) std::cerr << "glTF warning: " << warn << "\n";
         if (!ret) throw std::runtime_error("failed to load glTF model: " + err);
 
+        uint32_t firstIndex = static_cast<uint32_t>(indices.size());
         std::unordered_map<Vertex, uint32_t> uniqueVertices;
         for (auto const& mesh: model.meshes)
             for (auto const& primitive: mesh.primitives)
                 loadPrimitive(model, primitive, uniqueVertices);
 
+        bool doubleSided = false;
+        if (!model.materials.empty()) doubleSided = model.materials[0].doubleSided;
+
+        meshRanges[inst.gltfPath] = { firstIndex,
+            static_cast<uint32_t>(indices.size()) - firstIndex,
+            doubleSided };
         std::cout << "Model loaded (" << inst.gltfPath << "): " << vertices.size()
                   << " unique vertices, " << indices.size() << " indices\n";
     }

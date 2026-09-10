@@ -60,21 +60,28 @@ void Renderer::initVulkan() {
     std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 
     mResources.emplace();
+    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
     for (auto const& inst: mScene.meshInstances) {
-        auto key = inst.vertexShader + "+" + inst.fragmentShader;
+        bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
+        auto key = inst.vertexShader + "+" + inst.fragmentShader + (doubleSided ? "+ds" : "");
         if (!mMaterials.contains(key))
             mMaterials.emplace(key,
-                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader));
+                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader,
+                            doubleSided));
     }
 
     for (auto& ro: mRenderObjects) {
         auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
+        auto const& range = mMeshBuffer->meshRanges.at(inst.gltfPath);
+        ro.firstIndex = range.firstIndex;
+        ro.indexCount = range.indexCount;
+        ro.doubleSided = range.doubleSided;
+        auto key = inst.vertexShader + "+" + inst.fragmentShader + (ro.doubleSided ? "+ds" : "");
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
-        ro.material = &mMaterials.at(inst.vertexShader + "+" + inst.fragmentShader);
+        ro.material = &mMaterials.at(key);
         ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture);
     }
-    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
     if (mScene.particles) {
         mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
@@ -146,8 +153,32 @@ void Renderer::updateUniforms() {
         glm::mat4 model = obj.getModelMatrix();
         auto const& meshInst = mScene.meshInstances[ro.gameObjectIndex];
 
-        glm::vec3 lightDir = mScene.light ? mScene.light->direction : glm::vec3(1.0f, 2.0f, 1.0f);
-        glm::vec3 lightColor = mScene.light ? mScene.light->color : glm::vec3(3.0f);
+        float lightType = 0.0f;
+        glm::vec4 lightDir = {};
+        glm::vec4 lightColor = {};
+        glm::vec4 lightPos = {};
+        glm::vec4 lightParams = {};
+
+        if (mScene.light) {
+            std::visit(
+                [&](auto const& l) {
+                    using T = std::decay_t<decltype(l)>;
+                    if constexpr (std::is_same_v<T, DirectionalLight>) {
+                        lightType = 1.0f;
+                        lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
+                        lightColor = glm::vec4(l.color, 0.0f);
+                    } else if constexpr (std::is_same_v<T, SpotLight>) {
+                        lightType = 2.0f;
+                        lightPos = glm::vec4(l.position, 0.0f);
+                        lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
+                        lightColor = glm::vec4(l.color, 0.0f);
+                        float inner = glm::cos(glm::radians(l.innerConeAngle));
+                        float outer = glm::cos(glm::radians(l.outerConeAngle));
+                        lightParams = glm::vec4(inner, outer, 0.0f, 0.0f);
+                    }
+                },
+                *mScene.light);
+        }
 
         UniformBufferObject ubo{
             .model = model,
@@ -156,9 +187,11 @@ void Renderer::updateUniforms() {
             .normalMatrix = glm::transpose(glm::inverse(model)),
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
-            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, 0.0f, 0.0f),
-            .lightDir = glm::vec4(glm::normalize(lightDir), 0.0f),
-            .lightColor = glm::vec4(lightColor, 0.0f),
+            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, lightType, 0.0f),
+            .lightDir = lightDir,
+            .lightColor = lightColor,
+            .lightPos = lightPos,
+            .lightParams = lightParams,
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
@@ -318,8 +351,8 @@ void Renderer::buildRenderGraph() {
                     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *renderObject.material->pipelineLayout, 0,
                             *renderObject.materialInstance.descriptorSets[mFrameIndex], {});
-                    commandBuffer.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1,
-                            0, 0, 0);
+                    commandBuffer.drawIndexed(renderObject.indexCount, 1,
+                            renderObject.firstIndex, 0, 0);
                 }
 
                 if (mScene.particles) {

@@ -7,9 +7,11 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 normalMatrix;
     vec4 baseColor;
     vec4 cameraPos;
-    vec4 pbrParams;
-    vec4 lightDir;
-    vec4 lightColor;
+    vec4 pbrParams;   // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot)
+    vec4 lightDir;    // xyz = normalized direction
+    vec4 lightColor;  // xyz = RGB color/intensity
+    vec4 lightPos;    // xyz = position (spot only)
+    vec4 lightParams; // x=innerCutoff cos, y=outerCutoff cos (spot only)
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
@@ -56,14 +58,41 @@ void main() {
     vec3 albedo     = texColor.rgb * fragBaseColor.rgb;
 
     vec3 N = normalize(fragNormal);
+    if (!gl_FrontFacing) N = -N;
     vec3 V = normalize(ubo.cameraPos.xyz - fragWorldPos);
 
     // Dialectric F0 = 0.04; metals use albedo as F0
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Single directional light (from UBO)
-    vec3 L          = ubo.lightDir.xyz;
-    vec3 lightColor = ubo.lightColor.xyz;
+    int lightType = int(ubo.pbrParams.z);
+
+    vec3 L = vec3(0.0);
+    vec3 lightColor = vec3(0.0);
+    float attenuation = 1.0;
+
+    if (lightType == 1) {
+        // Directional light
+        L = ubo.lightDir.xyz;
+        lightColor = ubo.lightColor.xyz;
+    } else if (lightType == 2) {
+        // Spot light
+        vec3 toLight = ubo.lightPos.xyz - fragWorldPos;
+        float dist = length(toLight);
+        L = toLight / dist;
+        lightColor = ubo.lightColor.xyz;
+
+        // Inverse-square falloff
+        attenuation = 1.0 / (dist * dist);
+
+        // Cone attenuation: linear ramp in cosine space from outer to inner cutoff
+        // I = (cosTheta - cosOuter) / (cosInner - cosOuter), clamped to [0,1]
+        float cosTheta  = dot(-L, ubo.lightDir.xyz);
+        float cosInner  = ubo.lightParams.x;
+        float cosOuter  = ubo.lightParams.y;
+        float epsilon   = max(cosInner - cosOuter, 1e-4);
+        attenuation    *= clamp((cosTheta - cosOuter) / epsilon, 0.0, 1.0);
+    }
+
     vec3 H = normalize(V + L);
 
     float NdotV = max(dot(N, V), 0.0001);
@@ -82,7 +111,7 @@ void main() {
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 diffuse = kD * albedo / PI;
 
-    vec3 Lo = (diffuse + specular) * lightColor * NdotL;
+    vec3 Lo = (diffuse + specular) * lightColor * attenuation * NdotL;
 
     // Ambient approximation (no IBL yet)
     vec3 ambient = vec3(0.03) * albedo;

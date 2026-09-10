@@ -81,14 +81,40 @@ Scene loadScene(std::string const& path) {
 
     if (j.contains("light")) {
         auto const& lightJson = j["light"];
-        if (!lightJson.contains("direction"))
-            throw std::runtime_error("light.direction is required: " + path);
-        if (!lightJson.contains("color"))
-            throw std::runtime_error("light.color is required: " + path);
-        DirectionalLight light;
-        light.direction = vec3FromJson(lightJson["direction"]);
-        light.color = vec3FromJson(lightJson["color"]);
-        scene.light = light;
+        if (!lightJson.contains("type"))
+            throw std::runtime_error("light.type is required: " + path);
+        std::string lightType = lightJson.at("type").get<std::string>();
+
+        if (lightType == "directional") {
+            if (!lightJson.contains("direction"))
+                throw std::runtime_error("light.direction is required for directional light: " + path);
+            if (!lightJson.contains("color"))
+                throw std::runtime_error("light.color is required for directional light: " + path);
+            DirectionalLight light;
+            light.direction = vec3FromJson(lightJson["direction"]);
+            light.color = vec3FromJson(lightJson["color"]);
+            scene.light = light;
+        } else if (lightType == "spot") {
+            if (!lightJson.contains("position"))
+                throw std::runtime_error("light.position is required for spot light: " + path);
+            if (!lightJson.contains("direction"))
+                throw std::runtime_error("light.direction is required for spot light: " + path);
+            if (!lightJson.contains("color"))
+                throw std::runtime_error("light.color is required for spot light: " + path);
+            if (!lightJson.contains("innerConeAngle"))
+                throw std::runtime_error("light.innerConeAngle is required for spot light: " + path);
+            if (!lightJson.contains("outerConeAngle"))
+                throw std::runtime_error("light.outerConeAngle is required for spot light: " + path);
+            SpotLight light;
+            light.position = vec3FromJson(lightJson["position"]);
+            light.direction = vec3FromJson(lightJson["direction"]);
+            light.color = vec3FromJson(lightJson["color"]);
+            light.innerConeAngle = lightJson["innerConeAngle"].get<float>();
+            light.outerConeAngle = lightJson["outerConeAngle"].get<float>();
+            scene.light = light;
+        } else {
+            throw std::runtime_error("unknown light.type '" + lightType + "': " + path);
+        }
     }
 
     auto const& cameraJson = j.at("camera");

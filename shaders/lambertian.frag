@@ -14,7 +14,9 @@ const float ambient = 0.15;
 
 void main() {
     vec3 lightDir = normalize(vec3(1.0, 2.0, 1.0));
-    float diffuse = max(dot(normalize(fragNormal), lightDir), 0.0);
+    vec3 N = normalize(fragNormal);
+    if (!gl_FrontFacing) N = -N;
+    float diffuse = max(dot(N, lightDir), 0.0);
     float light = ambient + diffuse;
 
     vec4 texColor = texture(texSampler, fragTexCoord);
