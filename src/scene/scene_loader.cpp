@@ -85,41 +85,41 @@ Scene loadScene(std::string const& path) {
             throw std::runtime_error("light.type is required: " + path);
         std::string lightType = lightJson.at("type").get<std::string>();
 
+        auto require = [&](std::string const& field) {
+            if (!lightJson.contains(field))
+                throw std::runtime_error("light." + field + " is required for " + lightType + " light: " + path);
+        };
+
         if (lightType == "directional") {
-            if (!lightJson.contains("direction"))
-                throw std::runtime_error("light.direction is required for directional light: " + path);
-            if (!lightJson.contains("color"))
-                throw std::runtime_error("light.color is required for directional light: " + path);
+            require("direction");
+            require("color");
             DirectionalLight light;
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
             scene.light = light;
         } else if (lightType == "spot") {
-            if (!lightJson.contains("position"))
-                throw std::runtime_error("light.position is required for spot light: " + path);
-            if (!lightJson.contains("direction"))
-                throw std::runtime_error("light.direction is required for spot light: " + path);
-            if (!lightJson.contains("color"))
-                throw std::runtime_error("light.color is required for spot light: " + path);
-            if (!lightJson.contains("innerConeAngle"))
-                throw std::runtime_error("light.innerConeAngle is required for spot light: " + path);
-            if (!lightJson.contains("outerConeAngle"))
-                throw std::runtime_error("light.outerConeAngle is required for spot light: " + path);
+            require("position");
+            require("direction");
+            require("color");
+            require("innerConeAngle");
+            require("outerConeAngle");
+            require("range");
             SpotLight light;
             light.position = vec3FromJson(lightJson["position"]);
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
             light.innerConeAngle = lightJson["innerConeAngle"].get<float>();
             light.outerConeAngle = lightJson["outerConeAngle"].get<float>();
+            light.range = lightJson["range"].get<float>();
             scene.light = light;
         } else if (lightType == "point") {
-            if (!lightJson.contains("position"))
-                throw std::runtime_error("light.position is required for point light: " + path);
-            if (!lightJson.contains("color"))
-                throw std::runtime_error("light.color is required for point light: " + path);
+            require("position");
+            require("color");
+            require("range");
             PointLight light;
             light.position = vec3FromJson(lightJson["position"]);
             light.color = vec3FromJson(lightJson["color"]);
+            light.range = lightJson["range"].get<float>();
             scene.light = light;
         } else {
             throw std::runtime_error("unknown light.type '" + lightType + "': " + path);

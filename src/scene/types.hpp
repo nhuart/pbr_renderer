@@ -54,11 +54,13 @@ struct SpotLight {
     glm::vec3 color;
     float innerConeAngle; // degrees
     float outerConeAngle; // degrees
+    float range;
 };
 
 struct PointLight {
     glm::vec3 position;
     glm::vec3 color;
+    float range;
 };
 
 using Light = std::variant<DirectionalLight, SpotLight, PointLight>;
@@ -140,11 +142,11 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 normalMatrix;
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
-    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot)
+    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot,3=point)
     alignas(16) glm::vec4 lightDir = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = normalized direction (world space)
     alignas(16) glm::vec4 lightColor = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = RGB color/intensity
-    alignas(16) glm::vec4 lightPos = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = position (spot only)
-    alignas(16) glm::vec4 lightParams = { 0.0f, 0.0f, 0.0f, 0.0f }; // x=innerCutoff cos, y=outerCutoff cos (spot only)
+    alignas(16) glm::vec4 lightPos = { 0.0f, 0.0f, 0.0f, 0.0f };   // xyz = position (spot and point lights)
+    alignas(16) glm::vec4 lightParams = { 0.0f, 0.0f, 0.0f, 0.0f }; // spot: x=scale, y=offset (cone); spot+point: z=invRange
 };
 
 struct ComputeUBO {

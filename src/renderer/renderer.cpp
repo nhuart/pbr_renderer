@@ -62,9 +62,13 @@ void Renderer::initVulkan() {
     mResources.emplace();
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
+    auto makeKey = [](MeshInstance const& inst, bool ds) {
+        return inst.vertexShader + "+" + inst.fragmentShader + (ds ? "+ds" : "");
+    };
+
     for (auto const& inst: mScene.meshInstances) {
         bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
-        auto key = inst.vertexShader + "+" + inst.fragmentShader + (doubleSided ? "+ds" : "");
+        auto key = makeKey(inst, doubleSided);
         if (!mMaterials.contains(key))
             mMaterials.emplace(key,
                     Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader,
@@ -73,13 +77,9 @@ void Renderer::initVulkan() {
 
     for (auto& ro: mRenderObjects) {
         auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
-        auto const& range = mMeshBuffer->meshRanges.at(inst.gltfPath);
-        ro.firstIndex = range.firstIndex;
-        ro.indexCount = range.indexCount;
-        ro.doubleSided = range.doubleSided;
-        auto key = inst.vertexShader + "+" + inst.fragmentShader + (ro.doubleSided ? "+ds" : "");
+        ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
-        ro.material = &mMaterials.at(key);
+        ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
         ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture);
     }
 
@@ -147,42 +147,48 @@ void Renderer::updateUniforms() {
     glm::mat4 view = mCamera.viewMatrix();
     glm::mat4 proj = mCamera.projMatrix(aspect);
 
+    glm::vec3 camPos = mCamera.position();
+
+    float lightType = 0.0f;
+    glm::vec4 lightDir = {};
+    glm::vec4 lightColor = {};
+    glm::vec4 lightPos = {};
+    glm::vec4 lightParams = {};
+
+    if (mScene.light) {
+        std::visit(
+            [&](auto const& l) {
+                using T = std::decay_t<decltype(l)>;
+                if constexpr (std::is_same_v<T, DirectionalLight>) {
+                    lightType = 1.0f;
+                    lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
+                    lightColor = glm::vec4(l.color, 0.0f);
+                } else if constexpr (std::is_same_v<T, SpotLight>) {
+                    lightType = 2.0f;
+                    lightPos = glm::vec4(l.position, 0.0f);
+                    lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
+                    lightColor = glm::vec4(l.color, 0.0f);
+                    float cosInner = glm::cos(glm::radians(l.innerConeAngle));
+                    float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
+                    float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
+                    float offset = -cosOuter * scale;
+                    float invRange = 1.0f / glm::max(l.range, 1e-4f);
+                    lightParams = glm::vec4(scale, offset, invRange, 0.0f);
+                } else if constexpr (std::is_same_v<T, PointLight>) {
+                    lightType = 3.0f;
+                    lightPos = glm::vec4(l.position, 0.0f);
+                    lightColor = glm::vec4(l.color, 0.0f);
+                    float invRange = 1.0f / glm::max(l.range, 1e-4f);
+                    lightParams = glm::vec4(0.0f, 0.0f, invRange, 0.0f);
+                }
+            },
+            *mScene.light);
+    }
+
     for (auto& ro: mRenderObjects) {
         auto const& obj = mGameObjects[ro.gameObjectIndex];
-        glm::vec3 camPos = mCamera.position();
         glm::mat4 model = obj.getModelMatrix();
         auto const& meshInst = mScene.meshInstances[ro.gameObjectIndex];
-
-        float lightType = 0.0f;
-        glm::vec4 lightDir = {};
-        glm::vec4 lightColor = {};
-        glm::vec4 lightPos = {};
-        glm::vec4 lightParams = {};
-
-        if (mScene.light) {
-            std::visit(
-                [&](auto const& l) {
-                    using T = std::decay_t<decltype(l)>;
-                    if constexpr (std::is_same_v<T, DirectionalLight>) {
-                        lightType = 1.0f;
-                        lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
-                        lightColor = glm::vec4(l.color, 0.0f);
-                    } else if constexpr (std::is_same_v<T, SpotLight>) {
-                        lightType = 2.0f;
-                        lightPos = glm::vec4(l.position, 0.0f);
-                        lightDir = glm::vec4(glm::normalize(l.direction), 0.0f);
-                        lightColor = glm::vec4(l.color, 0.0f);
-                        float inner = glm::cos(glm::radians(l.innerConeAngle));
-                        float outer = glm::cos(glm::radians(l.outerConeAngle));
-                        lightParams = glm::vec4(inner, outer, 0.0f, 0.0f);
-                    } else if constexpr (std::is_same_v<T, PointLight>) {
-                        lightType = 3.0f;
-                        lightPos = glm::vec4(l.position, 0.0f);
-                        lightColor = glm::vec4(l.color, 0.0f);
-                    }
-                },
-                *mScene.light);
-        }
 
         UniformBufferObject ubo{
             .model = model,
@@ -355,8 +361,8 @@ void Renderer::buildRenderGraph() {
                     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *renderObject.material->pipelineLayout, 0,
                             *renderObject.materialInstance.descriptorSets[mFrameIndex], {});
-                    commandBuffer.drawIndexed(renderObject.indexCount, 1,
-                            renderObject.firstIndex, 0, 0);
+                    commandBuffer.drawIndexed(renderObject.range.indexCount, 1,
+                            renderObject.range.firstIndex, 0, 0);
                 }
 
                 if (mScene.particles) {

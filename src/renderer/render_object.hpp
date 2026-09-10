@@ -1,14 +1,13 @@
 #pragma once
 
 #include "renderer/material.hpp"
+#include "renderer/mesh_buffer.hpp"
 
 struct TextureAtlas;
 
 struct RenderObject {
     uint32_t gameObjectIndex = 0;
-    uint32_t firstIndex = 0;
-    uint32_t indexCount = 0;
-    bool doubleSided = false;
+    MeshIndexRange range;
     TextureAtlas const* texture = nullptr;
     Material const* material = nullptr;
     MaterialInstance materialInstance;

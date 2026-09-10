@@ -7,11 +7,11 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 normalMatrix;
     vec4 baseColor;
     vec4 cameraPos;
-    vec4 pbrParams;   // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot)
+    vec4 pbrParams;   // x=metallic, y=roughness, z=lightType (0=none,1=directional,2=spot,3=point)
     vec4 lightDir;    // xyz = normalized direction
     vec4 lightColor;  // xyz = RGB color/intensity
-    vec4 lightPos;    // xyz = position (spot only)
-    vec4 lightParams; // x=innerCutoff cos, y=outerCutoff cos (spot only)
+    vec4 lightPos;    // xyz = position (spot and point lights)
+    vec4 lightParams; // spot: x=scale, y=offset (cone); spot+point: z=invRange
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
@@ -50,6 +50,13 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// Windowed inverse-square falloff: (1-(d/r)^4)^2 / max(d^2, 1e-4)
+float windowedFalloff(float distSq, float invRange) {
+    float factor = distSq * invRange * invRange;
+    float smoothF = max(1.0 - factor * factor, 0.0);
+    return (smoothF * smoothF) / max(distSq, 1e-4);
+}
+
 void main() {
     float metallic  = ubo.pbrParams.x;
     float roughness = ubo.pbrParams.y;
@@ -77,29 +84,22 @@ void main() {
     } else if (lightType == 2) {
         // Spot light
         vec3 toLight = ubo.lightPos.xyz - fragWorldPos;
-        float dist = length(toLight);
-        L = toLight / dist;
+        float distSq = dot(toLight, toLight);
+        L = toLight / sqrt(distSq);
         lightColor = ubo.lightColor.xyz;
+        attenuation = windowedFalloff(distSq, ubo.lightParams.z);
 
-        // Inverse-square falloff
-        attenuation = 1.0 / (dist * dist);
-
-        // Cone attenuation: linear ramp in cosine space from outer to inner cutoff
-        // I = (cosTheta - cosOuter) / (cosInner - cosOuter), clamped to [0,1]
-        float cosTheta  = dot(-L, ubo.lightDir.xyz);
-        float cosInner  = ubo.lightParams.x;
-        float cosOuter  = ubo.lightParams.y;
-        float epsilon   = max(cosInner - cosOuter, 1e-4);
-        attenuation    *= clamp((cosTheta - cosOuter) / epsilon, 0.0, 1.0);
+        // Cone attenuation: precomputed scale/offset, result squared for smooth penumbra
+        float cosTheta = dot(-L, ubo.lightDir.xyz);
+        float cone     = clamp(cosTheta * ubo.lightParams.x + ubo.lightParams.y, 0.0, 1.0);
+        attenuation   *= cone * cone;
     } else if (lightType == 3) {
         // Point light
         vec3 toLight = ubo.lightPos.xyz - fragWorldPos;
-        float dist = length(toLight);
-        L = toLight / dist;
+        float distSq = dot(toLight, toLight);
+        L = toLight / sqrt(distSq);
         lightColor = ubo.lightColor.xyz;
-
-        // Inverse-square falloff
-        attenuation = 1.0 / (dist * dist);
+        attenuation = windowedFalloff(distSq, ubo.lightParams.z);
     }
 
     vec3 H = normalize(V + L);
