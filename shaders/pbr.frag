@@ -8,6 +8,8 @@ layout(binding = 0) uniform UniformBufferObject {
     vec4 baseColor;
     vec4 cameraPos;
     vec4 pbrParams;
+    vec4 lightDir;
+    vec4 lightColor;
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
@@ -59,11 +61,9 @@ void main() {
     // Dialectric F0 = 0.04; metals use albedo as F0
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Single directional light
-    vec3 lightDir      = normalize(vec3(1.0, 2.0, 1.0));
-    vec3 lightColor    = vec3(3.0);
-
-    vec3 L = lightDir;
+    // Single directional light (from UBO)
+    vec3 L          = ubo.lightDir.xyz;
+    vec3 lightColor = ubo.lightColor.xyz;
     vec3 H = normalize(V + L);
 
     float NdotV = max(dot(N, V), 0.0001);

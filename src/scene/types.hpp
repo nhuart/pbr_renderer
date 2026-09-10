@@ -42,9 +42,15 @@ struct ParticleSystem {
     uint32_t count = 8192;
 };
 
+struct DirectionalLight {
+    glm::vec3 direction;
+    glm::vec3 color;
+};
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
+    std::optional<DirectionalLight> light;
     Camera camera;
 };
 
@@ -119,6 +125,8 @@ struct UniformBufferObject {
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
     alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x = metallic, y = roughness
+    alignas(16) glm::vec4 lightDir = { 1.0f, 2.0f, 1.0f, 0.0f };  // xyz = direction (world space)
+    alignas(16) glm::vec4 lightColor = { 3.0f, 3.0f, 3.0f, 0.0f }; // xyz = RGB color/intensity
 };
 
 struct ComputeUBO {

@@ -79,6 +79,18 @@ Scene loadScene(std::string const& path) {
         scene.particles = particles;
     }
 
+    if (j.contains("light")) {
+        auto const& lightJson = j["light"];
+        if (!lightJson.contains("direction"))
+            throw std::runtime_error("light.direction is required: " + path);
+        if (!lightJson.contains("color"))
+            throw std::runtime_error("light.color is required: " + path);
+        DirectionalLight light;
+        light.direction = vec3FromJson(lightJson["direction"]);
+        light.color = vec3FromJson(lightJson["color"]);
+        scene.light = light;
+    }
+
     auto const& cameraJson = j.at("camera");
     scene.camera.target = dvec3FromJson(cameraJson.at("target"));
     scene.camera.azimuth = cameraJson.at("azimuth").get<double>();

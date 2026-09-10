@@ -146,6 +146,9 @@ void Renderer::updateUniforms() {
         glm::mat4 model = obj.getModelMatrix();
         auto const& meshInst = mScene.meshInstances[ro.gameObjectIndex];
 
+        glm::vec3 lightDir = mScene.light ? mScene.light->direction : glm::vec3(1.0f, 2.0f, 1.0f);
+        glm::vec3 lightColor = mScene.light ? mScene.light->color : glm::vec3(3.0f);
+
         UniformBufferObject ubo{
             .model = model,
             .view = view,
@@ -154,6 +157,8 @@ void Renderer::updateUniforms() {
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
             .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, 0.0f, 0.0f),
+            .lightDir = glm::vec4(glm::normalize(lightDir), 0.0f),
+            .lightColor = glm::vec4(lightColor, 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
