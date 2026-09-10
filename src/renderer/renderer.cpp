@@ -61,19 +61,10 @@ void Renderer::initVulkan() {
 
     mResources.emplace();
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
+    mLightBuffer.emplace(*mCtx, LightUBO{});
 
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        auto [buf, mem] = vkutil::createBuffer(*mCtx, sizeof(LightUBO),
-                vk::BufferUsageFlagBits::eUniformBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
-        mLightBuffersMapped.push_back(mem.mapMemory(0, sizeof(LightUBO)));
-        mLightBuffers.push_back(std::move(buf));
-        mLightBuffersMemory.push_back(std::move(mem));
-    }
-
-    auto makeKey = [](MeshInstance const& inst, bool ds) {
-        return inst.vertexShader + "+" + inst.fragmentShader + (ds ? "+ds" : "");
+    auto makeKey = [](MeshInstance const& inst, bool doubleSided) {
+        return inst.vertexShader + "+" + inst.fragmentShader + (doubleSided ? "+ds" : "");
     };
 
     for (auto const& inst: mScene.meshInstances) {
@@ -90,7 +81,7 @@ void Renderer::initVulkan() {
         ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
         ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
-        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffers);
+        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer);
     }
 
     if (mScene.particles) {
@@ -159,40 +150,20 @@ void Renderer::updateUniforms() {
 
     glm::vec3 camPos = mCamera.position();
 
-    // Build the light UBO once per frame and upload to this frame's shared buffer.
+    // Build and upload the light UBO once (lights are static).
     LightUBO lightUbo{};
     uint32_t lightCount = 0;
     for (auto const& light: mScene.lights) {
         if (lightCount >= MAX_LIGHTS) {
+            std::cerr << "Warning: scene has more than " << MAX_LIGHTS
+                      << " lights; excess lights will be ignored.\n";
             break;
         }
-        GpuLight& g = lightUbo.lights[lightCount++];
-        std::visit(
-                [&](auto const& l) {
-                    using T = std::decay_t<decltype(l)>;
-                    if constexpr (std::is_same_v<T, DirectionalLight>) {
-                        g.colorAndType = glm::vec4(l.color, 1.0f);
-                        g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
-                    } else if constexpr (std::is_same_v<T, SpotLight>) {
-                        float cosInner = glm::cos(glm::radians(l.innerConeAngle));
-                        float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
-                        float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
-                        float offset = -cosOuter * scale;
-                        float invRange = 1.0f / glm::max(l.range, 1e-4f);
-                        g.colorAndType = glm::vec4(l.color, 2.0f);
-                        g.positionAndRange = glm::vec4(l.position, invRange);
-                        g.directionAndCone = glm::vec4(glm::normalize(l.direction), 0.0f);
-                        g.coneParams = glm::vec4(scale, offset, 0.0f, 0.0f);
-                    } else if constexpr (std::is_same_v<T, PointLight>) {
-                        float invRange = 1.0f / glm::max(l.range, 1e-4f);
-                        g.colorAndType = glm::vec4(l.color, 3.0f);
-                        g.positionAndRange = glm::vec4(l.position, invRange);
-                    }
-                },
-                light);
+        lightUbo.lights[lightCount++] =
+                std::visit([](auto const& l) { return GpuLight::from(l); }, light);
     }
     lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
-    memcpy(mLightBuffersMapped[mFrameIndex], &lightUbo, sizeof(lightUbo));
+    memcpy(mLightBuffer->mapped, &lightUbo, sizeof(lightUbo));
 
     for (auto& ro: mRenderObjects) {
         auto const& obj = mGameObjects[ro.gameObjectIndex];

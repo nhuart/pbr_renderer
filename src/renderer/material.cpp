@@ -191,7 +191,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 }
 
 MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
-        std::vector<vk::raii::Buffer> const& lightBuffers) const {
+        vk::raii::Buffer const& lightBuffer) const {
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -225,7 +225,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             .range = sizeof(UniformBufferObject),
         };
         vk::DescriptorBufferInfo lightInfo{
-            .buffer = *lightBuffers[i],
+            .buffer = *lightBuffer,
             .offset = 0,
             .range = sizeof(LightUBO),
         };

@@ -106,27 +106,24 @@ Scene loadScene(std::string const& path) {
         }
         std::string lightType = lightJson.at("type").get<std::string>();
 
-        auto require = [&](std::string const& field) {
-            if (!lightJson.contains(field)) {
-                throw std::runtime_error(
-                        "light." + field + " is required for " + lightType + " light: " + path);
+        auto requireFields = [&](std::initializer_list<std::string_view> fields) {
+            for (auto const& field: fields) {
+                if (!lightJson.contains(field)) {
+                    throw std::runtime_error("light." + std::string(field) + " is required for " +
+                                             lightType + " light: " + path);
+                }
             }
         };
 
         if (lightType == "directional") {
-            require("direction");
-            require("color");
+            requireFields({ "direction", "color" });
             DirectionalLight light;
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
             return light;
         } else if (lightType == "spot") {
-            require("position");
-            require("direction");
-            require("color");
-            require("innerConeAngle");
-            require("outerConeAngle");
-            require("range");
+            requireFields({ "position", "direction", "color", "innerConeAngle", "outerConeAngle",
+                "range" });
             SpotLight light;
             light.position = vec3FromJson(lightJson["position"]);
             light.direction = vec3FromJson(lightJson["direction"]);
@@ -136,9 +133,7 @@ Scene loadScene(std::string const& path) {
             light.range = lightJson["range"].get<float>();
             return light;
         } else if (lightType == "point") {
-            require("position");
-            require("color");
-            require("range");
+            requireFields({ "position", "color", "range" });
             PointLight light;
             light.position = vec3FromJson(lightJson["position"]);
             light.color = vec3FromJson(lightJson["color"]);

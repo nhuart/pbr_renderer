@@ -137,13 +137,39 @@ struct hash<Vertex> {
 
 constexpr uint32_t MAX_LIGHTS = 8;
 
-// Packed GPU representation of one light (matches the GLSL struct exactly).
-// lightType: 1=directional, 2=spot, 3=point
+// Packed GPU representation of one light.
+// std140 requires 16-byte alignment per field, so data is packed into vec4s.
 struct GpuLight {
-    alignas(16) glm::vec4 colorAndType;     // xyz=RGB intensity, w=lightType
-    alignas(16) glm::vec4 positionAndRange; // xyz=position, w=invRange (spot/point)
-    alignas(16) glm::vec4 directionAndCone; // xyz=direction, w=unused
-    alignas(16) glm::vec4 coneParams;       // x=scale, y=offset (spot only)
+    alignas(16) glm::vec4 colorAndType;        // xyz=RGB intensity, w=lightType (1/2/3)
+    alignas(16) glm::vec4 positionAndInvRange; // xyz=world position, w=1/range (spot/point)
+    alignas(16) glm::vec4 direction;       // xyz=normalized direction (directional/spot), w=unused
+    alignas(16) glm::vec4 coneScaleOffset; // x=scale, y=offset for cone attenuation (spot only)
+
+    static GpuLight from(DirectionalLight const& l) {
+        GpuLight g{};
+        g.colorAndType = glm::vec4(l.color, 1.0f);
+        g.direction = glm::vec4(glm::normalize(l.direction), 0.0f);
+        return g;
+    }
+
+    static GpuLight from(SpotLight const& l) {
+        float cosInner = glm::cos(glm::radians(l.innerConeAngle));
+        float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
+        float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
+        GpuLight g{};
+        g.colorAndType = glm::vec4(l.color, 2.0f);
+        g.positionAndInvRange = glm::vec4(l.position, 1.0f / glm::max(l.range, 1e-4f));
+        g.direction = glm::vec4(glm::normalize(l.direction), 0.0f);
+        g.coneScaleOffset = glm::vec4(scale, -cosOuter * scale, 0.0f, 0.0f);
+        return g;
+    }
+
+    static GpuLight from(PointLight const& l) {
+        GpuLight g{};
+        g.colorAndType = glm::vec4(l.color, 3.0f);
+        g.positionAndInvRange = glm::vec4(l.position, 1.0f / glm::max(l.range, 1e-4f));
+        return g;
+    }
 };
 
 struct LightUBO {
