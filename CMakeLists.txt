@@ -80,6 +80,7 @@ add_executable(pbr_renderer
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
+    src/renderer/light_buffer.cpp
     src/renderer/material.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp

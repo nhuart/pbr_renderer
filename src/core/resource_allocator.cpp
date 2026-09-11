@@ -230,8 +230,12 @@ void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cm
             .pImageMemoryBarriers = &barrier,
         });
 
-        if (mipWidth > 1) mipWidth /= 2;
-        if (mipHeight > 1) mipHeight /= 2;
+        if (mipWidth > 1) {
+            mipWidth /= 2;
+        }
+        if (mipHeight > 1) {
+            mipHeight /= 2;
+        }
     }
 
     barrier.subresourceRange.baseMipLevel = numMipLevels - 1;

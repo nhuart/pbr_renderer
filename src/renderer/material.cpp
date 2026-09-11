@@ -35,10 +35,11 @@ vk::raii::ShaderModule Material::createShaderModule(VulkanContext const& ctx,
 }
 
 Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
-        std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename) {
+        std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
+        bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
     // Descriptor set layout
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
+    std::array<vk::DescriptorSetLayoutBinding, 3> bindings{ {
         {
             .binding = 0,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
@@ -48,6 +49,12 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         {
             .binding = 1,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        {
+            .binding = 2,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment,
         },
@@ -61,7 +68,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     // Descriptor pool sized for all instances upfront
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
-        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount },
+        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * 2 },
         { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount },
     } };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,
@@ -119,7 +126,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         .depthClampEnable = vk::False,
         .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eBack,
+        .cullMode = doubleSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = vk::False,
         .lineWidth = 1.0f,
@@ -183,8 +190,8 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     std::cout << "Graphics pipeline: created\n";
 }
 
-MaterialInstance Material::createInstance(VulkanContext const& ctx,
-        TextureAtlas const& texture) const {
+MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
+        vk::raii::Buffer const& lightBuffer) const {
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -212,19 +219,24 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx,
             });
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vk::DescriptorBufferInfo bufferInfo{
+        vk::DescriptorBufferInfo uboInfo{
             .buffer = *inst.uniformBuffers[i],
             .offset = 0,
             .range = sizeof(UniformBufferObject),
         };
-        std::array<vk::WriteDescriptorSet, 2> writes{ {
+        vk::DescriptorBufferInfo lightInfo{
+            .buffer = *lightBuffer,
+            .offset = 0,
+            .range = sizeof(LightUBO),
+        };
+        std::array<vk::WriteDescriptorSet, 3> writes{ {
             {
                 .dstSet = *inst.descriptorSets[i],
                 .dstBinding = 0,
                 .dstArrayElement = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo = &bufferInfo,
+                .pBufferInfo = &uboInfo,
             },
             {
                 .dstSet = *inst.descriptorSets[i],
@@ -233,6 +245,14 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                 .pImageInfo = &imageInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .pBufferInfo = &lightInfo,
             },
         } };
         ctx.device.updateDescriptorSets(writes, {});

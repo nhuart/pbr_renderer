@@ -13,6 +13,7 @@
 #include "core/swapchain.hpp"
 #include "core/sync.hpp"
 #include "renderer/camera.hpp"
+#include "renderer/light_buffer.hpp"
 #include "renderer/mesh_buffer.hpp"
 #include "renderer/orbit_controls.hpp"
 #include "renderer/particle_pipeline.hpp"
@@ -47,6 +48,7 @@ private:
     std::optional<ResourceManager> mResources;
     std::optional<MeshBuffer> mMeshBuffer;
     std::map<std::string, Material> mMaterials;
+    std::optional<LightBuffer> mLightBuffer;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::vector<GameObject> mGameObjects;
     std::vector<RenderObject> mRenderObjects;

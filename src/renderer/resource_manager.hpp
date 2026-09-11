@@ -13,7 +13,9 @@ struct ResourceManager {
     TextureAtlas const& getTexture(VulkanContext const& ctx, CommandService const& cmds,
             std::string const& path) {
         auto it = mTextures.find(path);
-        if (it != mTextures.end()) return *it->second;
+        if (it != mTextures.end()) {
+            return *it->second;
+        }
         std::unique_ptr<TextureAtlas> tex;
         if (path.empty()) {
             tex = std::make_unique<TextureAtlas>(ctx, cmds, 255, 255, 255);

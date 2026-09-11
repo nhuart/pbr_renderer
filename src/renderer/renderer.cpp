@@ -60,21 +60,29 @@ void Renderer::initVulkan() {
     std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 
     mResources.emplace();
+    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
+    mLightBuffer.emplace(*mCtx, LightUBO{});
+
+    auto makeKey = [](MeshInstance const& inst, bool doubleSided) {
+        return inst.vertexShader + "+" + inst.fragmentShader + (doubleSided ? "+ds" : "");
+    };
 
     for (auto const& inst: mScene.meshInstances) {
-        auto key = inst.vertexShader + "+" + inst.fragmentShader;
-        if (!mMaterials.contains(key))
-            mMaterials.emplace(key,
-                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.fragmentShader));
+        bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
+        auto key = makeKey(inst, doubleSided);
+        if (!mMaterials.contains(key)) {
+            mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader,
+                                            inst.fragmentShader, doubleSided));
+        }
     }
 
     for (auto& ro: mRenderObjects) {
         auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
+        ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
-        ro.material = &mMaterials.at(inst.vertexShader + "+" + inst.fragmentShader);
-        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture);
+        ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
+        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer);
     }
-    mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
 
     if (mScene.particles) {
         mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
@@ -140,9 +148,25 @@ void Renderer::updateUniforms() {
     glm::mat4 view = mCamera.viewMatrix();
     glm::mat4 proj = mCamera.projMatrix(aspect);
 
+    glm::vec3 camPos = mCamera.position();
+
+    // Build and upload the light UBO once (lights are static).
+    LightUBO lightUbo{};
+    uint32_t lightCount = 0;
+    for (auto const& light: mScene.lights) {
+        if (lightCount >= MAX_LIGHTS) {
+            std::cerr << "Warning: scene has more than " << MAX_LIGHTS
+                      << " lights; excess lights will be ignored.\n";
+            break;
+        }
+        lightUbo.lights[lightCount++] =
+                std::visit([](auto const& l) { return GpuLight::from(l); }, light);
+    }
+    lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
+    memcpy(mLightBuffer->mapped, &lightUbo, sizeof(lightUbo));
+
     for (auto& ro: mRenderObjects) {
         auto const& obj = mGameObjects[ro.gameObjectIndex];
-        glm::vec3 camPos = mCamera.position();
         glm::mat4 model = obj.getModelMatrix();
         auto const& meshInst = mScene.meshInstances[ro.gameObjectIndex];
 
@@ -313,8 +337,8 @@ void Renderer::buildRenderGraph() {
                     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *renderObject.material->pipelineLayout, 0,
                             *renderObject.materialInstance.descriptorSets[mFrameIndex], {});
-                    commandBuffer.drawIndexed(static_cast<uint32_t>(mMeshBuffer->indices.size()), 1,
-                            0, 0, 0);
+                    commandBuffer.drawIndexed(renderObject.range.indexCount, 1,
+                            renderObject.range.firstIndex, 0, 0);
                 }
 
                 if (mScene.particles) {

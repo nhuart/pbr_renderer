@@ -3,6 +3,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -42,9 +43,32 @@ struct ParticleSystem {
     uint32_t count = 8192;
 };
 
+struct DirectionalLight {
+    glm::vec3 direction;
+    glm::vec3 color;
+};
+
+struct SpotLight {
+    glm::vec3 position;
+    glm::vec3 direction;
+    glm::vec3 color;
+    float innerConeAngle; // degrees
+    float outerConeAngle; // degrees
+    float range;
+};
+
+struct PointLight {
+    glm::vec3 position;
+    glm::vec3 color;
+    float range;
+};
+
+using Light = std::variant<DirectionalLight, SpotLight, PointLight>;
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
+    std::vector<Light> lights;
     Camera camera;
 };
 
@@ -111,6 +135,48 @@ struct hash<Vertex> {
 // GPU data structs
 // ---------------------------------------------------------------------------
 
+constexpr uint32_t MAX_LIGHTS = 8;
+
+// Packed GPU representation of one light.
+// std140 requires 16-byte alignment per field, so data is packed into vec4s.
+struct GpuLight {
+    alignas(16) glm::vec4 colorAndType;        // xyz=RGB intensity, w=lightType (1/2/3)
+    alignas(16) glm::vec4 positionAndInvRange; // xyz=world position, w=1/range (spot/point)
+    alignas(16) glm::vec4 direction;       // xyz=normalized direction (directional/spot), w=unused
+    alignas(16) glm::vec4 coneScaleOffset; // x=scale, y=offset for cone attenuation (spot only)
+
+    static GpuLight from(DirectionalLight const& l) {
+        GpuLight g{};
+        g.colorAndType = glm::vec4(l.color, 1.0f);
+        g.direction = glm::vec4(glm::normalize(l.direction), 0.0f);
+        return g;
+    }
+
+    static GpuLight from(SpotLight const& l) {
+        float cosInner = glm::cos(glm::radians(l.innerConeAngle));
+        float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
+        float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
+        GpuLight g{};
+        g.colorAndType = glm::vec4(l.color, 2.0f);
+        g.positionAndInvRange = glm::vec4(l.position, 1.0f / glm::max(l.range, 1e-4f));
+        g.direction = glm::vec4(glm::normalize(l.direction), 0.0f);
+        g.coneScaleOffset = glm::vec4(scale, -cosOuter * scale, 0.0f, 0.0f);
+        return g;
+    }
+
+    static GpuLight from(PointLight const& l) {
+        GpuLight g{};
+        g.colorAndType = glm::vec4(l.color, 3.0f);
+        g.positionAndInvRange = glm::vec4(l.position, 1.0f / glm::max(l.range, 1e-4f));
+        return g;
+    }
+};
+
+struct LightUBO {
+    alignas(16) glm::uvec4 counts; // x = active light count (uvec4 for std140 padding)
+    GpuLight lights[MAX_LIGHTS];
+};
+
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
@@ -118,7 +184,7 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 normalMatrix;
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
-    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x = metallic, y = roughness
+    alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness
 };
 
 struct ComputeUBO {

@@ -37,10 +37,11 @@ struct Material {
     vk::raii::Pipeline pipeline{ nullptr };
 
     Material(VulkanContext const& ctx, Swapchain const& swapchain,
-            std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename);
+            std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
+            bool doubleSided = false);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
-            TextureAtlas const& texture) const;
+            TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer) const;
 
 private:
     static std::vector<char> readFile(std::string const& path);
