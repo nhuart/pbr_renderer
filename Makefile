@@ -1,6 +1,7 @@
 .PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint \
 	screenshot-all \
 	screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian \
+	screenshot-stanford-bunny-pbr-ibl \
 	screenshot-viking-room screenshot-viking-room-particles
 
 help:
@@ -69,10 +70,13 @@ screenshot-stanford-bunny-blinn-phong:
 screenshot-stanford-bunny-lambertian:
 	$(MAKE) run-debug SCENE=scenes/stanford_bunny_lambertian.json ARGS='--screenshot results/standford_bunny/lambertian.png'
 
+screenshot-stanford-bunny-pbr-ibl:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl.json ARGS='--screenshot results/standford_bunny/pbr_ibl.png'
+
 screenshot-viking-room:
 	$(MAKE) run-debug SCENE=scenes/viking_room.json ARGS='--screenshot results/viking_room/single.png'
 
 screenshot-viking-room-particles:
 	$(MAKE) run-debug SCENE=scenes/three_viking_rooms_particles.json ARGS='--screenshot results/viking_room/three_rooms.png'
 
-screenshot-all: screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-viking-room screenshot-viking-room-particles
+screenshot-all: screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-stanford-bunny-pbr-ibl screenshot-viking-room screenshot-viking-room-particles

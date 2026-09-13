@@ -70,6 +70,9 @@ struct Scene {
     std::optional<ParticleSystem> particles;
     std::vector<Light> lights;
     Camera camera;
+    std::optional<std::string> iblPath;
+    bool skybox = false;
+    std::optional<float> ambientIntensity;
 };
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 normalMatrix;
     vec4 baseColor;
     vec4 cameraPos;
-    vec4 pbrParams; // x=metallic, y=roughness
+    vec4 pbrParams; // x=metallic, y=roughness, z=ambientIntensity
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
@@ -23,6 +23,12 @@ layout(binding = 2) uniform LightUBO {
     uvec4 counts; // x = number of active lights
     GpuLight lights[8];
 } lights;
+
+#ifdef USE_IBL
+layout(binding = 3) uniform samplerCube irradianceMap;
+layout(binding = 4) uniform samplerCube prefilterMap;
+layout(binding = 5) uniform sampler2D   brdfLut;
+#endif
 
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
@@ -107,9 +113,34 @@ vec3 lightContribution(GpuLight light, vec3 N, vec3 V, float NdotV, vec3 albedo,
     return (diffuse + specular) * light.colorAndType.xyz * ls.attenuation * NdotL;
 }
 
+#ifdef USE_IBL
+// sampling a prefiltered/blurred environment — rough surfaces have scattered their
+// specular lobe, so the Fresnel peak at grazing angles must be dampened to match
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metallic, float roughness) {
+    vec3 kS = fresnelSchlickRoughness(NdotV, F0, roughness);
+    vec3 kD = (1.0 - kS) * (1.0 - metallic);
+
+    vec3 irradiance = texture(irradianceMap, N).rgb;
+    vec3 diffuse    = kD * irradiance * albedo;
+
+    vec3 R = reflect(-V, N);
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 brdf = texture(brdfLut, vec2(NdotV, roughness)).rg;
+    vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y);
+
+    return diffuse + specular;
+}
+#endif
+
 void main() {
-    float metallic  = ubo.pbrParams.x;
-    float roughness = ubo.pbrParams.y;
+    float metallic         = ubo.pbrParams.x;
+    float roughness        = ubo.pbrParams.y;
+    float ambientIntensity = ubo.pbrParams.z;
 
     vec4 texColor = texture(texSampler, fragTexCoord);
     vec3 albedo   = texColor.rgb * fragBaseColor.rgb;
@@ -127,7 +158,12 @@ void main() {
         Lo += lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
     }
 
-    vec3 ambient = vec3(0.03) * albedo;
+#ifdef USE_IBL
+    vec3 ambient = iblAmbient(N, V, NdotV, albedo, F0, metallic, roughness);
+#else
+    vec3 ambient = ambientIntensity * albedo;
+#endif
+
     vec3 color = ambient + Lo;
 
     // Reinhard tone mapping + gamma correction

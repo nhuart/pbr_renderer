@@ -12,6 +12,7 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 Renderer::Renderer(std::string scenePath, std::string screenshotPath)
@@ -63,8 +64,20 @@ void Renderer::initVulkan() {
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
     mLightBuffer.emplace(*mCtx, LightUBO{});
 
-    auto makeKey = [](MeshInstance const& inst, bool doubleSided) {
-        return inst.vertexShader + "+" + inst.fragmentShader + (doubleSided ? "+ds" : "");
+    if (mScene.iblPath) {
+        mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "_irradiance.ktx2",
+                *mScene.iblPath + "_prefilter.ktx2", "textures/ibl/brdf_lut.ktx2");
+        if (mScene.skybox) {
+            mSkyboxPipeline.emplace(*mCtx, *mSwapchain, *mIblEnvironment);
+        }
+    }
+
+    auto resolveFragShader = [this](std::string const& frag) {
+        return (mIblEnvironment && frag == "pbr") ? "pbr_ibl" : frag;
+    };
+    auto makeKey = [&](MeshInstance const& inst, bool doubleSided) {
+        return inst.vertexShader + "+" + resolveFragShader(inst.fragmentShader) +
+               (doubleSided ? "+ds" : "");
     };
 
     for (auto const& inst: mScene.meshInstances) {
@@ -72,7 +85,7 @@ void Renderer::initVulkan() {
         auto key = makeKey(inst, doubleSided);
         if (!mMaterials.contains(key)) {
             mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader,
-                                            inst.fragmentShader, doubleSided));
+                                            resolveFragShader(inst.fragmentShader), doubleSided));
         }
     }
 
@@ -81,7 +94,8 @@ void Renderer::initVulkan() {
         ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
         ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
-        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer);
+        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer,
+                mIblEnvironment ? &*mIblEnvironment : nullptr);
     }
 
     if (mScene.particles) {
@@ -177,9 +191,18 @@ void Renderer::updateUniforms() {
             .normalMatrix = glm::transpose(glm::inverse(model)),
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
-            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness, 0.0f, 0.0f),
+            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness,
+                    mScene.ambientIntensity.value_or(0.0f), 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
+    }
+
+    if (mSkyboxPipeline) {
+        SkyboxUBO skyboxUbo{
+            .invProj = glm::inverse(proj),
+            .invView = glm::inverse(view),
+        };
+        mSkyboxPipeline->updateUBO(mFrameIndex, skyboxUbo);
     }
 
     if (mScene.particles) {
@@ -348,6 +371,15 @@ void Renderer::buildRenderGraph() {
                             *mParticlePipeline->shaderStorageBuffers[mFrameIndex],
                             { vk::DeviceSize{ 0 } });
                     commandBuffer.draw(mScene.particles->count, 1, 0, 0);
+                }
+
+                if (mSkyboxPipeline) {
+                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                            *mSkyboxPipeline->pipeline);
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                            *mSkyboxPipeline->pipelineLayout, 0,
+                            *mSkyboxPipeline->descriptorSets[mFrameIndex], {});
+                    commandBuffer.draw(3, 1, 0, 0);
                 }
             });
 

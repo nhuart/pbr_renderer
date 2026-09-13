@@ -63,6 +63,16 @@ Scene loadScene(std::string const& path) {
 
     Scene scene;
 
+    if (j.contains("ibl")) {
+        scene.iblPath = j["ibl"].get<std::string>();
+    }
+    if (j.contains("skybox")) {
+        scene.skybox = j["skybox"].get<bool>();
+    }
+    if (j.contains("ambientLight")) {
+        scene.ambientIntensity = j["ambientLight"].get<float>();
+    }
+
     for (auto const& instanceJson: j.at("meshInstances")) {
         MeshInstance instance;
         instance.gltfPath = instanceJson.at("gltf").get<std::string>();

@@ -1,6 +1,8 @@
 #include "core/resource_allocator.hpp"
 #include "core/context.hpp"
 
+#include <bit>
+#include <fstream>
 #include <stdexcept>
 
 namespace vkutil {
@@ -67,13 +69,14 @@ void copyBuffer(VulkanContext const& ctx, vk::raii::CommandPool const& pool,
 std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(VulkanContext const& ctx,
         uint32_t width, uint32_t height, uint32_t numMipLevels, vk::SampleCountFlagBits numSamples,
         vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-        vk::MemoryPropertyFlags properties) {
+        vk::MemoryPropertyFlags properties, uint32_t arrayLayers, vk::ImageCreateFlags flags) {
     vk::raii::Image image(ctx.device, vk::ImageCreateInfo{
+                                          .flags = flags,
                                           .imageType = vk::ImageType::e2D,
                                           .format = format,
                                           .extent = { width, height, 1 },
                                           .mipLevels = numMipLevels,
-                                          .arrayLayers = 1,
+                                          .arrayLayers = arrayLayers,
                                           .samples = numSamples,
                                           .tiling = tiling,
                                           .usage = usage,
@@ -101,6 +104,17 @@ vk::raii::ImageView createImageView(VulkanContext const& ctx, vk::Image image, v
             });
 }
 
+vk::raii::ImageView createCubemapImageView(VulkanContext const& ctx, vk::Image image,
+        vk::Format format, uint32_t numMipLevels) {
+    return vk::raii::ImageView(ctx.device,
+            vk::ImageViewCreateInfo{
+                .image = image,
+                .viewType = vk::ImageViewType::eCube,
+                .format = format,
+                .subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, numMipLevels, 0, 6 },
+            });
+}
+
 vk::Format findSupportedFormat(VulkanContext const& ctx, std::vector<vk::Format> const& candidates,
         vk::ImageTiling tiling, vk::FormatFeatureFlags features) {
     for (vk::Format format: candidates) {
@@ -124,7 +138,8 @@ vk::Format findDepthFormat(VulkanContext const& ctx) {
 void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image,
         vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess,
         vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 srcStage,
-        vk::PipelineStageFlags2 dstStage, vk::ImageAspectFlags aspectFlags, uint32_t numMipLevels) {
+        vk::PipelineStageFlags2 dstStage, vk::ImageAspectFlags aspectFlags, uint32_t numMipLevels,
+        uint32_t arrayLayers) {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = srcStage,
         .srcAccessMask = srcAccess,
@@ -135,7 +150,7 @@ void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image,
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
         .image = image,
-        .subresourceRange = { aspectFlags, 0, numMipLevels, 0, 1 },
+        .subresourceRange = { aspectFlags, 0, numMipLevels, 0, arrayLayers },
     };
     cmd.pipelineBarrier2(vk::DependencyInfo{
         .imageMemoryBarrierCount = 1,
@@ -249,6 +264,24 @@ void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cm
         .imageMemoryBarrierCount = 1,
         .pImageMemoryBarriers = &barrier,
     });
+}
+
+std::vector<char> readSpirv(std::string const& path) {
+    std::ifstream file(path, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("failed to open file: " + path);
+    }
+    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    return buffer;
+}
+
+vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx, std::vector<char> const& code) {
+    return { ctx.device, vk::ShaderModuleCreateInfo{
+                             .codeSize = code.size(),
+                             .pCode    = std::bit_cast<uint32_t const*>(code.data()),
+                         } };
 }
 
 } // namespace vkutil

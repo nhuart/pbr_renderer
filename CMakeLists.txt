@@ -41,6 +41,8 @@ set(SHADER_SOURCES
     shaders/phong.frag
     shaders/blinn_phong.frag
     shaders/pbr.frag
+    shaders/skybox.vert
+    shaders/skybox.frag
     shaders/particle.vert
     shaders/particle.frag
     shaders/particle.comp
@@ -59,6 +61,17 @@ foreach(SHADER ${SHADER_SOURCES})
     )
     list(APPEND SHADER_SPIRV_OUTPUTS ${SPIRV_OUTPUT})
 endforeach()
+
+# pbr.frag compiled a second time with USE_IBL defined -> pbr_ibl.frag.spv
+set(PBR_IBL_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_IBL_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -o ${PBR_IBL_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_ibl.frag (USE_IBL)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_SPIRV})
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
 
@@ -81,6 +94,8 @@ add_executable(pbr_renderer
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
     src/renderer/light_buffer.cpp
+    src/renderer/cubemap_atlas.cpp
+    src/renderer/skybox_pipeline.cpp
     src/renderer/material.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
