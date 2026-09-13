@@ -15,6 +15,15 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+static float ambientIntensityFromLights(std::vector<Light> const& lights) {
+    for (auto const& light : lights) {
+        if (auto const* a = std::get_if<AmbientLight>(&light)) {
+            return a->intensity;
+        }
+    }
+    return 0.0f;
+}
+
 Renderer::Renderer(std::string scenePath, std::string screenshotPath)
         : mScenePath(std::move(scenePath)),
           mScreenshotPath(std::move(screenshotPath)) {}
@@ -173,6 +182,7 @@ void Renderer::updateUniforms() {
                       << " lights; excess lights will be ignored.\n";
             break;
         }
+        if (std::holds_alternative<AmbientLight>(light)) continue;
         lightUbo.lights[lightCount++] =
                 std::visit([](auto const& l) { return GpuLight::from(l); }, light);
     }
@@ -192,7 +202,7 @@ void Renderer::updateUniforms() {
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
             .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness,
-                    mScene.ambientIntensity.value_or(0.0f), 0.0f),
+                    ambientIntensityFromLights(mScene.lights), 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
