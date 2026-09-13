@@ -1,6 +1,10 @@
 {
     "lights": [
         {
+            "type": "ambient",
+            "intensity": 0.03
+        },
+        {
             "type": "spot",
             "position": [0.03, 3.0, -0.28],
             "direction": [0.0, -1.0, 0.0],

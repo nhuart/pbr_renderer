@@ -69,9 +69,7 @@ Scene loadScene(std::string const& path) {
     if (j.contains("skybox")) {
         scene.skybox = j["skybox"].get<bool>();
     }
-    if (j.contains("ambientLight")) {
-        scene.ambientIntensity = j["ambientLight"].get<float>();
-    }
+
 
     for (auto const& instanceJson: j.at("meshInstances")) {
         MeshInstance instance;
@@ -125,7 +123,12 @@ Scene loadScene(std::string const& path) {
             }
         };
 
-        if (lightType == "directional") {
+        if (lightType == "ambient") {
+            requireFields({ "intensity" });
+            AmbientLight light;
+            light.intensity = lightJson["intensity"].get<float>();
+            return light;
+        } else if (lightType == "directional") {
             requireFields({ "direction", "color" });
             DirectionalLight light;
             light.direction = vec3FromJson(lightJson["direction"]);

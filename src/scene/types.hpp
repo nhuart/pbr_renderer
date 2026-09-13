@@ -43,6 +43,10 @@ struct ParticleSystem {
     uint32_t count = 8192;
 };
 
+struct AmbientLight {
+    float intensity;
+};
+
 struct DirectionalLight {
     glm::vec3 direction;
     glm::vec3 color;
@@ -63,7 +67,7 @@ struct PointLight {
     float range;
 };
 
-using Light = std::variant<DirectionalLight, SpotLight, PointLight>;
+using Light = std::variant<AmbientLight, DirectionalLight, SpotLight, PointLight>;
 
 struct Scene {
     std::vector<MeshInstance> meshInstances;
@@ -72,7 +76,6 @@ struct Scene {
     Camera camera;
     std::optional<std::string> iblPath;
     bool skybox = false;
-    std::optional<float> ambientIntensity;
 };
 
 // ---------------------------------------------------------------------------
@@ -147,6 +150,8 @@ struct GpuLight {
     alignas(16) glm::vec4 positionAndInvRange; // xyz=world position, w=1/range (spot/point)
     alignas(16) glm::vec4 direction;       // xyz=normalized direction (directional/spot), w=unused
     alignas(16) glm::vec4 coneScaleOffset; // x=scale, y=offset for cone attenuation (spot only)
+
+    static GpuLight from(AmbientLight const& /*l*/) { return GpuLight{}; }
 
     static GpuLight from(DirectionalLight const& l) {
         GpuLight g{};
