@@ -36,7 +36,7 @@ CubemapAtlas::CubemapAtlas(VulkanContext const& ctx, CommandService const& cmds,
     format = static_cast<vk::Format>(kTexture->vkFormat);
 
     ktxTexture* kBase = ktxTexture(kTexture);
-    vk::DeviceSize totalSize = ktxTexture_GetDataSizeUncompressed(kBase);
+    vk::DeviceSize totalSize = ktxTexture_GetDataSize(kBase);
 
     auto [stagingBuffer, stagingBufferMemory] = vkutil::createBuffer(ctx, totalSize,
             vk::BufferUsageFlagBits::eTransferSrc,

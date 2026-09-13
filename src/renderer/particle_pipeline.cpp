@@ -14,25 +14,6 @@
 #include <random>
 #include <stdexcept>
 
-std::vector<char> ParticlePipeline::readFile(std::string const& filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file: " + filename);
-    }
-    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    return buffer;
-}
-
-vk::raii::ShaderModule ParticlePipeline::createShaderModule(VulkanContext const& ctx,
-        std::vector<char> const& code) const {
-    return { ctx.device, vk::ShaderModuleCreateInfo{
-                             .codeSize = code.size(),
-                             .pCode = std::bit_cast<uint32_t const*>(code.data()),
-                         } };
-}
-
 ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
         CommandService const& cmds, ParticleSystem const& particleSystem) {
     uint32_t particleCount = particleSystem.count;
@@ -114,8 +95,8 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
             });
 
     // --- Compute pipeline ---
-    auto compCode = readFile("shaders/compiled/particle.comp.spv");
-    vk::raii::ShaderModule compModule = createShaderModule(ctx, compCode);
+    auto compCode = vkutil::readSpirv("shaders/compiled/particle.comp.spv");
+    vk::raii::ShaderModule compModule = vkutil::createShaderModule(ctx, compCode);
     vk::PipelineShaderStageCreateInfo compStageInfo{
         .stage = vk::ShaderStageFlagBits::eCompute,
         .module = *compModule,
@@ -207,10 +188,10 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
     }
 
     // --- Particle graphics pipeline ---
-    auto vertCode = readFile("shaders/compiled/particle.vert.spv");
-    auto fragCode = readFile("shaders/compiled/particle.frag.spv");
-    vk::raii::ShaderModule vertModule = createShaderModule(ctx, vertCode);
-    vk::raii::ShaderModule fragModule = createShaderModule(ctx, fragCode);
+    auto vertCode = vkutil::readSpirv("shaders/compiled/particle.vert.spv");
+    auto fragCode = vkutil::readSpirv("shaders/compiled/particle.frag.spv");
+    vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
+    vk::raii::ShaderModule fragModule = vkutil::createShaderModule(ctx, fragCode);
 
     std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{

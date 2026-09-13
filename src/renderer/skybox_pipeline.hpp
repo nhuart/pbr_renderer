@@ -26,9 +26,4 @@ struct SkyboxPipeline {
     SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapchain, IblEnvironment const& ibl);
 
     void updateUBO(uint32_t frameIndex, SkyboxUBO const& ubo);
-
-private:
-    static std::vector<char> readFile(std::string const& path);
-    [[nodiscard]] vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx,
-            std::vector<char> const& code) const;
 };

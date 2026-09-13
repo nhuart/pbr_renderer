@@ -32,8 +32,4 @@ struct ParticlePipeline {
     ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
             CommandService const& cmds, ParticleSystem const& particleSystem);
 
-private:
-    static std::vector<char> readFile(std::string const& path);
-    [[nodiscard]] vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx,
-            std::vector<char> const& code) const;
 };

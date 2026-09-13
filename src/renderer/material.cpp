@@ -16,25 +16,6 @@ void MaterialInstance::updateUBO(uint32_t frameIndex, UniformBufferObject const&
     memcpy(uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
 }
 
-std::vector<char> Material::readFile(std::string const& filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file: " + filename);
-    }
-    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    return buffer;
-}
-
-vk::raii::ShaderModule Material::createShaderModule(VulkanContext const& ctx,
-        std::vector<char> const& code) const {
-    return { ctx.device, vk::ShaderModuleCreateInfo{
-                             .codeSize = code.size(),
-                             .pCode = std::bit_cast<uint32_t const*>(code.data()),
-                         } };
-}
-
 Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
         bool doubleSided) {
@@ -88,7 +69,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
         { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * 2 },
-        { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount * 4 },
+        { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount * 4 }, // albedo + irradiance + prefilter + brdfLut
     } };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,
             vk::DescriptorPoolCreateInfo{
@@ -99,10 +80,10 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
             });
 
     // Graphics pipeline
-    auto vertCode = readFile("shaders/compiled/" + vertexShaderFilename + ".vert.spv");
-    auto fragCode = readFile("shaders/compiled/" + fragmentShaderFilename + ".frag.spv");
-    vk::raii::ShaderModule vertModule = createShaderModule(ctx, vertCode);
-    vk::raii::ShaderModule fragModule = createShaderModule(ctx, fragCode);
+    auto vertCode = vkutil::readSpirv("shaders/compiled/" + vertexShaderFilename + ".vert.spv");
+    auto fragCode = vkutil::readSpirv("shaders/compiled/" + fragmentShaderFilename + ".frag.spv");
+    vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
+    vk::raii::ShaderModule fragModule = vkutil::createShaderModule(ctx, fragCode);
 
     std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{
@@ -237,16 +218,10 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
                 .pSetLayouts = layouts.data(),
             });
 
-    // Fallback image info used for IBL bindings when no IBL is present (keeps validation happy)
-    vk::DescriptorImageInfo fallbackInfo{
-        .sampler = *texture.sampler,
-        .imageView = *texture.imageView,
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-
-    vk::DescriptorImageInfo irradianceInfo = fallbackInfo;
-    vk::DescriptorImageInfo prefilterInfo = fallbackInfo;
-    vk::DescriptorImageInfo brdfLutInfo = fallbackInfo;
+    // Fallback for IBL bindings when no IBL is present — keeps validation happy
+    vk::DescriptorImageInfo irradianceInfo = albedoInfo;
+    vk::DescriptorImageInfo prefilterInfo = albedoInfo;
+    vk::DescriptorImageInfo brdfLutInfo = albedoInfo;
 
     if (ibl) {
         irradianceInfo = { *ibl->irradiance.sampler, *ibl->irradiance.imageView,

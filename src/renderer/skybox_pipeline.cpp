@@ -10,24 +10,6 @@
 #include <fstream>
 #include <stdexcept>
 
-std::vector<char> SkyboxPipeline::readFile(std::string const& filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file: " + filename);
-    }
-    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    return buffer;
-}
-
-vk::raii::ShaderModule SkyboxPipeline::createShaderModule(VulkanContext const& ctx,
-        std::vector<char> const& code) const {
-    return { ctx.device, vk::ShaderModuleCreateInfo{
-                             .codeSize = code.size(),
-                             .pCode = std::bit_cast<uint32_t const*>(code.data()),
-                         } };
-}
 
 SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
         IblEnvironment const& ibl) {
@@ -119,10 +101,10 @@ SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapch
     }
 
     // Pipeline
-    auto vertCode = readFile("shaders/compiled/skybox.vert.spv");
-    auto fragCode = readFile("shaders/compiled/skybox.frag.spv");
-    vk::raii::ShaderModule vertModule = createShaderModule(ctx, vertCode);
-    vk::raii::ShaderModule fragModule = createShaderModule(ctx, fragCode);
+    auto vertCode = vkutil::readSpirv("shaders/compiled/skybox.vert.spv");
+    auto fragCode = vkutil::readSpirv("shaders/compiled/skybox.frag.spv");
+    vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
+    vk::raii::ShaderModule fragModule = vkutil::createShaderModule(ctx, fragCode);
 
     std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{

@@ -45,8 +45,4 @@ struct Material {
             TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,
             IblEnvironment const* ibl = nullptr) const;
 
-private:
-    static std::vector<char> readFile(std::string const& path);
-    [[nodiscard]] vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx,
-            std::vector<char> const& code) const;
 };

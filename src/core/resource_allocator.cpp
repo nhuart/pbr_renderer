@@ -1,6 +1,8 @@
 #include "core/resource_allocator.hpp"
 #include "core/context.hpp"
 
+#include <bit>
+#include <fstream>
 #include <stdexcept>
 
 namespace vkutil {
@@ -262,6 +264,24 @@ void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cm
         .imageMemoryBarrierCount = 1,
         .pImageMemoryBarriers = &barrier,
     });
+}
+
+std::vector<char> readSpirv(std::string const& path) {
+    std::ifstream file(path, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("failed to open file: " + path);
+    }
+    std::vector<char> buffer(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    return buffer;
+}
+
+vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx, std::vector<char> const& code) {
+    return { ctx.device, vk::ShaderModuleCreateInfo{
+                             .codeSize = code.size(),
+                             .pCode    = std::bit_cast<uint32_t const*>(code.data()),
+                         } };
 }
 
 } // namespace vkutil

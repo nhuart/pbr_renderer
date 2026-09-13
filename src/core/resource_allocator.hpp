@@ -56,4 +56,9 @@ void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cm
         vk::raii::Image const& image, vk::Format format, int32_t texWidth, int32_t texHeight,
         uint32_t mipLevels);
 
+[[nodiscard]] std::vector<char> readSpirv(std::string const& path);
+
+[[nodiscard]] vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx,
+        std::vector<char> const& code);
+
 } // namespace vkutil
