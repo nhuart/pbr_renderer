@@ -2,6 +2,7 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "renderer/ibl_environment.hpp"
 #include "renderer/texture_atlas.hpp"
 
 #include <array>
@@ -38,8 +39,8 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
         bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
-    // Descriptor set layout
-    std::array<vk::DescriptorSetLayoutBinding, 3> bindings{ {
+    // Descriptor set layout — 6 bindings: UBO, albedo, lights, irradiance, prefilter, BRDF LUT
+    std::array<vk::DescriptorSetLayoutBinding, 6> bindings{ {
         {
             .binding = 0,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
@@ -58,6 +59,24 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment,
         },
+        {
+            .binding = 3,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        {
+            .binding = 4,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        {
+            .binding = 5,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
     } };
     descriptorSetLayout = vk::raii::DescriptorSetLayout(ctx.device,
             vk::DescriptorSetLayoutCreateInfo{
@@ -69,7 +88,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
         { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * 2 },
-        { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount },
+        { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = setCount * 4 },
     } };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,
             vk::DescriptorPoolCreateInfo{
@@ -191,7 +210,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 }
 
 MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
-        vk::raii::Buffer const& lightBuffer) const {
+        vk::raii::Buffer const& lightBuffer, IblEnvironment const* ibl) const {
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -204,7 +223,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         inst.uniformBuffersMemory.push_back(std::move(mem));
     }
 
-    vk::DescriptorImageInfo imageInfo{
+    vk::DescriptorImageInfo albedoInfo{
         .sampler = *texture.sampler,
         .imageView = *texture.imageView,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -218,6 +237,26 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
                 .pSetLayouts = layouts.data(),
             });
 
+    // Fallback image info used for IBL bindings when no IBL is present (keeps validation happy)
+    vk::DescriptorImageInfo fallbackInfo{
+        .sampler = *texture.sampler,
+        .imageView = *texture.imageView,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+
+    vk::DescriptorImageInfo irradianceInfo = fallbackInfo;
+    vk::DescriptorImageInfo prefilterInfo = fallbackInfo;
+    vk::DescriptorImageInfo brdfLutInfo = fallbackInfo;
+
+    if (ibl) {
+        irradianceInfo = { *ibl->irradiance.sampler, *ibl->irradiance.imageView,
+            vk::ImageLayout::eShaderReadOnlyOptimal };
+        prefilterInfo = { *ibl->prefilter.sampler, *ibl->prefilter.imageView,
+            vk::ImageLayout::eShaderReadOnlyOptimal };
+        brdfLutInfo = { *ibl->brdfLut.sampler, *ibl->brdfLut.imageView,
+            vk::ImageLayout::eShaderReadOnlyOptimal };
+    }
+
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vk::DescriptorBufferInfo uboInfo{
             .buffer = *inst.uniformBuffers[i],
@@ -229,11 +268,10 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             .offset = 0,
             .range = sizeof(LightUBO),
         };
-        std::array<vk::WriteDescriptorSet, 3> writes{ {
+        std::array<vk::WriteDescriptorSet, 6> writes{ {
             {
                 .dstSet = *inst.descriptorSets[i],
                 .dstBinding = 0,
-                .dstArrayElement = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
                 .pBufferInfo = &uboInfo,
@@ -241,18 +279,37 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             {
                 .dstSet = *inst.descriptorSets[i],
                 .dstBinding = 1,
-                .dstArrayElement = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &imageInfo,
+                .pImageInfo = &albedoInfo,
             },
             {
                 .dstSet = *inst.descriptorSets[i],
                 .dstBinding = 2,
-                .dstArrayElement = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
                 .pBufferInfo = &lightInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 3,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = &irradianceInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 4,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = &prefilterInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 5,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = &brdfLutInfo,
             },
         } };
         ctx.device.updateDescriptorSets(writes, {});

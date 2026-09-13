@@ -13,6 +13,7 @@
 #include "core/swapchain.hpp"
 #include "core/sync.hpp"
 #include "renderer/camera.hpp"
+#include "renderer/ibl_environment.hpp"
 #include "renderer/light_buffer.hpp"
 #include "renderer/mesh_buffer.hpp"
 #include "renderer/orbit_controls.hpp"
@@ -20,6 +21,7 @@
 #include "renderer/render_graph.hpp"
 #include "renderer/render_object.hpp"
 #include "renderer/resource_manager.hpp"
+#include "renderer/skybox_pipeline.hpp"
 #include "scene/scene_loader.hpp"
 #include "scene/types.hpp"
 
@@ -49,6 +51,8 @@ private:
     std::optional<MeshBuffer> mMeshBuffer;
     std::map<std::string, Material> mMaterials;
     std::optional<LightBuffer> mLightBuffer;
+    std::optional<IblEnvironment> mIblEnvironment;
+    std::optional<SkyboxPipeline> mSkyboxPipeline;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::vector<GameObject> mGameObjects;
     std::vector<RenderObject> mRenderObjects;

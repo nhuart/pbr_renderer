@@ -14,6 +14,7 @@ import vulkan_hpp;
 struct VulkanContext;
 struct Swapchain;
 struct TextureAtlas;
+struct IblEnvironment;
 
 struct MaterialInstance {
     std::vector<vk::raii::Buffer> uniformBuffers;
@@ -41,7 +42,8 @@ struct Material {
             bool doubleSided = false);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
-            TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer) const;
+            TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,
+            IblEnvironment const* ibl = nullptr) const;
 
 private:
     static std::vector<char> readFile(std::string const& path);
