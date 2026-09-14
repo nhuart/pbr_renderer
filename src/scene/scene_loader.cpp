@@ -99,6 +99,9 @@ Scene loadScene(std::string const& path) {
         if (instanceJson.contains("roughness")) {
             instance.roughness = instanceJson["roughness"].get<float>();
         }
+        if (instanceJson.contains("useNormalMap")) {
+            instance.useNormalMap = instanceJson["useNormalMap"].get<bool>();
+        }
         scene.meshInstances.push_back(std::move(instance));
     }
 

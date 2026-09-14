@@ -22,4 +22,8 @@ struct TextureAtlas {
     TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, std::string const& path);
     TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t r, uint8_t g,
             uint8_t b, uint8_t a = 255);
+    // Load from raw RGBA8 pixels (e.g. decoded from a GLB-embedded image).
+    // linear=true uses eR8G8B8A8Unorm (normal maps); false uses eR8G8B8A8Srgb (albedo).
+    TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t const* pixels,
+            uint32_t width, uint32_t height, bool linear = false);
 };

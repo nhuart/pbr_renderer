@@ -43,6 +43,5 @@ struct Material {
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,
-            IblEnvironment const* ibl = nullptr) const;
-
+            IblEnvironment const* ibl = nullptr, TextureAtlas const* normalMap = nullptr) const;
 };

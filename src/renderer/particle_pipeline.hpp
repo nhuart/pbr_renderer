@@ -31,5 +31,4 @@ struct ParticlePipeline {
 
     ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
             CommandService const& cmds, ParticleSystem const& particleSystem);
-
 };
