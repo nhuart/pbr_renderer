@@ -37,6 +37,7 @@ struct MeshInstance {
     glm::vec3 scale = { 1.0f, 1.0f, 1.0f };
     float metallic = 0.0f;
     float roughness = 0.5f;
+    bool useNormalMap = true;
 };
 
 struct ParticleSystem {

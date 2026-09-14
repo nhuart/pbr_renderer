@@ -153,6 +153,40 @@ void MeshBuffer::loadMeshes(Scene const& scene) {
             static_cast<uint32_t>(indices.size()) - firstIndex, doubleSided };
         std::cout << "Model loaded (" << inst.gltfPath << "): " << vertices.size()
                   << " unique vertices, " << indices.size() << " indices\n";
+
+        // Extract embedded textures from the first material if present.
+        // Flip uvs vertically (1-y) to match vulkan's coordinate system
+        if (!model.materials.empty()) {
+            auto extractTex = [&](int texIndex,
+                                      std::unordered_map<std::string, EmbeddedTexture>& map,
+                                      std::string const& label) {
+                if (texIndex < 0) {
+                    return;
+                }
+                int imageIndex = model.textures[texIndex].source;
+                auto const& img = model.images[imageIndex];
+                if (img.image.empty()) {
+                    return;
+                }
+                EmbeddedTexture tex;
+                tex.width = static_cast<uint32_t>(img.width);
+                tex.height = static_cast<uint32_t>(img.height);
+                tex.pixels.resize(img.image.size());
+                size_t rowBytes = tex.width * 4;
+                for (uint32_t row = 0; row < tex.height; ++row) {
+                    memcpy(tex.pixels.data() + row * rowBytes,
+                            img.image.data() + (tex.height - 1 - row) * rowBytes, rowBytes);
+                }
+                map[inst.gltfPath] = std::move(tex);
+                std::cout << label << " extracted from GLB (" << inst.gltfPath
+                          << "): " << map[inst.gltfPath].width << "x" << map[inst.gltfPath].height
+                          << "\n";
+            };
+
+            auto const& mat = model.materials[0];
+            extractTex(mat.pbrMetallicRoughness.baseColorTexture.index, albedoMaps, "Albedo");
+            extractTex(mat.normalTexture.index, normalMaps, "Normal map");
+        }
     }
 }
 

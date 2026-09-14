@@ -73,6 +73,28 @@ add_custom_command(
 )
 list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_SPIRV})
 
+# pbr.frag compiled with USE_NORMAL_MAP -> pbr_normal.frag.spv
+set(PBR_NORMAL_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_normal.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_NORMAL_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_NORMAL_MAP -o ${PBR_NORMAL_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_normal.frag (USE_NORMAL_MAP)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_NORMAL_SPIRV})
+
+# pbr.frag compiled with USE_IBL + USE_NORMAL_MAP -> pbr_ibl_normal.frag.spv
+set(PBR_IBL_NORMAL_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_normal.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_IBL_NORMAL_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_NORMAL_MAP -o ${PBR_IBL_NORMAL_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_ibl_normal.frag (USE_IBL + USE_NORMAL_MAP)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_SPIRV})
+
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
 
 # Copy compiled shaders next to the binary so the app can find them at runtime

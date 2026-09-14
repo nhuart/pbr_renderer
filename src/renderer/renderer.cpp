@@ -16,7 +16,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 static float ambientIntensityFromLights(std::vector<Light> const& lights) {
-    for (auto const& light : lights) {
+    for (auto const& light: lights) {
         if (auto const* a = std::get_if<AmbientLight>(&light)) {
             return a->intensity;
         }
@@ -81,12 +81,21 @@ void Renderer::initVulkan() {
         }
     }
 
-    auto resolveFragShader = [this](std::string const& frag) {
-        return (mIblEnvironment && frag == "pbr") ? "pbr_ibl" : frag;
+    auto resolveFragShader = [this](MeshInstance const& inst) {
+        std::string frag = inst.fragmentShader;
+        if (frag == "pbr") {
+            bool hasNormalMap =
+                    inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
+            if (hasNormalMap) {
+                frag = mIblEnvironment ? "pbr_ibl_normal" : "pbr_normal";
+            } else {
+                frag = mIblEnvironment ? "pbr_ibl" : "pbr";
+            }
+        }
+        return frag;
     };
     auto makeKey = [&](MeshInstance const& inst, bool doubleSided) {
-        return inst.vertexShader + "+" + resolveFragShader(inst.fragmentShader) +
-               (doubleSided ? "+ds" : "");
+        return inst.vertexShader + "+" + resolveFragShader(inst) + (doubleSided ? "+ds" : "");
     };
 
     for (auto const& inst: mScene.meshInstances) {
@@ -94,17 +103,21 @@ void Renderer::initVulkan() {
         auto key = makeKey(inst, doubleSided);
         if (!mMaterials.contains(key)) {
             mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader,
-                                            resolveFragShader(inst.fragmentShader), doubleSided));
+                                            resolveFragShader(inst), doubleSided));
         }
     }
 
     for (auto& ro: mRenderObjects) {
         auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
         ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
-        ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath);
+        ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath, inst.gltfPath,
+                &*mMeshBuffer);
+        ro.normalMap = &mResources->getNormalMap(*mCtx, *mCmds, inst.gltfPath, *mMeshBuffer);
         ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
+        bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
         ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer,
-                mIblEnvironment ? &*mIblEnvironment : nullptr);
+                mIblEnvironment ? &*mIblEnvironment : nullptr,
+                hasNormalMap ? ro.normalMap : nullptr);
     }
 
     if (mScene.particles) {
@@ -182,7 +195,9 @@ void Renderer::updateUniforms() {
                       << " lights; excess lights will be ignored.\n";
             break;
         }
-        if (std::holds_alternative<AmbientLight>(light)) continue;
+        if (std::holds_alternative<AmbientLight>(light)) {
+            continue;
+        }
         lightUbo.lights[lightCount++] =
                 std::visit([](auto const& l) { return GpuLight::from(l); }, light);
     }

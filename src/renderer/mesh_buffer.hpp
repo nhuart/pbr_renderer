@@ -28,10 +28,18 @@ struct MeshIndexRange {
     bool doubleSided = false;
 };
 
+struct EmbeddedTexture {
+    std::vector<uint8_t> pixels; // RGBA8 decoded pixels
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
 struct MeshBuffer {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-    std::unordered_map<std::string, MeshIndexRange> meshRanges;
+    std::unordered_map<std::string, MeshIndexRange> meshRanges;  // keyed by gltfPath
+    std::unordered_map<std::string, EmbeddedTexture> albedoMaps; // keyed by gltfPath
+    std::unordered_map<std::string, EmbeddedTexture> normalMaps; // keyed by gltfPath
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
     vk::raii::Buffer indexBuffer = nullptr;

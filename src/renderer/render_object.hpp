@@ -9,6 +9,7 @@ struct RenderObject {
     uint32_t gameObjectIndex = 0;
     MeshIndexRange range;
     TextureAtlas const* texture = nullptr;
+    TextureAtlas const* normalMap = nullptr;
     Material const* material = nullptr;
     MaterialInstance materialInstance;
 };

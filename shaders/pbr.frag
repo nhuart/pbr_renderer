@@ -30,11 +30,18 @@ layout(binding = 4) uniform samplerCube prefilterMap;
 layout(binding = 5) uniform sampler2D   brdfLut;
 #endif
 
+#ifdef USE_NORMAL_MAP
+layout(binding = 6) uniform sampler2D normalMapSampler;
+#endif
+
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragNormal;
 layout(location = 3) in vec4 fragBaseColor;
 layout(location = 4) in vec3 fragWorldPos;
+#ifdef USE_NORMAL_MAP
+layout(location = 5) in vec3 fragTangent;
+#endif
 
 layout(location = 0) out vec4 outColor;
 
@@ -137,6 +144,20 @@ vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metalli
 }
 #endif
 
+vec3 resolveNormal() {
+#ifdef USE_NORMAL_MAP
+    vec3 T = normalize(fragTangent);
+    vec3 N = normalize(fragNormal);
+    T = normalize(T - dot(T, N) * N); // Gram-Schmidt re-orthogonalization
+    vec3 B = cross(N, T);
+    mat3 TBN = mat3(T, B, N);
+    vec3 tsNormal = texture(normalMapSampler, fragTexCoord).rgb * 2.0 - 1.0;
+    return normalize(TBN * tsNormal);
+#else
+    return normalize(fragNormal);
+#endif
+}
+
 void main() {
     float metallic         = ubo.pbrParams.x;
     float roughness        = ubo.pbrParams.y;
@@ -145,7 +166,7 @@ void main() {
     vec4 texColor = texture(texSampler, fragTexCoord);
     vec3 albedo   = texColor.rgb * fragBaseColor.rgb;
 
-    vec3 N = normalize(fragNormal);
+    vec3 N = resolveNormal();
     if (!gl_FrontFacing) N = -N;
     vec3 V = normalize(ubo.cameraPos.xyz - fragWorldPos);
 

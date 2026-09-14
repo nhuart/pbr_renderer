@@ -123,6 +123,69 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
               << properties.limits.maxSamplerAnisotropy << ")\n";
 }
 
+TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
+        uint8_t const* pixels, uint32_t width, uint32_t height, bool linear) {
+    mipLevels = 1;
+    format = linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb;
+    vk::DeviceSize size = vk::DeviceSize(width) * height * 4;
+
+    auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, size,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    void* data = stagingMemory.mapMemory(0, size);
+    memcpy(data, pixels, static_cast<size_t>(size));
+    stagingMemory.unmapMemory();
+
+    auto [img, imgMem] = vkutil::createImage(ctx, width, height, 1, vk::SampleCountFlagBits::e1,
+            format, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+    image = std::move(img);
+    imageMemory = std::move(imgMem);
+
+    vk::raii::CommandBuffer cmd = cmds.beginSingleTimeCommands();
+    vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eTransferDstOptimal, {}, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eTopOfPipe, vk::PipelineStageFlagBits2::eTransfer);
+    vk::BufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = { width, height, 1 },
+    };
+    cmd.copyBufferToImage(*stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, region);
+    vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferWrite,
+            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
+            vk::PipelineStageFlagBits2::eFragmentShader);
+    cmds.endSingleTimeCommands(std::move(cmd));
+
+    imageView = vkutil::createImageView(ctx, *image, format);
+
+    vk::PhysicalDeviceProperties properties = ctx.physicalDevice.getProperties();
+    sampler = vk::raii::Sampler(ctx.device,
+            vk::SamplerCreateInfo{
+                .magFilter = vk::Filter::eLinear,
+                .minFilter = vk::Filter::eLinear,
+                .mipmapMode = vk::SamplerMipmapMode::eLinear,
+                .addressModeU = vk::SamplerAddressMode::eRepeat,
+                .addressModeV = vk::SamplerAddressMode::eRepeat,
+                .addressModeW = vk::SamplerAddressMode::eRepeat,
+                .anisotropyEnable = vk::True,
+                .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+                .compareEnable = vk::False,
+                .compareOp = vk::CompareOp::eAlways,
+                .minLod = 0.0f,
+                .maxLod = 0.0f,
+                .borderColor = vk::BorderColor::eIntOpaqueBlack,
+            });
+
+    std::cout << (linear ? "Normal map" : "Embedded texture") << ": " << width << "x" << height
+              << " (raw pixels, " << vk::to_string(format) << ") loaded\n";
+}
+
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t r,
         uint8_t g, uint8_t b, uint8_t a) {
     mipLevels = 1;

@@ -280,7 +280,7 @@ std::vector<char> readSpirv(std::string const& path) {
 vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx, std::vector<char> const& code) {
     return { ctx.device, vk::ShaderModuleCreateInfo{
                              .codeSize = code.size(),
-                             .pCode    = std::bit_cast<uint32_t const*>(code.data()),
+                             .pCode = std::bit_cast<uint32_t const*>(code.data()),
                          } };
 }
 
