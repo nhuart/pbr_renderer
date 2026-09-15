@@ -38,6 +38,8 @@ struct MeshInstance {
     float metallic = 0.0f;
     float roughness = 0.5f;
     bool useNormalMap = true;
+    bool castShadows = false;
+    bool receiveShadows = false;
 };
 
 struct ParticleSystem {
@@ -51,6 +53,7 @@ struct AmbientLight {
 struct DirectionalLight {
     glm::vec3 direction;
     glm::vec3 color;
+    bool castShadow = false;
 };
 
 struct SpotLight {
@@ -194,6 +197,10 @@ struct UniformBufferObject {
     alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     alignas(16) glm::vec4 cameraPos = { 0.0f, 0.0f, 0.0f, 0.0f }; // xyz = world position
     alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness
+};
+
+struct ShadowUBO {
+    alignas(16) glm::mat4 lightSpaceMVP; // lightSpaceMatrix * model, per object
 };
 
 struct ComputeUBO {

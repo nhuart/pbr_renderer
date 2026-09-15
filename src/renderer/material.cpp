@@ -3,6 +3,7 @@
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
 #include "renderer/ibl_environment.hpp"
+#include "renderer/shadow_map.hpp"
 #include "renderer/texture_atlas.hpp"
 
 #include <array>
@@ -20,9 +21,9 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
         bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
-    // Descriptor set layout — 7 bindings: UBO, albedo, lights, irradiance, prefilter, BRDF LUT,
-    // normal map
-    std::array<vk::DescriptorSetLayoutBinding, 7> bindings{ {
+    // Descriptor set layout — 9 bindings: UBO, albedo, lights, irradiance, prefilter, BRDF LUT,
+    // normal map, shadow map sampler, shadow UBO
+    std::array<vk::DescriptorSetLayoutBinding, 9> bindings{ {
         {
             .binding = 0,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
@@ -65,6 +66,18 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment,
         },
+        {
+            .binding = 7,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        {
+            .binding = 8,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
     } };
     descriptorSetLayout = vk::raii::DescriptorSetLayout(ctx.device,
             vk::DescriptorSetLayoutCreateInfo{
@@ -75,10 +88,10 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     // Descriptor pool sized for all instances upfront
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
-        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * 2 },
+        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * 3 }, // UBO + lights + shadowUBO
         { .type = vk::DescriptorType::eCombinedImageSampler,
             .descriptorCount =
-                    setCount * 5 }, // albedo + irradiance + prefilter + brdfLut + normalMap
+                    setCount * 6 }, // albedo + irradiance + prefilter + brdfLut + normalMap + shadowMap
     } };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,
             vk::DescriptorPoolCreateInfo{
@@ -201,7 +214,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 
 MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
         vk::raii::Buffer const& lightBuffer, IblEnvironment const* ibl,
-        TextureAtlas const* normalMap) const {
+        TextureAtlas const* normalMap, ShadowMap const* shadowMap) const {
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -259,7 +272,23 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             .offset = 0,
             .range = sizeof(LightUBO),
         };
-        std::array<vk::WriteDescriptorSet, 7> writes{ {
+
+        // Shadow map bindings — use dummy albedo/UBO when no shadow map is present
+        vk::DescriptorImageInfo shadowMapInfo = albedoInfo;
+        vk::DescriptorBufferInfo shadowUboInfo{
+            .buffer = *inst.uniformBuffers[i], // dummy — same UBO, won't be read without USE_SHADOW
+            .offset = 0,
+            .range = sizeof(UniformBufferObject),
+        };
+        if (shadowMap) {
+            shadowMapInfo = { *shadowMap->sampler, *shadowMap->imageView,
+                vk::ImageLayout::eShaderReadOnlyOptimal };
+            shadowUboInfo.buffer = *shadowMap->shadowUboBuffers[i];
+            shadowUboInfo.offset = 0;
+            shadowUboInfo.range = sizeof(ShadowUBO);
+        }
+
+        std::array<vk::WriteDescriptorSet, 9> writes{ {
             {
                 .dstSet = *inst.descriptorSets[i],
                 .dstBinding = 0,
@@ -308,6 +337,20 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                 .pImageInfo = &normalMapInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 7,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = &shadowMapInfo,
+            },
+            {
+                .dstSet = *inst.descriptorSets[i],
+                .dstBinding = 8,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .pBufferInfo = &shadowUboInfo,
             },
         } };
         ctx.device.updateDescriptorSets(writes, {});

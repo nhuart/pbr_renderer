@@ -102,6 +102,12 @@ Scene loadScene(std::string const& path) {
         if (instanceJson.contains("useNormalMap")) {
             instance.useNormalMap = instanceJson["useNormalMap"].get<bool>();
         }
+        if (instanceJson.contains("castShadows")) {
+            instance.castShadows = instanceJson["castShadows"].get<bool>();
+        }
+        if (instanceJson.contains("receiveShadows")) {
+            instance.receiveShadows = instanceJson["receiveShadows"].get<bool>();
+        }
         scene.meshInstances.push_back(std::move(instance));
     }
 
@@ -136,6 +142,9 @@ Scene loadScene(std::string const& path) {
             DirectionalLight light;
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
+            if (lightJson.contains("castShadow")) {
+                light.castShadow = lightJson["castShadow"].get<bool>();
+            }
             return light;
         } else if (lightType == "spot") {
             requireFields({ "position", "direction", "color", "innerConeAngle", "outerConeAngle",

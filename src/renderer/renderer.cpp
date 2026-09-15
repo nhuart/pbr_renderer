@@ -81,15 +81,44 @@ void Renderer::initVulkan() {
         }
     }
 
+    // Determine if any directional light casts a shadow
+    DirectionalLight const* shadowCastingLight = nullptr;
+    int shadowDirLightCount = 0;
+    for (auto const& light: mScene.lights) {
+        if (auto const* dl = std::get_if<DirectionalLight>(&light)) {
+            if (dl->castShadow) {
+                ++shadowDirLightCount;
+                if (!shadowCastingLight)
+                    shadowCastingLight = dl;
+            }
+        }
+    }
+    if (shadowDirLightCount > 1)
+        throw std::runtime_error(
+                "Scene has " + std::to_string(shadowDirLightCount) +
+                " shadow-casting directional lights — only one is supported");
+    if (shadowCastingLight) {
+        uint32_t shadowCasterCount = 0;
+        for (auto const& inst: mScene.meshInstances) {
+            if (inst.castShadows) ++shadowCasterCount;
+        }
+        mShadowMap.emplace(*mCtx, *mCmds, shadowCasterCount);
+        mShadowMap->updateLightSpaceMatrix(*shadowCastingLight);
+    }
+
     auto resolveFragShader = [this](MeshInstance const& inst) {
         std::string frag = inst.fragmentShader;
         if (frag == "pbr") {
             bool hasNormalMap =
                     inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
+            bool shadow = inst.receiveShadows && mShadowMap.has_value();
             if (hasNormalMap) {
                 frag = mIblEnvironment ? "pbr_ibl_normal" : "pbr_normal";
             } else {
                 frag = mIblEnvironment ? "pbr_ibl" : "pbr";
+            }
+            if (shadow) {
+                frag += "_shadow";
             }
         }
         return frag;
@@ -115,9 +144,11 @@ void Renderer::initVulkan() {
         ro.normalMap = &mResources->getNormalMap(*mCtx, *mCmds, inst.gltfPath, *mMeshBuffer);
         ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
         bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
+        bool receivesShadow = inst.receiveShadows && mShadowMap.has_value();
         ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer,
                 mIblEnvironment ? &*mIblEnvironment : nullptr,
-                hasNormalMap ? ro.normalMap : nullptr);
+                hasNormalMap ? ro.normalMap : nullptr,
+                receivesShadow ? &*mShadowMap : nullptr);
     }
 
     if (mScene.particles) {
@@ -230,6 +261,17 @@ void Renderer::updateUniforms() {
         mSkyboxPipeline->updateUBO(mFrameIndex, skyboxUbo);
     }
 
+    if (mShadowMap) {
+        uint32_t shadowObjIdx = 0;
+        for (size_t i = 0; i < mScene.meshInstances.size(); ++i) {
+            if (mScene.meshInstances[i].castShadows) {
+                mShadowMap->updateObjectUBO(shadowObjIdx++, mFrameIndex,
+                        mGameObjects[i].getModelMatrix());
+            }
+        }
+        mShadowMap->updateFragmentUBO(mFrameIndex);
+    }
+
     if (mScene.particles) {
         ComputeUBO cubo{ .deltaTime = deltaTime };
         memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
@@ -321,10 +363,118 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
             pixels, static_cast<int>(width) * 4);
     readbackMemory.unmapMemory();
     std::cout << "Screenshot saved: " << mScreenshotPath << "\n";
+
+    if (mShadowMap) {
+        captureShadowMapDebug();
+    }
+}
+
+void Renderer::captureShadowMapDebug() {
+    constexpr uint32_t sz = SHADOW_MAP_SIZE;
+    // Depth image is R32 float (or D32/D24) — copy as 4 bytes per pixel
+    vk::DeviceSize bufferSize = vk::DeviceSize(sz) * sz * 4;
+
+    auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, bufferSize,
+            vk::BufferUsageFlagBits::eTransferDst,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCached);
+
+    vk::raii::CommandBuffer cmd =
+            std::move(mCtx->device
+                              .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                                  .commandPool = *mCmds->commandPool,
+                                  .level = vk::CommandBufferLevel::ePrimary,
+                                  .commandBufferCount = 1,
+                              })
+                              .front());
+
+    cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+
+    vkutil::transitionImageLayout(cmd, *mShadowMap->image,
+            vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal,
+            vk::AccessFlagBits2::eShaderRead, vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eTransfer,
+            vk::ImageAspectFlagBits::eDepth);
+
+    vk::BufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = { sz, sz, 1 },
+    };
+    cmd.copyImageToBuffer(*mShadowMap->image, vk::ImageLayout::eTransferSrcOptimal,
+            *readbackBuffer, region);
+
+    vkutil::transitionImageLayout(cmd, *mShadowMap->image, vk::ImageLayout::eTransferSrcOptimal,
+            vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferRead,
+            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::ImageAspectFlagBits::eDepth);
+
+    cmd.end();
+
+    vk::raii::Fence fence(mCtx->device, vk::FenceCreateInfo{});
+    vk::CommandBuffer cmdHandle = *cmd;
+    mCtx->graphicsQueue.submit(
+            vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
+    std::ignore = mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
+
+    auto* rawData = static_cast<float*>(readbackMemory.mapMemory(0, bufferSize));
+    mCtx->device.invalidateMappedMemoryRanges(
+            vk::MappedMemoryRange{ .memory = *readbackMemory, .offset = 0, .size = bufferSize });
+
+    // Find the min and max depth among pixels with geometry (depth < 1.0).
+    // Normalize that range to [0,1] and invert so closer = brighter.
+    // Pixels at depth 1.0 (background / sampler border) are rendered black.
+    constexpr float kBackground = 1.0f;
+    float minDepth = kBackground;
+    float maxDepth = 0.0f;
+    for (uint32_t i = 0; i < sz * sz; ++i) {
+        float d = rawData[i];
+        if (d < kBackground) {
+            minDepth = std::min(minDepth, d);
+            maxDepth = std::max(maxDepth, d);
+        }
+    }
+    float depthRange = maxDepth - minDepth;
+    if (depthRange < 1e-5f) depthRange = 1.0f;
+
+    std::vector<uint8_t> rgba(sz * sz * 4);
+    for (uint32_t i = 0; i < sz * sz; ++i) {
+        float d = rawData[i];
+        uint8_t v;
+        if (d >= kBackground) {
+            v = 0; // background → black
+        } else {
+            float normalized = (d - minDepth) / depthRange;
+            v = static_cast<uint8_t>((1.0f - normalized) * 255.0f);
+        }
+        rgba[i * 4 + 0] = v;
+        rgba[i * 4 + 1] = v;
+        rgba[i * 4 + 2] = v;
+        rgba[i * 4 + 3] = 255;
+    }
+    readbackMemory.unmapMemory();
+
+    // Derive debug path: replace extension with _shadow_depth.png
+    std::string debugPath = mScreenshotPath;
+    auto dot = debugPath.rfind('.');
+    if (dot != std::string::npos) debugPath = debugPath.substr(0, dot);
+    debugPath += "_shadow_depth.png";
+
+    stbi_write_png(debugPath.c_str(), static_cast<int>(sz), static_cast<int>(sz), 4, rgba.data(),
+            static_cast<int>(sz) * 4);
+    std::cout << "Shadow depth map saved: " << debugPath << "\n";
 }
 
 void Renderer::buildRenderGraph() {
     mRenderGraph = RenderGraph{};
+    mShadowMapImageHandle = {};
 
     vk::Extent2D swapchainExtent = mSwapchain->extent;
 
@@ -360,10 +510,62 @@ void Renderer::buildRenderGraph() {
                         .samples = mCtx->msaaSamples,
                     });
 
-    mRenderGraph.addPass("ForwardPass")
+    if (mShadowMap) {
+        vk::Extent2D shadowExtent{ SHADOW_MAP_SIZE, SHADOW_MAP_SIZE };
+        mShadowMapImageHandle = mRenderGraph.importImage("shadowMap", *mShadowMap->image,
+                *mShadowMap->imageView,
+                RenderGraphImage{
+                    .format = vkutil::findDepthFormat(*mCtx),
+                    .extent = shadowExtent,
+                    .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                             vk::ImageUsageFlagBits::eSampled |
+                             vk::ImageUsageFlagBits::eTransferSrc,
+                    .aspect = vk::ImageAspectFlagBits::eDepth,
+                    .samples = vk::SampleCountFlagBits::e1,
+                },
+                vk::ImageLayout::eShaderReadOnlyOptimal);
+
+        mRenderGraph.addPass("ShadowPass")
+                .writesDepth(mShadowMapImageHandle)
+                .execute([this](vk::raii::CommandBuffer const& cmd) {
+                    cmd.setViewport(0, vk::Viewport{
+                                           .x = 0.0f,
+                                           .y = 0.0f,
+                                           .width = static_cast<float>(SHADOW_MAP_SIZE),
+                                           .height = static_cast<float>(SHADOW_MAP_SIZE),
+                                           .minDepth = 0.0f,
+                                           .maxDepth = 1.0f,
+                                       });
+                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 },
+                                          .extent = { SHADOW_MAP_SIZE, SHADOW_MAP_SIZE } });
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mShadowMap->pipeline);
+                    cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
+                    cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
+                    uint32_t shadowObjIdx = 0;
+                    for (size_t i = 0; i < mRenderObjects.size(); ++i) {
+                        auto const& inst = mScene.meshInstances[i];
+                        if (!inst.castShadows) {
+                            continue;
+                        }
+                        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                *mShadowMap->pipelineLayout, 0,
+                                *mShadowMap->objects[shadowObjIdx].descriptorSets[mFrameIndex],
+                                {});
+                        cmd.drawIndexed(mRenderObjects[i].range.indexCount, 1,
+                                mRenderObjects[i].range.firstIndex, 0, 0);
+                        ++shadowObjIdx;
+                    }
+                });
+    }
+
+    auto& forwardPass = mRenderGraph.addPass("ForwardPass")
             .writesColor(colorImage)
             .resolvesTo(mSwapchainImageHandle)
-            .writesDepth(depthImage)
+            .writesDepth(depthImage);
+    if (mShadowMapImageHandle.isValid()) {
+        forwardPass.reads(mShadowMapImageHandle);
+    }
+    forwardPass
             .execute([this](vk::raii::CommandBuffer const& commandBuffer) {
                 vk::Extent2D drawExtent = mSwapchain->extent;
                 commandBuffer.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer,

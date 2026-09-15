@@ -41,6 +41,7 @@ set(SHADER_SOURCES
     shaders/phong.frag
     shaders/blinn_phong.frag
     shaders/pbr.frag
+    shaders/shadow.vert
     shaders/skybox.vert
     shaders/skybox.frag
     shaders/particle.vert
@@ -95,6 +96,50 @@ add_custom_command(
 )
 list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_SPIRV})
 
+# pbr.frag compiled with USE_SHADOW -> pbr_shadow.frag.spv
+set(PBR_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_shadow.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_SHADOW_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_SHADOW -o ${PBR_SHADOW_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_shadow.frag (USE_SHADOW)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_SHADOW_SPIRV})
+
+# pbr.frag compiled with USE_SHADOW + USE_NORMAL_MAP -> pbr_normal_shadow.frag.spv
+set(PBR_NORMAL_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_normal_shadow.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_NORMAL_SHADOW_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_NORMAL_MAP -DUSE_SHADOW -o ${PBR_NORMAL_SHADOW_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_normal_shadow.frag (USE_NORMAL_MAP + USE_SHADOW)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_NORMAL_SHADOW_SPIRV})
+
+# pbr.frag compiled with USE_IBL + USE_SHADOW -> pbr_ibl_shadow.frag.spv
+set(PBR_IBL_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_shadow.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_IBL_SHADOW_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_SHADOW -o ${PBR_IBL_SHADOW_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_ibl_shadow.frag (USE_IBL + USE_SHADOW)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_SHADOW_SPIRV})
+
+# pbr.frag compiled with USE_IBL + USE_NORMAL_MAP + USE_SHADOW -> pbr_ibl_normal_shadow.frag.spv
+set(PBR_IBL_NORMAL_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_normal_shadow.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_IBL_NORMAL_SHADOW_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_NORMAL_MAP -DUSE_SHADOW -o ${PBR_IBL_NORMAL_SHADOW_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_ibl_normal_shadow.frag (USE_IBL + USE_NORMAL_MAP + USE_SHADOW)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_SHADOW_SPIRV})
+
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
 
 # Copy compiled shaders next to the binary so the app can find them at runtime
@@ -119,6 +164,7 @@ add_executable(pbr_renderer
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
     src/renderer/material.cpp
+    src/renderer/shadow_map.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )
@@ -132,6 +178,7 @@ target_compile_definitions(pbr_renderer PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
     VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
     VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
 )
 
 # stb headers are under <stb/stb_image.h> on this system; tinygltf expects <stb_image.h>

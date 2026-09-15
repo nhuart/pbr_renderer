@@ -34,6 +34,13 @@ layout(binding = 5) uniform sampler2D   brdfLut;
 layout(binding = 6) uniform sampler2D normalMapSampler;
 #endif
 
+#ifdef USE_SHADOW
+layout(binding = 7) uniform sampler2D shadowMap;
+layout(binding = 8) uniform ShadowUBO {
+    mat4 lightSpaceMatrix;
+} shadowUbo;
+#endif
+
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragNormal;
@@ -173,10 +180,30 @@ void main() {
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     float NdotV = max(dot(N, V), 0.0001);
 
+#ifdef USE_SHADOW
+    vec4 fragPosLightSpace = shadowUbo.lightSpaceMatrix * vec4(fragWorldPos, 1.0);
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    // Remap XY from [-1,1] to [0,1]; depth is already [0,1] in Vulkan clip space
+    vec2 shadowUV = projCoords.xy * 0.5 + 0.5;
+    float currentDepth = projCoords.z;
+    float shadowFactor = 1.0;
+    if (shadowUV.x >= 0.0 && shadowUV.x <= 1.0 && shadowUV.y >= 0.0 && shadowUV.y <= 1.0 && currentDepth >= 0.0 && currentDepth <= 1.0) {
+        float bias = 0.005;
+        float closestDepth = texture(shadowMap, shadowUV).r;
+        shadowFactor = (currentDepth - bias > closestDepth) ? 0.0 : 1.0;
+    }
+#endif
+
     vec3 Lo = vec3(0.0);
     int numLights = int(lights.counts.x);
     for (int i = 0; i < numLights; i++) {
+#ifdef USE_SHADOW
+        // Only the first directional light (type 1) is shadow-casting
+        float lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? shadowFactor : 1.0;
+        Lo += lightShadow * lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
+#else
         Lo += lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
+#endif
     }
 
 #ifdef USE_IBL
