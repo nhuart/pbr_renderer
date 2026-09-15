@@ -69,6 +69,16 @@ Scene loadScene(std::string const& path) {
     if (j.contains("skybox")) {
         scene.skybox = j["skybox"].get<bool>();
     }
+    if (j.contains("shadowType")) {
+        std::string st = j["shadowType"].get<std::string>();
+        if (st == "pcf") {
+            scene.shadowType = ShadowType::PCF;
+        } else if (st == "hard") {
+            scene.shadowType = ShadowType::Hard;
+        } else {
+            throw std::runtime_error("unknown shadowType '" + st + "': " + path);
+        }
+    }
 
 
     for (auto const& instanceJson: j.at("meshInstances")) {

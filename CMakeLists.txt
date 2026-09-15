@@ -140,6 +140,47 @@ add_custom_command(
 )
 list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_SHADOW_SPIRV})
 
+# PCF variants — USE_SHADOW + USE_PCF
+set(PBR_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_pcf.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_PCF_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_SHADOW -DUSE_PCF -o ${PBR_PCF_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_pcf.frag (USE_SHADOW + USE_PCF)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_PCF_SPIRV})
+
+set(PBR_NORMAL_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_normal_pcf.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_NORMAL_PCF_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_NORMAL_MAP -DUSE_SHADOW -DUSE_PCF -o ${PBR_NORMAL_PCF_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_normal_pcf.frag (USE_NORMAL_MAP + USE_SHADOW + USE_PCF)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_NORMAL_PCF_SPIRV})
+
+set(PBR_IBL_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_pcf.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_IBL_PCF_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_SHADOW -DUSE_PCF -o ${PBR_IBL_PCF_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_ibl_pcf.frag (USE_IBL + USE_SHADOW + USE_PCF)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_PCF_SPIRV})
+
+set(PBR_IBL_NORMAL_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_normal_pcf.frag.spv")
+add_custom_command(
+    OUTPUT ${PBR_IBL_NORMAL_PCF_SPIRV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_NORMAL_MAP -DUSE_SHADOW -DUSE_PCF -o ${PBR_IBL_NORMAL_PCF_SPIRV}
+    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+    COMMENT "Compiling shader pbr_ibl_normal_pcf.frag (USE_IBL + USE_NORMAL_MAP + USE_SHADOW + USE_PCF)"
+)
+list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_PCF_SPIRV})
+
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
 
 # Copy compiled shaders next to the binary so the app can find them at runtime

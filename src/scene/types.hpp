@@ -73,6 +73,8 @@ struct PointLight {
 
 using Light = std::variant<AmbientLight, DirectionalLight, SpotLight, PointLight>;
 
+enum class ShadowType { Hard, PCF };
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
@@ -80,6 +82,7 @@ struct Scene {
     Camera camera;
     std::optional<std::string> iblPath;
     bool skybox = false;
+    ShadowType shadowType = ShadowType::Hard;
 };
 
 // ---------------------------------------------------------------------------

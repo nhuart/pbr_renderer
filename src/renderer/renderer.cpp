@@ -118,7 +118,7 @@ void Renderer::initVulkan() {
                 frag = mIblEnvironment ? "pbr_ibl" : "pbr";
             }
             if (shadow) {
-                frag += "_shadow";
+                frag += (mScene.shadowType == ShadowType::PCF) ? "_pcf" : "_shadow";
             }
         }
         return frag;
