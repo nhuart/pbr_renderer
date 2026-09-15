@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -12,11 +13,15 @@ struct CommandService;
 
 constexpr uint32_t SHADOW_MAP_SIZE = 2048;
 
+struct ShadowFrameBuffer {
+    vk::raii::Buffer buffer{ nullptr };
+    vk::raii::DeviceMemory memory{ nullptr };
+    void* mapped = nullptr;
+};
+
 // Per-object, per-frame shadow UBO buffers and descriptor sets
 struct ShadowObjectData {
-    std::vector<vk::raii::Buffer> uboBuffers;
-    std::vector<vk::raii::DeviceMemory> uboMemory;
-    std::vector<void*> uboMapped;
+    std::array<ShadowFrameBuffer, MAX_FRAMES_IN_FLIGHT> frames;
     vk::raii::DescriptorSets descriptorSets{ nullptr };
 };
 
@@ -26,7 +31,6 @@ struct ShadowMap {
     vk::raii::ImageView imageView{ nullptr };
     vk::raii::Sampler sampler{ nullptr };
 
-    // Depth-only pipeline
     vk::raii::DescriptorSetLayout descriptorSetLayout{ nullptr };
     vk::raii::PipelineLayout pipelineLayout{ nullptr };
     vk::raii::DescriptorPool descriptorPool{ nullptr };
@@ -37,11 +41,11 @@ struct ShadowMap {
 
     // Shared light-space matrix (VP only, no model)
     glm::mat4 lightSpaceMatrix{ 1.0f };
+    ShadowType shadowType = ShadowType::Hard;
+    float shadowBias = 0.005f;
 
-    // Per-frame UBOs for material binding 8 (lightSpaceMatrix, no model — used in fragment shader)
-    std::vector<vk::raii::Buffer> shadowUboBuffers;
-    std::vector<vk::raii::DeviceMemory> shadowUboMemory;
-    std::vector<void*> shadowUboMapped;
+    // Per-frame UBOs for material binding 8 (lightSpaceTransform VP — used in fragment shader)
+    std::array<ShadowFrameBuffer, MAX_FRAMES_IN_FLIGHT> fragmentUbo;
 
     ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount);
 
@@ -49,4 +53,9 @@ struct ShadowMap {
     void updateLightSpaceMatrix(DirectionalLight const& light);
     void updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex, glm::mat4 const& model);
     void updateFragmentUBO(uint32_t frameIndex);
+
+private:
+    void createDepthImage(VulkanContext const& ctx, CommandService const& cmds);
+    void createFragmentUboBuffers(VulkanContext const& ctx);
+    void createPipeline(VulkanContext const& ctx, uint32_t objectCount);
 };

@@ -38,6 +38,16 @@ static void validateScene(Scene const& scene, std::string const& path) {
         throw std::runtime_error("scene has no meshInstances or particles: " + path);
     }
 
+    int shadowDirLightCount = 0;
+    for (auto const& light : scene.lights) {
+        if (auto const* dl = std::get_if<DirectionalLight>(&light)) {
+            if (dl->castShadow) ++shadowDirLightCount;
+        }
+    }
+    if (shadowDirLightCount > 1)
+        throw std::runtime_error("scene has " + std::to_string(shadowDirLightCount) +
+                " shadow-casting directional lights — only one is supported: " + path);
+
     for (size_t i = 0; i < scene.meshInstances.size(); ++i) {
         auto const& instance = scene.meshInstances[i];
         auto prefix = "meshInstances[" + std::to_string(i) + "] in " + path + ": ";
@@ -68,16 +78,6 @@ Scene loadScene(std::string const& path) {
     }
     if (j.contains("skybox")) {
         scene.skybox = j["skybox"].get<bool>();
-    }
-    if (j.contains("shadowType")) {
-        std::string st = j["shadowType"].get<std::string>();
-        if (st == "pcf") {
-            scene.shadowType = ShadowType::PCF;
-        } else if (st == "hard") {
-            scene.shadowType = ShadowType::Hard;
-        } else {
-            throw std::runtime_error("unknown shadowType '" + st + "': " + path);
-        }
     }
 
 
@@ -154,6 +154,17 @@ Scene loadScene(std::string const& path) {
             light.color = vec3FromJson(lightJson["color"]);
             if (lightJson.contains("castShadow")) {
                 light.castShadow = lightJson["castShadow"].get<bool>();
+            }
+            if (lightJson.contains("shadowBias")) {
+                light.shadowBias = lightJson["shadowBias"].get<float>();
+            }
+            if (lightJson.contains("shadowType")) {
+                std::string st = lightJson["shadowType"].get<std::string>();
+                if (st == "pcf") {
+                    light.shadowType = ShadowType::PCF;
+                } else if (st != "hard") {
+                    throw std::runtime_error("unknown shadowType '" + st + "': " + path);
+                }
             }
             return light;
         } else if (lightType == "spot") {

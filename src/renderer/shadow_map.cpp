@@ -11,15 +11,21 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 ShadowMap::ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount) {
-    // Depth image
+    createDepthImage(ctx, cmds);
+    createFragmentUboBuffers(ctx);
+    createPipeline(ctx, objectCount);
+    allocateObjectData(ctx, objectCount);
+}
+
+void ShadowMap::createDepthImage(VulkanContext const& ctx, CommandService const& cmds) {
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
-    auto [img, mem] = vkutil::createImage(ctx, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 1,
+    auto [depthImage, depthMemory] = vkutil::createImage(ctx, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 1,
             vk::SampleCountFlagBits::e1, depthFormat, vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled |
                     vk::ImageUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-    image = std::move(img);
-    memory = std::move(mem);
+    image = std::move(depthImage);
+    memory = std::move(depthMemory);
 
     imageView = vkutil::createImageView(ctx, *image, depthFormat, vk::ImageAspectFlagBits::eDepth);
 
@@ -40,43 +46,45 @@ ShadowMap::ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint3
                 .unnormalizedCoordinates = vk::False,
             });
 
-    // Transition image to shader-read layout (steady-state start-of-frame layout)
-    {
-        auto cmd = std::move(ctx.device
-                                     .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-                                         .commandPool = *cmds.commandPool,
-                                         .level = vk::CommandBufferLevel::ePrimary,
-                                         .commandBufferCount = 1,
-                                     })
-                                     .front());
-        cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-        vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eUndefined,
-                vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eNone,
-                vk::AccessFlagBits2::eShaderRead,
-                vk::PipelineStageFlagBits2::eTopOfPipe,
-                vk::PipelineStageFlagBits2::eFragmentShader,
-                vk::ImageAspectFlagBits::eDepth);
-        cmd.end();
-        vk::CommandBuffer cmdHandle = *cmd;
-        vk::raii::Fence fence(ctx.device, vk::FenceCreateInfo{});
-        ctx.graphicsQueue.submit(
-                vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
-        std::ignore = ctx.device.waitForFences(*fence, vk::True, UINT64_MAX);
-    }
+    // Transition to shader-read layout so the forward pass can safely sample on frame 0
+    // before the shadow pass has had a chance to write anything.
+    vk::raii::CommandBuffer cmd =
+            std::move(ctx.device
+                              .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                                  .commandPool = *cmds.commandPool,
+                                  .level = vk::CommandBufferLevel::ePrimary,
+                                  .commandBufferCount = 1,
+                              })
+                              .front());
+    cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+    vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eNone,
+            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTopOfPipe,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::ImageAspectFlagBits::eDepth);
+    cmd.end();
+    vk::CommandBuffer cmdHandle = *cmd;
+    vk::raii::Fence fence(ctx.device, vk::FenceCreateInfo{});
+    ctx.graphicsQueue.submit(
+            vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
+    std::ignore = ctx.device.waitForFences(*fence, vk::True, UINT64_MAX);
+}
 
-    // Per-frame fragment UBO (lightSpaceMatrix only — used by fragment shader for shadow lookup)
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        auto [buf, bufMem] = vkutil::createBuffer(ctx, sizeof(ShadowUBO),
+void ShadowMap::createFragmentUboBuffers(VulkanContext const& ctx) {
+    // Per-frame UBO for the fragment shader: lightSpaceTransform VP (no model matrix)
+    for (int frameIndex = 0; frameIndex < MAX_FRAMES_IN_FLIGHT; ++frameIndex) {
+        auto [uboBuffer, uboMemory] = vkutil::createBuffer(ctx, sizeof(ShadowUBO),
                 vk::BufferUsageFlagBits::eUniformBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible |
                         vk::MemoryPropertyFlagBits::eHostCoherent);
-        shadowUboMapped.push_back(bufMem.mapMemory(0, sizeof(ShadowUBO)));
-        shadowUboBuffers.push_back(std::move(buf));
-        shadowUboMemory.push_back(std::move(bufMem));
+        fragmentUbo[frameIndex].mapped = uboMemory.mapMemory(0, sizeof(ShadowUBO));
+        fragmentUbo[frameIndex].buffer = std::move(uboBuffer);
+        fragmentUbo[frameIndex].memory = std::move(uboMemory);
     }
+}
 
-    // Descriptor set layout for shadow depth pass: binding 0 = per-object lightSpaceMVP UBO
-    std::array<vk::DescriptorSetLayoutBinding, 1> bindings{ { {
+void ShadowMap::createPipeline(VulkanContext const& ctx, uint32_t objectCount) {
+    // Descriptor set layout: binding 0 = per-object lightSpaceTransform UBO (vertex stage)
+    std::array<vk::DescriptorSetLayoutBinding, 1> descriptorBindings{ { {
         .binding = 0,
         .descriptorType = vk::DescriptorType::eUniformBuffer,
         .descriptorCount = 1,
@@ -84,37 +92,36 @@ ShadowMap::ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint3
     } } };
     descriptorSetLayout = vk::raii::DescriptorSetLayout(ctx.device,
             vk::DescriptorSetLayoutCreateInfo{
-                .bindingCount = static_cast<uint32_t>(bindings.size()),
-                .pBindings = bindings.data(),
+                .bindingCount = static_cast<uint32_t>(descriptorBindings.size()),
+                .pBindings = descriptorBindings.data(),
             });
 
-    uint32_t maxObjects = std::max(objectCount, 1u);
-    uint32_t setCount = maxObjects * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    uint32_t maxSets = std::max(objectCount, 1u) * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     std::array<vk::DescriptorPoolSize, 1> poolSizes{ {
-        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount },
+        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxSets },
     } };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,
             vk::DescriptorPoolCreateInfo{
                 .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                .maxSets = setCount,
+                .maxSets = maxSets,
                 .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
                 .pPoolSizes = poolSizes.data(),
             });
 
-    vk::DescriptorSetLayout dslHandle = *descriptorSetLayout;
-    pipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                               .setLayoutCount = 1,
-                                                               .pSetLayouts = &dslHandle,
-                                                           });
+    vk::DescriptorSetLayout descriptorSetLayoutHandle = *descriptorSetLayout;
+    pipelineLayout = vk::raii::PipelineLayout(ctx.device,
+            vk::PipelineLayoutCreateInfo{
+                .setLayoutCount = 1,
+                .pSetLayouts = &descriptorSetLayoutHandle,
+            });
 
-    // Depth-only graphics pipeline
-    auto vertCode = vkutil::readSpirv("shaders/compiled/shadow.vert.spv");
-    vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
+    auto vertexShaderCode = vkutil::readSpirv("shaders/compiled/shadow.vert.spv");
+    vk::raii::ShaderModule vertexShaderModule = vkutil::createShaderModule(ctx, vertexShaderCode);
 
     std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eVertex,
-            .module = *vertModule,
+            .module = *vertexShaderModule,
             .pName = "main",
         },
     };
@@ -127,12 +134,17 @@ ShadowMap::ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint3
     };
 
     auto bindingDesc = Vertex::getBindingDescription();
-    auto attribDescs = Vertex::getAttributeDescriptions();
+    vk::VertexInputAttributeDescription positionAttrib{
+        .location = 0,
+        .binding = 0,
+        .format = vk::Format::eR32G32B32Sfloat,
+        .offset = offsetof(Vertex, pos),
+    };
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attribDescs.size()),
-        .pVertexAttributeDescriptions = attribDescs.data(),
+        .vertexAttributeDescriptionCount = 1,
+        .pVertexAttributeDescriptions = &positionAttrib,
     };
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
         .topology = vk::PrimitiveTopology::eTriangleList,
@@ -192,8 +204,6 @@ ShadowMap::ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint3
     pipeline = vk::raii::Pipeline(ctx.device, nullptr,
             pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
     std::cout << "Shadow pipeline: created\n";
-
-    allocateObjectData(ctx, objectCount);
 }
 
 void ShadowMap::allocateObjectData(VulkanContext const& ctx, uint32_t objectCount) {
@@ -206,9 +216,9 @@ void ShadowMap::allocateObjectData(VulkanContext const& ctx, uint32_t objectCoun
                     vk::BufferUsageFlagBits::eUniformBuffer,
                     vk::MemoryPropertyFlagBits::eHostVisible |
                             vk::MemoryPropertyFlagBits::eHostCoherent);
-            obj.uboMapped.push_back(mem.mapMemory(0, sizeof(ShadowUBO)));
-            obj.uboBuffers.push_back(std::move(buf));
-            obj.uboMemory.push_back(std::move(mem));
+            obj.frames[i].mapped = mem.mapMemory(0, sizeof(ShadowUBO));
+            obj.frames[i].buffer = std::move(buf);
+            obj.frames[i].memory = std::move(mem);
         }
 
         std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
@@ -221,7 +231,7 @@ void ShadowMap::allocateObjectData(VulkanContext const& ctx, uint32_t objectCoun
 
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             vk::DescriptorBufferInfo uboInfo{
-                .buffer = *obj.uboBuffers[i],
+                .buffer = *obj.frames[i].buffer,
                 .offset = 0,
                 .range = sizeof(ShadowUBO),
             };
@@ -238,30 +248,25 @@ void ShadowMap::allocateObjectData(VulkanContext const& ctx, uint32_t objectCoun
 }
 
 void ShadowMap::updateLightSpaceMatrix(DirectionalLight const& light) {
-    // light.direction is the direction the light travels toward (e.g. [1,2,1] → light comes
-    // from above-right). Light source is placed opposite, looking at scene center.
     glm::vec3 dir = glm::normalize(light.direction);
     glm::vec3 up = (std::abs(dir.y) > 0.99f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
     glm::vec3 lightPos = dir * 10.0f;
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), up);
     // Orthographic frustum sized to cover the scene; GLM_FORCE_DEPTH_ZERO_TO_ONE is active
     // so glm::ortho already emits [0,1] depth — no manual remap needed.
-    // Flip Y column so rasterized NDC matches Vulkan's Y-down convention.
-    float extent = 3.0f;
-    glm::mat4 lightProj = glm::ortho(-extent, extent, -extent, extent, 0.1f, 30.0f);
-    lightProj[1][1] *= -1.0f;
+    glm::mat4 lightProj = glm::ortho(-3.0f, 3.0f, -3.0f, 3.0f, 0.1f, 30.0f);
+    lightProj[1][1] *= -1.0f; // Flip Y column so rasterized NDC matches Vulkan's Y-down convention.
     lightSpaceMatrix = lightProj * lightView;
 }
 
 void ShadowMap::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex,
         glm::mat4 const& model) {
     glm::mat4 mvp = lightSpaceMatrix * model;
-    ShadowUBO ubo{ .lightSpaceMVP = mvp };
-    memcpy(objects[objectIndex].uboMapped[frameIndex], &ubo, sizeof(ubo));
+    ShadowUBO ubo{ .lightSpaceTransform = mvp };
+    memcpy(objects[objectIndex].frames[frameIndex].mapped, &ubo, sizeof(ubo));
 }
 
 void ShadowMap::updateFragmentUBO(uint32_t frameIndex) {
-    // Fragment shader needs lightSpaceMatrix (no model — applied to world-space fragWorldPos)
-    ShadowUBO ubo{ .lightSpaceMVP = lightSpaceMatrix };
-    memcpy(shadowUboMapped[frameIndex], &ubo, sizeof(ubo));
+    ShadowUBO ubo{ .lightSpaceTransform = lightSpaceMatrix, .shadowBias = shadowBias };
+    memcpy(fragmentUbo[frameIndex].mapped, &ubo, sizeof(ubo));
 }

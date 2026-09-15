@@ -83,26 +83,20 @@ void Renderer::initVulkan() {
 
     // Determine if any directional light casts a shadow
     DirectionalLight const* shadowCastingLight = nullptr;
-    int shadowDirLightCount = 0;
     for (auto const& light: mScene.lights) {
         if (auto const* dl = std::get_if<DirectionalLight>(&light)) {
-            if (dl->castShadow) {
-                ++shadowDirLightCount;
-                if (!shadowCastingLight)
-                    shadowCastingLight = dl;
-            }
+            if (dl->castShadow && !shadowCastingLight)
+                shadowCastingLight = dl;
         }
     }
-    if (shadowDirLightCount > 1)
-        throw std::runtime_error(
-                "Scene has " + std::to_string(shadowDirLightCount) +
-                " shadow-casting directional lights — only one is supported");
     if (shadowCastingLight) {
         uint32_t shadowCasterCount = 0;
         for (auto const& inst: mScene.meshInstances) {
             if (inst.castShadows) ++shadowCasterCount;
         }
         mShadowMap.emplace(*mCtx, *mCmds, shadowCasterCount);
+        mShadowMap->shadowType = shadowCastingLight->shadowType;
+        mShadowMap->shadowBias = shadowCastingLight->shadowBias;
         mShadowMap->updateLightSpaceMatrix(*shadowCastingLight);
     }
 
@@ -118,7 +112,7 @@ void Renderer::initVulkan() {
                 frag = mIblEnvironment ? "pbr_ibl" : "pbr";
             }
             if (shadow) {
-                frag += (mScene.shadowType == ShadowType::PCF) ? "_pcf" : "_shadow";
+                frag += (mShadowMap->shadowType == ShadowType::PCF) ? "_pcf" : "_shadow";
             }
         }
         return frag;
@@ -369,12 +363,50 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     }
 }
 
-void Renderer::captureShadowMapDebug() {
-    constexpr uint32_t sz = SHADOW_MAP_SIZE;
-    // Depth image is R32 float (or D32/D24) — copy as 4 bytes per pixel
-    vk::DeviceSize bufferSize = vk::DeviceSize(sz) * sz * 4;
+// Converts raw depth floats (sampler border = 1.0) to normalized grayscale RGBA bytes.
+// Geometry depth is remapped to [0,1] within its own range and inverted (closer = brighter).
+// Background pixels (depth == 1.0) map to black.
+static std::vector<uint8_t> depthFloatsToGrayscaleRgba(float const* depthPixels,
+        uint32_t pixelCount) {
+    constexpr float kBorderDepth = 1.0f;
 
-    auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, bufferSize,
+    float minGeometryDepth = kBorderDepth;
+    float maxGeometryDepth = 0.0f;
+    for (uint32_t i = 0; i < pixelCount; ++i) {
+        float depth = depthPixels[i];
+        if (depth < kBorderDepth) {
+            minGeometryDepth = std::min(minGeometryDepth, depth);
+            maxGeometryDepth = std::max(maxGeometryDepth, depth);
+        }
+    }
+    float geometryDepthRange = maxGeometryDepth - minGeometryDepth;
+    if (geometryDepthRange < 1e-5f) geometryDepthRange = 1.0f;
+
+    std::vector<uint8_t> rgba(pixelCount * 4);
+    for (uint32_t i = 0; i < pixelCount; ++i) {
+        float depth = depthPixels[i];
+        uint8_t grayscale;
+        if (depth >= kBorderDepth) {
+            grayscale = 0; // background → black
+        } else {
+            float normalizedDepth = (depth - minGeometryDepth) / geometryDepthRange;
+            grayscale = static_cast<uint8_t>((1.0f - normalizedDepth) * 255.0f);
+        }
+        rgba[i * 4 + 0] = grayscale;
+        rgba[i * 4 + 1] = grayscale;
+        rgba[i * 4 + 2] = grayscale;
+        rgba[i * 4 + 3] = 255;
+    }
+    return rgba;
+}
+
+void Renderer::captureShadowMapDebug() {
+    constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
+    constexpr uint32_t pixelCount = shadowMapSize * shadowMapSize;
+    // Depth image is R32 float (or D32/D24) — copy as 4 bytes per pixel
+    vk::DeviceSize readbackBufferSize = vk::DeviceSize(pixelCount) * sizeof(float);
+
+    auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, readbackBufferSize,
             vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCached);
 
@@ -395,7 +427,7 @@ void Renderer::captureShadowMapDebug() {
             vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eTransfer,
             vk::ImageAspectFlagBits::eDepth);
 
-    vk::BufferImageCopy region{
+    vk::BufferImageCopy copyRegion{
         .bufferOffset = 0,
         .bufferRowLength = 0,
         .bufferImageHeight = 0,
@@ -406,10 +438,10 @@ void Renderer::captureShadowMapDebug() {
             .layerCount = 1,
         },
         .imageOffset = { 0, 0, 0 },
-        .imageExtent = { sz, sz, 1 },
+        .imageExtent = { shadowMapSize, shadowMapSize, 1 },
     };
     cmd.copyImageToBuffer(*mShadowMap->image, vk::ImageLayout::eTransferSrcOptimal,
-            *readbackBuffer, region);
+            *readbackBuffer, copyRegion);
 
     vkutil::transitionImageLayout(cmd, *mShadowMap->image, vk::ImageLayout::eTransferSrcOptimal,
             vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferRead,
@@ -422,53 +454,24 @@ void Renderer::captureShadowMapDebug() {
     vk::CommandBuffer cmdHandle = *cmd;
     mCtx->graphicsQueue.submit(
             vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
-    std::ignore = mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max());
+    if (mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
+        throw std::runtime_error("shadow map debug capture: fence wait failed");
 
-    auto* rawData = static_cast<float*>(readbackMemory.mapMemory(0, bufferSize));
+    auto* depthPixels = static_cast<float*>(readbackMemory.mapMemory(0, readbackBufferSize));
     mCtx->device.invalidateMappedMemoryRanges(
-            vk::MappedMemoryRange{ .memory = *readbackMemory, .offset = 0, .size = bufferSize });
+            vk::MappedMemoryRange{ .memory = *readbackMemory, .offset = 0, .size = readbackBufferSize });
 
-    // Find the min and max depth among pixels with geometry (depth < 1.0).
-    // Normalize that range to [0,1] and invert so closer = brighter.
-    // Pixels at depth 1.0 (background / sampler border) are rendered black.
-    constexpr float kBackground = 1.0f;
-    float minDepth = kBackground;
-    float maxDepth = 0.0f;
-    for (uint32_t i = 0; i < sz * sz; ++i) {
-        float d = rawData[i];
-        if (d < kBackground) {
-            minDepth = std::min(minDepth, d);
-            maxDepth = std::max(maxDepth, d);
-        }
-    }
-    float depthRange = maxDepth - minDepth;
-    if (depthRange < 1e-5f) depthRange = 1.0f;
-
-    std::vector<uint8_t> rgba(sz * sz * 4);
-    for (uint32_t i = 0; i < sz * sz; ++i) {
-        float d = rawData[i];
-        uint8_t v;
-        if (d >= kBackground) {
-            v = 0; // background → black
-        } else {
-            float normalized = (d - minDepth) / depthRange;
-            v = static_cast<uint8_t>((1.0f - normalized) * 255.0f);
-        }
-        rgba[i * 4 + 0] = v;
-        rgba[i * 4 + 1] = v;
-        rgba[i * 4 + 2] = v;
-        rgba[i * 4 + 3] = 255;
-    }
+    std::vector<uint8_t> rgba = depthFloatsToGrayscaleRgba(depthPixels, pixelCount);
     readbackMemory.unmapMemory();
 
-    // Derive debug path: replace extension with _shadow_depth.png
+    // Always write to shadow_depth.png in the same directory as the screenshot
     std::string debugPath = mScreenshotPath;
-    auto dot = debugPath.rfind('.');
-    if (dot != std::string::npos) debugPath = debugPath.substr(0, dot);
-    debugPath += "_shadow_depth.png";
+    auto slash = debugPath.rfind('/');
+    debugPath = (slash != std::string::npos ? debugPath.substr(0, slash + 1) : "") + "shadow_depth.png";
 
-    stbi_write_png(debugPath.c_str(), static_cast<int>(sz), static_cast<int>(sz), 4, rgba.data(),
-            static_cast<int>(sz) * 4);
+    stbi_write_png(debugPath.c_str(), static_cast<int>(shadowMapSize),
+            static_cast<int>(shadowMapSize), 4, rgba.data(),
+            static_cast<int>(shadowMapSize) * 4);
     std::cout << "Shadow depth map saved: " << debugPath << "\n";
 }
 

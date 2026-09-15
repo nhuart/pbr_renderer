@@ -37,7 +37,8 @@ layout(binding = 6) uniform sampler2D normalMapSampler;
 #ifdef USE_SHADOW
 layout(binding = 7) uniform sampler2D shadowMap;
 layout(binding = 8) uniform ShadowUBO {
-    mat4 lightSpaceMatrix;
+    mat4 lightSpaceTransform;
+    float shadowBias;
 } shadowUbo;
 #endif
 
@@ -55,15 +56,13 @@ layout(location = 0) out vec4 outColor;
 const float PI = 3.14159265359;
 
 float distributionGGX(float NdotH, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
+    float a2 = pow(roughness, 4.0);
     float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
     return a2 / (PI * denom * denom);
 }
 
 float geometrySchlickGGX(float NdotV, float roughness) {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
+    float k = pow(roughness + 1.0, 2.0) / 8.0;
     return NdotV / (NdotV * (1.0 - k) + k);
 }
 
@@ -128,8 +127,7 @@ vec3 lightContribution(GpuLight light, vec3 N, vec3 V, float NdotV, vec3 albedo,
 }
 
 #ifdef USE_IBL
-// sampling a prefiltered/blurred environment — rough surfaces have scattered their
-// specular lobe, so the Fresnel peak at grazing angles must be dampened to match
+// Fresnel with roughness dampening for pre-filtered environment sampling
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
@@ -138,12 +136,10 @@ vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metalli
     vec3 kS = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD = (1.0 - kS) * (1.0 - metallic);
 
-    vec3 irradiance = texture(irradianceMap, N).rgb;
-    vec3 diffuse    = kD * irradiance * albedo;
+    vec3 diffuse = kD * texture(irradianceMap, N).rgb * albedo;
 
     vec3 R = reflect(-V, N);
-    const float MAX_REFLECTION_LOD = 4.0;
-    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * 4.0).rgb;
     vec2 brdf = texture(brdfLut, vec2(NdotV, roughness)).rg;
     vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y);
 
@@ -157,13 +153,41 @@ vec3 resolveNormal() {
     vec3 N = normalize(fragNormal);
     T = normalize(T - dot(T, N) * N); // Gram-Schmidt re-orthogonalization
     vec3 B = cross(N, T);
-    mat3 TBN = mat3(T, B, N);
     vec3 tsNormal = texture(normalMapSampler, fragTexCoord).rgb * 2.0 - 1.0;
-    return normalize(TBN * tsNormal);
+    return normalize(mat3(T, B, N) * tsNormal);
 #else
     return normalize(fragNormal);
 #endif
 }
+
+#ifdef USE_SHADOW
+float shadowVisibility() {
+    vec4 fragPosLightSpace = shadowUbo.lightSpaceTransform * vec4(fragWorldPos, 1.0);
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    float currentDepth = projCoords.z;
+
+    if (currentDepth < 0.0 || currentDepth > 1.0)
+        return 1.0;
+
+    // Remap XY from [-1,1] to [0,1]; depth is already [0,1] in Vulkan clip space
+    vec2 shadowUV = projCoords.xy * 0.5 + 0.5;
+
+#ifdef USE_PCF
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    float shadow = 0.0;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            float pcfDepth = texture(shadowMap, shadowUV + vec2(x, y) * texelSize).r;
+            shadow += (currentDepth - shadowUbo.shadowBias > pcfDepth) ? 0.0 : 1.0;
+        }
+    }
+    return shadow / 9.0;
+#else
+    float closestDepth = texture(shadowMap, shadowUV).r;
+    return (currentDepth - shadowUbo.shadowBias > closestDepth) ? 0.0 : 1.0;
+#endif
+}
+#endif
 
 void main() {
     float metallic         = ubo.pbrParams.x;
@@ -181,62 +205,14 @@ void main() {
     float NdotV = max(dot(N, V), 0.0001);
 
 #ifdef USE_SHADOW
-    vec4 fragPosLightSpace = shadowUbo.lightSpaceMatrix * vec4(fragWorldPos, 1.0);
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    // Remap XY from [-1,1] to [0,1]; depth is already [0,1] in Vulkan clip space
-    vec2 shadowUV = projCoords.xy * 0.5 + 0.5;
-    float currentDepth = projCoords.z;
-    float shadowFactor = 1.0;
-    if (shadowUV.x >= 0.0 && shadowUV.x <= 1.0 && shadowUV.y >= 0.0 && shadowUV.y <= 1.0 && currentDepth >= 0.0 && currentDepth <= 1.0) {
-        float bias = 0.005;
-#ifdef USE_PCF
-        // 25-sample Poisson disk PCF (matches Filament's default pcfSampleCount=25).
-        // Irregular offsets break the grid pattern that causes banding on shadow edges.
-        const vec2 poissonDisk[25] = vec2[](
-            vec2(-0.978698, -0.098185), vec2(-0.877179,  0.388785),
-            vec2(-0.850595, -0.520420), vec2(-0.780145,  0.758530),
-            vec2(-0.654418, -0.246760), vec2(-0.570377,  0.168770),
-            vec2(-0.499063, -0.714028), vec2(-0.400785,  0.537542),
-            vec2(-0.294751, -0.470727), vec2(-0.199550,  0.791021),
-            vec2(-0.059709, -0.935035), vec2(-0.056974,  0.083242),
-            vec2( 0.093680, -0.498680), vec2( 0.111838,  0.549337),
-            vec2( 0.213790, -0.200670), vec2( 0.305712,  0.267898),
-            vec2( 0.340656, -0.710790), vec2( 0.468697,  0.758594),
-            vec2( 0.528282, -0.393658), vec2( 0.589959,  0.064560),
-            vec2( 0.651024, -0.793015), vec2( 0.718879,  0.428820),
-            vec2( 0.794120, -0.175590), vec2( 0.887202,  0.638299),
-            vec2( 0.984930, -0.447400)
-        );
-        // Rotate the entire disk by a per-pixel angle derived from the screen position.
-        // Without this, every pixel samples the same 25 offsets and the repeating rosette
-        // pattern becomes visible as a structured artifact at shadow edges. The rotation
-        // makes each pixel sample a different orientation of the disk, turning the artifact
-        // into high-frequency noise that the eye integrates as a smooth penumbra.
-        // The hash (sin+fract trick) is cheap and produces good angular variation.
-        float rotAngle = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.28318;
-        float cosA = cos(rotAngle), sinA = sin(rotAngle);
-        mat2 rot = mat2(cosA, -sinA, sinA, cosA);
-
-        vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
-        float shadow = 0.0;
-        for (int i = 0; i < 25; i++) {
-            float pcfDepth = texture(shadowMap, shadowUV + rot * poissonDisk[i] * texelSize * 2.0).r;
-            shadow += (currentDepth - bias > pcfDepth) ? 0.0 : 1.0;
-        }
-        shadowFactor = shadow / 25.0;
-#else
-        float closestDepth = texture(shadowMap, shadowUV).r;
-        shadowFactor = (currentDepth - bias > closestDepth) ? 0.0 : 1.0;
-#endif
-    }
+    float visibility = shadowVisibility();
 #endif
 
     vec3 Lo = vec3(0.0);
     int numLights = int(lights.counts.x);
     for (int i = 0; i < numLights; i++) {
 #ifdef USE_SHADOW
-        // Only the first directional light (type 1) is shadow-casting
-        float lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? shadowFactor : 1.0;
+        float lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? visibility : 1.0;
         Lo += lightShadow * lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
 #else
         Lo += lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
@@ -250,10 +226,8 @@ void main() {
 #endif
 
     vec3 color = ambient + Lo;
-
-    // Reinhard tone mapping + gamma correction
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0 / 2.2));
+    color = color / (color + vec3(1.0));          // Reinhard tone mapping
+    color = pow(color, vec3(1.0 / 2.2));          // gamma correction
 
     outColor = vec4(color, texColor.a * fragBaseColor.a);
 }

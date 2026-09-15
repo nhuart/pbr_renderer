@@ -50,10 +50,14 @@ struct AmbientLight {
     float intensity;
 };
 
+enum class ShadowType { Hard, PCF };
+
 struct DirectionalLight {
     glm::vec3 direction;
     glm::vec3 color;
     bool castShadow = false;
+    ShadowType shadowType = ShadowType::Hard;
+    float shadowBias = 0.005f;
 };
 
 struct SpotLight {
@@ -73,8 +77,6 @@ struct PointLight {
 
 using Light = std::variant<AmbientLight, DirectionalLight, SpotLight, PointLight>;
 
-enum class ShadowType { Hard, PCF };
-
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
@@ -82,7 +84,6 @@ struct Scene {
     Camera camera;
     std::optional<std::string> iblPath;
     bool skybox = false;
-    ShadowType shadowType = ShadowType::Hard;
 };
 
 // ---------------------------------------------------------------------------
@@ -203,7 +204,8 @@ struct UniformBufferObject {
 };
 
 struct ShadowUBO {
-    alignas(16) glm::mat4 lightSpaceMVP; // lightSpaceMatrix * model, per object
+    alignas(16) glm::mat4 lightSpaceTransform; // VP*M for vertex pass, VP for fragment pass
+    alignas(16) float shadowBias = 0.005f;
 };
 
 struct ComputeUBO {

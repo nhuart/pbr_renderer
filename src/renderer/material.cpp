@@ -283,7 +283,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         if (shadowMap) {
             shadowMapInfo = { *shadowMap->sampler, *shadowMap->imageView,
                 vk::ImageLayout::eShaderReadOnlyOptimal };
-            shadowUboInfo.buffer = *shadowMap->shadowUboBuffers[i];
+            shadowUboInfo.buffer = *shadowMap->fragmentUbo[i].buffer;
             shadowUboInfo.offset = 0;
             shadowUboInfo.range = sizeof(ShadowUBO);
         }
