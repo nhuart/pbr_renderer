@@ -15,6 +15,7 @@ struct VulkanContext;
 struct Swapchain;
 struct TextureAtlas;
 struct IblEnvironment;
+struct ShadowMap;
 
 struct MaterialInstance {
     std::vector<vk::raii::Buffer> uniformBuffers;
@@ -43,5 +44,6 @@ struct Material {
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,
-            IblEnvironment const* ibl = nullptr, TextureAtlas const* normalMap = nullptr) const;
+            IblEnvironment const* ibl = nullptr, TextureAtlas const* normalMap = nullptr,
+            ShadowMap const* shadowMap = nullptr) const;
 };

@@ -34,6 +34,14 @@ layout(binding = 5) uniform sampler2D   brdfLut;
 layout(binding = 6) uniform sampler2D normalMapSampler;
 #endif
 
+#ifdef USE_SHADOW
+layout(binding = 7) uniform sampler2D shadowMap;
+layout(binding = 8) uniform ShadowUBO {
+    mat4 lightSpaceTransform;
+    float shadowBias;
+} shadowUbo;
+#endif
+
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragNormal;
@@ -48,15 +56,13 @@ layout(location = 0) out vec4 outColor;
 const float PI = 3.14159265359;
 
 float distributionGGX(float NdotH, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
+    float a2 = pow(roughness, 4.0);
     float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
     return a2 / (PI * denom * denom);
 }
 
 float geometrySchlickGGX(float NdotV, float roughness) {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
+    float k = pow(roughness + 1.0, 2.0) / 8.0;
     return NdotV / (NdotV * (1.0 - k) + k);
 }
 
@@ -121,8 +127,7 @@ vec3 lightContribution(GpuLight light, vec3 N, vec3 V, float NdotV, vec3 albedo,
 }
 
 #ifdef USE_IBL
-// sampling a prefiltered/blurred environment — rough surfaces have scattered their
-// specular lobe, so the Fresnel peak at grazing angles must be dampened to match
+// Fresnel with roughness dampening for pre-filtered environment sampling
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
@@ -131,12 +136,10 @@ vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metalli
     vec3 kS = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD = (1.0 - kS) * (1.0 - metallic);
 
-    vec3 irradiance = texture(irradianceMap, N).rgb;
-    vec3 diffuse    = kD * irradiance * albedo;
+    vec3 diffuse = kD * texture(irradianceMap, N).rgb * albedo;
 
     vec3 R = reflect(-V, N);
-    const float MAX_REFLECTION_LOD = 4.0;
-    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * 4.0).rgb;
     vec2 brdf = texture(brdfLut, vec2(NdotV, roughness)).rg;
     vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y);
 
@@ -150,13 +153,41 @@ vec3 resolveNormal() {
     vec3 N = normalize(fragNormal);
     T = normalize(T - dot(T, N) * N); // Gram-Schmidt re-orthogonalization
     vec3 B = cross(N, T);
-    mat3 TBN = mat3(T, B, N);
     vec3 tsNormal = texture(normalMapSampler, fragTexCoord).rgb * 2.0 - 1.0;
-    return normalize(TBN * tsNormal);
+    return normalize(mat3(T, B, N) * tsNormal);
 #else
     return normalize(fragNormal);
 #endif
 }
+
+#ifdef USE_SHADOW
+float shadowVisibility() {
+    vec4 fragPosLightSpace = shadowUbo.lightSpaceTransform * vec4(fragWorldPos, 1.0);
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    float currentDepth = projCoords.z;
+
+    if (currentDepth < 0.0 || currentDepth > 1.0)
+        return 1.0;
+
+    // Remap XY from [-1,1] to [0,1]; depth is already [0,1] in Vulkan clip space
+    vec2 shadowUV = projCoords.xy * 0.5 + 0.5;
+
+#ifdef USE_PCF
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    float shadow = 0.0;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            float pcfDepth = texture(shadowMap, shadowUV + vec2(x, y) * texelSize).r;
+            shadow += (currentDepth - shadowUbo.shadowBias > pcfDepth) ? 0.0 : 1.0;
+        }
+    }
+    return shadow / 9.0;
+#else
+    float closestDepth = texture(shadowMap, shadowUV).r;
+    return (currentDepth - shadowUbo.shadowBias > closestDepth) ? 0.0 : 1.0;
+#endif
+}
+#endif
 
 void main() {
     float metallic         = ubo.pbrParams.x;
@@ -173,10 +204,19 @@ void main() {
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     float NdotV = max(dot(N, V), 0.0001);
 
+#ifdef USE_SHADOW
+    float visibility = shadowVisibility();
+#endif
+
     vec3 Lo = vec3(0.0);
     int numLights = int(lights.counts.x);
     for (int i = 0; i < numLights; i++) {
+#ifdef USE_SHADOW
+        float lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? visibility : 1.0;
+        Lo += lightShadow * lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
+#else
         Lo += lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
+#endif
     }
 
 #ifdef USE_IBL
@@ -186,10 +226,8 @@ void main() {
 #endif
 
     vec3 color = ambient + Lo;
-
-    // Reinhard tone mapping + gamma correction
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0 / 2.2));
+    color = color / (color + vec3(1.0));          // Reinhard tone mapping
+    color = pow(color, vec3(1.0 / 2.2));          // gamma correction
 
     outColor = vec4(color, texColor.a * fragBaseColor.a);
 }

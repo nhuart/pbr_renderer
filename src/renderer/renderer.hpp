@@ -21,6 +21,7 @@
 #include "renderer/render_graph.hpp"
 #include "renderer/render_object.hpp"
 #include "renderer/resource_manager.hpp"
+#include "renderer/shadow_map.hpp"
 #include "renderer/skybox_pipeline.hpp"
 #include "scene/scene_loader.hpp"
 #include "scene/types.hpp"
@@ -52,6 +53,8 @@ private:
     std::map<std::string, Material> mMaterials;
     std::optional<LightBuffer> mLightBuffer;
     std::optional<IblEnvironment> mIblEnvironment;
+    std::optional<ShadowMap> mShadowMap;
+    RenderGraphImageHandle mShadowMapImageHandle{};
     std::optional<SkyboxPipeline> mSkyboxPipeline;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::vector<GameObject> mGameObjects;
@@ -68,6 +71,7 @@ private:
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);
     void captureScreenshot(uint32_t imageIndex);
+    void captureShadowMapDebug();
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
