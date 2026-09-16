@@ -19,82 +19,61 @@ void MaterialInstance::updateUBO(uint32_t frameIndex, UniformBufferObject const&
 
 Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
-        bool doubleSided) {
+        ShaderFeatures features, bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
-    // Descriptor set layout — 9 bindings: UBO, albedo, lights, irradiance, prefilter, BRDF LUT,
-    // normal map, shadow map sampler, shadow UBO
-    std::array<vk::DescriptorSetLayoutBinding, 9> bindings{ {
-        {
-            .binding = 0,
+
+    // Build descriptor set layout from active features only
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    auto addUbo = [&](uint32_t binding, vk::ShaderStageFlags stages) {
+        bindings.push_back({ .binding = binding,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 1,
+            .stageFlags = stages });
+    };
+    auto addSampler = [&](uint32_t binding) {
+        bindings.push_back({ .binding = binding,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
             .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 3,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 4,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 5,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 6,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 7,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        {
-            .binding = 8,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-    } };
+            .stageFlags = vk::ShaderStageFlagBits::eFragment });
+    };
+
+    addUbo(0, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment); // per-instance UBO
+    addSampler(1); // albedo
+    addUbo(2, vk::ShaderStageFlagBits::eFragment); // lights
+    if (hasFeature(features, ShaderFeatures::Ibl)) {
+        addSampler(3); // irradiance
+        addSampler(4); // prefilter
+        addSampler(5); // BRDF LUT
+    }
+    if (hasFeature(features, ShaderFeatures::NormalMap)) {
+        addSampler(6); // normal map
+    }
+    if (hasFeature(features, ShaderFeatures::Shadow) || hasFeature(features, ShaderFeatures::Pcf)) {
+        addSampler(7); // shadow map
+        addUbo(8, vk::ShaderStageFlagBits::eFragment); // shadow UBO
+    }
+
     descriptorSetLayout = vk::raii::DescriptorSetLayout(ctx.device,
             vk::DescriptorSetLayoutCreateInfo{
                 .bindingCount = static_cast<uint32_t>(bindings.size()),
                 .pBindings = bindings.data(),
             });
 
-    // Descriptor pool sized for all instances upfront
+    // Pool sized for active bindings only
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
-        { .type = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = setCount * 3 }, // UBO + lights + shadowUBO
+    uint32_t uboCount = 2; // binding 0 + binding 2 always present
+    uint32_t samplerCount = 1; // binding 1 always present
+    if (hasFeature(features, ShaderFeatures::Ibl)) samplerCount += 3;
+    if (hasFeature(features, ShaderFeatures::NormalMap)) samplerCount += 1;
+    if (hasFeature(features, ShaderFeatures::Shadow) || hasFeature(features, ShaderFeatures::Pcf)) {
+        samplerCount += 1;
+        uboCount += 1;
+    }
+    std::vector<vk::DescriptorPoolSize> poolSizes = {
+        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * uboCount },
         { .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount =
-                    setCount *
-                    6 }, // albedo + irradiance + prefilter + brdfLut + normalMap + shadowMap
-    } };
+            .descriptorCount = setCount * samplerCount },
+    };
     descriptorPool = vk::raii::DescriptorPool(ctx.device,
             vk::DescriptorPoolCreateInfo{
                 .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -243,11 +222,8 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
                 .pSetLayouts = layouts.data(),
             });
 
-    // Fallback for IBL bindings when no IBL is present — keeps validation happy
-    vk::DescriptorImageInfo irradianceInfo = albedoInfo;
-    vk::DescriptorImageInfo prefilterInfo = albedoInfo;
-    vk::DescriptorImageInfo brdfLutInfo = albedoInfo;
-
+    // Build image infos for optional features (only used when present)
+    vk::DescriptorImageInfo irradianceInfo, prefilterInfo, brdfLutInfo;
     if (ibl) {
         irradianceInfo = { *ibl->irradiance.sampler, *ibl->irradiance.imageView,
             vk::ImageLayout::eShaderReadOnlyOptimal };
@@ -257,7 +233,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             vk::ImageLayout::eShaderReadOnlyOptimal };
     }
 
-    vk::DescriptorImageInfo normalMapInfo = albedoInfo;
+    vk::DescriptorImageInfo normalMapInfo;
     if (normalMap) {
         normalMapInfo = { *normalMap->sampler, *normalMap->imageView,
             vk::ImageLayout::eShaderReadOnlyOptimal };
@@ -275,86 +251,53 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             .range = sizeof(LightUBO),
         };
 
-        // Shadow map bindings — use dummy albedo/UBO when no shadow map is present
-        vk::DescriptorImageInfo shadowMapInfo = albedoInfo;
-        vk::DescriptorBufferInfo shadowUboInfo{
-            .buffer = *inst.uniformBuffers[i], // dummy — same UBO, won't be read without USE_SHADOW
-            .offset = 0,
-            .range = sizeof(UniformBufferObject),
-        };
+        // Collect all infos first so their addresses stay valid for updateDescriptorSets
+        std::vector<vk::DescriptorBufferInfo> uboInfos;
+        std::vector<vk::DescriptorImageInfo> imageInfos;
+
+        uboInfos.push_back(uboInfo);
+        uboInfos.push_back(lightInfo);
+        imageInfos.push_back(albedoInfo);
+        if (ibl) {
+            imageInfos.push_back(irradianceInfo);
+            imageInfos.push_back(prefilterInfo);
+            imageInfos.push_back(brdfLutInfo);
+        }
+        if (normalMap) {
+            imageInfos.push_back(normalMapInfo);
+        }
         if (shadowMap) {
-            shadowMapInfo = { *shadowMap->sampler, *shadowMap->imageView,
-                vk::ImageLayout::eShaderReadOnlyOptimal };
-            shadowUboInfo.buffer = *shadowMap->fragmentUbo[i].buffer;
-            shadowUboInfo.offset = 0;
-            shadowUboInfo.range = sizeof(ShadowUBO);
+            imageInfos.push_back({ *shadowMap->sampler, *shadowMap->imageView,
+                vk::ImageLayout::eShaderReadOnlyOptimal });
+            uboInfos.push_back({ *shadowMap->fragmentUbo[i].buffer, 0, sizeof(ShadowUBO) });
         }
 
-        std::array<vk::WriteDescriptorSet, 9> writes{ {
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 0,
+        // Build writes pointing into the stable vectors above
+        uint32_t uboIdx = 0;
+        uint32_t imgIdx = 0;
+        std::vector<vk::WriteDescriptorSet> writes;
+        auto writeUbo = [&](uint32_t binding) {
+            writes.push_back({ .dstSet = *inst.descriptorSets[i],
+                .dstBinding = binding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo = &uboInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 1,
+                .pBufferInfo = &uboInfos[uboIdx++] });
+        };
+        auto writeSampler = [&](uint32_t binding) {
+            writes.push_back({ .dstSet = *inst.descriptorSets[i],
+                .dstBinding = binding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &albedoInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 2,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo = &lightInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 3,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &irradianceInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 4,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &prefilterInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 5,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &brdfLutInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 6,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &normalMapInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 7,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &shadowMapInfo,
-            },
-            {
-                .dstSet = *inst.descriptorSets[i],
-                .dstBinding = 8,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo = &shadowUboInfo,
-            },
-        } };
+                .pImageInfo = &imageInfos[imgIdx++] });
+        };
+
+        writeUbo(0);
+        writeSampler(1);
+        writeUbo(2);
+        if (ibl) { writeSampler(3); writeSampler(4); writeSampler(5); }
+        if (normalMap) { writeSampler(6); }
+        if (shadowMap) { writeSampler(7); writeUbo(8); }
+
         ctx.device.updateDescriptorSets(writes, {});
     }
 

@@ -103,33 +103,15 @@ void Renderer::initVulkan() {
         mShadowMap->updateLightSpaceMatrix(*shadowCastingLight);
     }
 
-    auto resolveFragShader = [this](MeshInstance const& inst) {
-        std::string frag = inst.fragmentShader;
-        if (frag == "pbr") {
-            bool hasNormalMap =
-                    inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
-            bool shadow = inst.receiveShadows && mShadowMap.has_value();
-            if (hasNormalMap) {
-                frag = mIblEnvironment ? "pbr_ibl_normal" : "pbr_normal";
-            } else {
-                frag = mIblEnvironment ? "pbr_ibl" : "pbr";
-            }
-            if (shadow) {
-                frag += (mShadowMap->shadowType == ShadowType::PCF) ? "_pcf" : "_shadow";
-            }
-        }
-        return frag;
-    };
-    auto makeKey = [&](MeshInstance const& inst, bool doubleSided) {
-        return inst.vertexShader + "+" + resolveFragShader(inst) + (doubleSided ? "+ds" : "");
-    };
+    resolveShaderVariants();
 
     for (auto const& inst: mScene.meshInstances) {
         bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
-        auto key = makeKey(inst, doubleSided);
+        auto key = inst.vertexShader + "+" + inst.resolvedFragShader + (doubleSided ? "+ds" : "");
         if (!mMaterials.contains(key)) {
             mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader,
-                                            resolveFragShader(inst), doubleSided));
+                                            inst.resolvedFragShader, inst.shaderFeatures,
+                                            doubleSided));
         }
     }
 
@@ -139,12 +121,16 @@ void Renderer::initVulkan() {
         ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath, inst.gltfPath,
                 &*mMeshBuffer);
         ro.normalMap = &mResources->getNormalMap(*mCtx, *mCmds, inst.gltfPath, *mMeshBuffer);
-        ro.material = &mMaterials.at(makeKey(inst, ro.range.doubleSided));
-        bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
-        bool receivesShadow = inst.receiveShadows && mShadowMap.has_value();
+        bool doubleSided = ro.range.doubleSided;
+        auto key = inst.vertexShader + "+" + inst.resolvedFragShader + (doubleSided ? "+ds" : "");
+        ro.material = &mMaterials.at(key);
         ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer,
-                mIblEnvironment ? &*mIblEnvironment : nullptr,
-                hasNormalMap ? ro.normalMap : nullptr, receivesShadow ? &*mShadowMap : nullptr);
+                hasFeature(inst.shaderFeatures, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
+                hasFeature(inst.shaderFeatures, ShaderFeatures::NormalMap) ? ro.normalMap : nullptr,
+                (hasFeature(inst.shaderFeatures, ShaderFeatures::Shadow) ||
+                        hasFeature(inst.shaderFeatures, ShaderFeatures::Pcf))
+                        ? &*mShadowMap
+                        : nullptr);
     }
 
     if (mScene.particles) {
@@ -479,6 +465,41 @@ void Renderer::captureShadowMapDebug() {
     stbi_write_png(debugPath.c_str(), static_cast<int>(shadowMapSize),
             static_cast<int>(shadowMapSize), 4, rgba.data(), static_cast<int>(shadowMapSize) * 4);
     std::cout << "Shadow depth map saved: " << debugPath << "\n";
+}
+
+void Renderer::resolveShaderVariants() {
+    for (auto& inst: mScene.meshInstances) {
+        if (inst.fragmentShader != "pbr") {
+            inst.resolvedFragShader = inst.fragmentShader;
+            continue;
+        }
+
+        bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
+        bool hasShadow = inst.receiveShadows && mShadowMap.has_value();
+        bool hasPcf = hasShadow && mShadowMap->shadowType == ShadowType::PCF;
+
+        ShaderFeatures features = ShaderFeatures::None;
+        std::string frag = "pbr";
+
+        if (mIblEnvironment) {
+            features = features | ShaderFeatures::Ibl;
+            frag += "_ibl";
+        }
+        if (hasNormalMap) {
+            features = features | ShaderFeatures::NormalMap;
+            frag += "_normal";
+        }
+        if (hasPcf) {
+            features = features | ShaderFeatures::Pcf;
+            frag += "_pcf";
+        } else if (hasShadow) {
+            features = features | ShaderFeatures::Shadow;
+            frag += "_shadow";
+        }
+
+        inst.resolvedFragShader = frag;
+        inst.shaderFeatures = features;
+    }
 }
 
 void Renderer::buildRenderGraph() {

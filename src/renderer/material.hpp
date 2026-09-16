@@ -40,7 +40,7 @@ struct Material {
 
     Material(VulkanContext const& ctx, Swapchain const& swapchain,
             std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
-            bool doubleSided = false);
+            ShaderFeatures features = ShaderFeatures::None, bool doubleSided = false);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,

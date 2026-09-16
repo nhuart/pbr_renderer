@@ -62,6 +62,7 @@ private:
 
     void initWindow();
     void initVulkan();
+    void resolveShaderVariants();
     void mainLoop();
     void cleanup();
     void drawFrame();
