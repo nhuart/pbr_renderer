@@ -48,7 +48,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     if (hasFeature(features, ShaderFeatures::NormalMap)) {
         addSampler(6); // normal map
     }
-    if (hasFeature(features, ShaderFeatures::Shadow) || hasFeature(features, ShaderFeatures::Pcf)) {
+    if (hasFeature(features, ShaderFeatures::HardShadow) || hasFeature(features, ShaderFeatures::PcfShadow)) {
         addSampler(7); // shadow map
         addUbo(8, vk::ShaderStageFlagBits::eFragment); // shadow UBO
     }
@@ -65,7 +65,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     uint32_t samplerCount = 1; // binding 1 always present
     if (hasFeature(features, ShaderFeatures::Ibl)) samplerCount += 3;
     if (hasFeature(features, ShaderFeatures::NormalMap)) samplerCount += 1;
-    if (hasFeature(features, ShaderFeatures::Shadow) || hasFeature(features, ShaderFeatures::Pcf)) {
+    if (hasFeature(features, ShaderFeatures::HardShadow) || hasFeature(features, ShaderFeatures::PcfShadow)) {
         samplerCount += 1;
         uboCount += 1;
     }

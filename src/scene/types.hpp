@@ -30,8 +30,8 @@ enum class ShaderFeatures : uint8_t {
     None      = 0,
     Ibl       = 1 << 0,
     NormalMap = 1 << 1,
-    Shadow    = 1 << 2,
-    Pcf       = 1 << 3,
+    HardShadow = 1 << 2,
+    PcfShadow  = 1 << 3,
 };
 inline ShaderFeatures operator|(ShaderFeatures a, ShaderFeatures b) {
     return static_cast<ShaderFeatures>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));

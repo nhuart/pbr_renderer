@@ -127,8 +127,8 @@ void Renderer::initVulkan() {
         ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer,
                 hasFeature(inst.shaderFeatures, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
                 hasFeature(inst.shaderFeatures, ShaderFeatures::NormalMap) ? ro.normalMap : nullptr,
-                (hasFeature(inst.shaderFeatures, ShaderFeatures::Shadow) ||
-                        hasFeature(inst.shaderFeatures, ShaderFeatures::Pcf))
+                (hasFeature(inst.shaderFeatures, ShaderFeatures::HardShadow) ||
+                        hasFeature(inst.shaderFeatures, ShaderFeatures::PcfShadow))
                         ? &*mShadowMap
                         : nullptr);
     }
@@ -490,10 +490,10 @@ void Renderer::resolveShaderVariants() {
             frag += "_normal";
         }
         if (hasPcf) {
-            features = features | ShaderFeatures::Pcf;
+            features = features | ShaderFeatures::PcfShadow;
             frag += "_pcf";
         } else if (hasShadow) {
-            features = features | ShaderFeatures::Shadow;
+            features = features | ShaderFeatures::HardShadow;
             frag += "_shadow";
         }
 

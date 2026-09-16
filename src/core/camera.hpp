@@ -1,6 +1,5 @@
 #pragma once
 
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <algorithm>
 #include <cmath>
 #include <glm/glm.hpp>
