@@ -63,123 +63,39 @@ foreach(SHADER ${SHADER_SOURCES})
     list(APPEND SHADER_SPIRV_OUTPUTS ${SPIRV_OUTPUT})
 endforeach()
 
-# pbr.frag compiled a second time with USE_IBL defined -> pbr_ibl.frag.spv
-set(PBR_IBL_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_IBL_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -o ${PBR_IBL_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_ibl.frag (USE_IBL)"
+# pbr.frag variants: each entry is "output_suffix|DEFINE1 DEFINE2 ..."
+set(PBR_VARIANTS
+    "pbr_ibl|USE_IBL"
+    "pbr_normal|USE_NORMAL_MAP"
+    "pbr_ibl_normal|USE_IBL USE_NORMAL_MAP"
+    "pbr_shadow|USE_SHADOW"
+    "pbr_normal_shadow|USE_NORMAL_MAP USE_SHADOW"
+    "pbr_ibl_shadow|USE_IBL USE_SHADOW"
+    "pbr_ibl_normal_shadow|USE_IBL USE_NORMAL_MAP USE_SHADOW"
+    "pbr_pcf|USE_SHADOW USE_PCF"
+    "pbr_normal_pcf|USE_NORMAL_MAP USE_SHADOW USE_PCF"
+    "pbr_ibl_pcf|USE_IBL USE_SHADOW USE_PCF"
+    "pbr_ibl_normal_pcf|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_PCF"
 )
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_SPIRV})
-
-# pbr.frag compiled with USE_NORMAL_MAP -> pbr_normal.frag.spv
-set(PBR_NORMAL_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_normal.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_NORMAL_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_NORMAL_MAP -o ${PBR_NORMAL_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_normal.frag (USE_NORMAL_MAP)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_NORMAL_SPIRV})
-
-# pbr.frag compiled with USE_IBL + USE_NORMAL_MAP -> pbr_ibl_normal.frag.spv
-set(PBR_IBL_NORMAL_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_normal.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_IBL_NORMAL_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_NORMAL_MAP -o ${PBR_IBL_NORMAL_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_ibl_normal.frag (USE_IBL + USE_NORMAL_MAP)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_SPIRV})
-
-# pbr.frag compiled with USE_SHADOW -> pbr_shadow.frag.spv
-set(PBR_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_shadow.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_SHADOW_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_SHADOW -o ${PBR_SHADOW_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_shadow.frag (USE_SHADOW)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_SHADOW_SPIRV})
-
-# pbr.frag compiled with USE_SHADOW + USE_NORMAL_MAP -> pbr_normal_shadow.frag.spv
-set(PBR_NORMAL_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_normal_shadow.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_NORMAL_SHADOW_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_NORMAL_MAP -DUSE_SHADOW -o ${PBR_NORMAL_SHADOW_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_normal_shadow.frag (USE_NORMAL_MAP + USE_SHADOW)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_NORMAL_SHADOW_SPIRV})
-
-# pbr.frag compiled with USE_IBL + USE_SHADOW -> pbr_ibl_shadow.frag.spv
-set(PBR_IBL_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_shadow.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_IBL_SHADOW_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_SHADOW -o ${PBR_IBL_SHADOW_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_ibl_shadow.frag (USE_IBL + USE_SHADOW)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_SHADOW_SPIRV})
-
-# pbr.frag compiled with USE_IBL + USE_NORMAL_MAP + USE_SHADOW -> pbr_ibl_normal_shadow.frag.spv
-set(PBR_IBL_NORMAL_SHADOW_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_normal_shadow.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_IBL_NORMAL_SHADOW_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_NORMAL_MAP -DUSE_SHADOW -o ${PBR_IBL_NORMAL_SHADOW_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_ibl_normal_shadow.frag (USE_IBL + USE_NORMAL_MAP + USE_SHADOW)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_SHADOW_SPIRV})
-
-# PCF variants — USE_SHADOW + USE_PCF
-set(PBR_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_pcf.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_PCF_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_SHADOW -DUSE_PCF -o ${PBR_PCF_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_pcf.frag (USE_SHADOW + USE_PCF)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_PCF_SPIRV})
-
-set(PBR_NORMAL_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_normal_pcf.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_NORMAL_PCF_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_NORMAL_MAP -DUSE_SHADOW -DUSE_PCF -o ${PBR_NORMAL_PCF_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_normal_pcf.frag (USE_NORMAL_MAP + USE_SHADOW + USE_PCF)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_NORMAL_PCF_SPIRV})
-
-set(PBR_IBL_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_pcf.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_IBL_PCF_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_SHADOW -DUSE_PCF -o ${PBR_IBL_PCF_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_ibl_pcf.frag (USE_IBL + USE_SHADOW + USE_PCF)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_PCF_SPIRV})
-
-set(PBR_IBL_NORMAL_PCF_SPIRV "${CMAKE_BINARY_DIR}/shaders/pbr_ibl_normal_pcf.frag.spv")
-add_custom_command(
-    OUTPUT ${PBR_IBL_NORMAL_PCF_SPIRV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" -DUSE_IBL -DUSE_NORMAL_MAP -DUSE_SHADOW -DUSE_PCF -o ${PBR_IBL_NORMAL_PCF_SPIRV}
-    DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-    COMMENT "Compiling shader pbr_ibl_normal_pcf.frag (USE_IBL + USE_NORMAL_MAP + USE_SHADOW + USE_PCF)"
-)
-list(APPEND SHADER_SPIRV_OUTPUTS ${PBR_IBL_NORMAL_PCF_SPIRV})
+foreach(VARIANT ${PBR_VARIANTS})
+    string(REPLACE "|" ";" VARIANT_PARTS "${VARIANT}")
+    list(GET VARIANT_PARTS 0 SUFFIX)
+    list(GET VARIANT_PARTS 1 DEFINES_STR)
+    string(REPLACE " " ";" DEFINES_LIST "${DEFINES_STR}")
+    set(SPIRV_OUT "${CMAKE_BINARY_DIR}/shaders/${SUFFIX}.frag.spv")
+    set(DEFINE_FLAGS "")
+    foreach(DEF ${DEFINES_LIST})
+        list(APPEND DEFINE_FLAGS "-D${DEF}")
+    endforeach()
+    add_custom_command(
+        OUTPUT ${SPIRV_OUT}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+        COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" ${DEFINE_FLAGS} -o ${SPIRV_OUT}
+        DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
+        COMMENT "Compiling shader ${SUFFIX}.frag"
+    )
+    list(APPEND SHADER_SPIRV_OUTPUTS ${SPIRV_OUT})
+endforeach()
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
 

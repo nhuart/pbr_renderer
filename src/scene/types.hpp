@@ -26,11 +26,31 @@ constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 // Scene description (loaded from JSON)
 // ---------------------------------------------------------------------------
 
+enum class ShaderFeatures : uint8_t {
+    None      = 0,
+    Ibl       = 1 << 0,
+    NormalMap = 1 << 1,
+    HardShadow = 1 << 2,
+    PcfShadow  = 1 << 3,
+};
+inline ShaderFeatures operator|(ShaderFeatures a, ShaderFeatures b) {
+    return static_cast<ShaderFeatures>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+inline ShaderFeatures operator&(ShaderFeatures a, ShaderFeatures b) {
+    return static_cast<ShaderFeatures>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+}
+inline bool hasFeature(ShaderFeatures features, ShaderFeatures bit) {
+    return (features & bit) != ShaderFeatures::None;
+}
+
 struct MeshInstance {
     std::string gltfPath;
     std::string texturePath;
     std::string vertexShader;
     std::string fragmentShader;
+    // Resolved at renderer init time — do not set in JSON
+    std::string resolvedFragShader;
+    ShaderFeatures shaderFeatures = ShaderFeatures::None;
     glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     glm::vec3 position = { 0.0f, 0.0f, 0.0f };
     glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
