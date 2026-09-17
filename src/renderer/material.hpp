@@ -21,6 +21,8 @@ struct MaterialInstance {
     std::vector<vk::raii::Buffer> uniformBuffers;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
+    vk::raii::Buffer shBuffer{ nullptr };
+    vk::raii::DeviceMemory shBufferMemory{ nullptr };
     vk::raii::DescriptorSets descriptorSets{ nullptr };
 
     MaterialInstance() = default;

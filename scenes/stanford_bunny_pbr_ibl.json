@@ -1,5 +1,5 @@
 {
-    "ibl": "textures/ibl/tree_lined_driveway",
+    "ibl": "ibl/tree_lined_driveway_4k",
     "skybox": true,
     "lights": [],
     "camera": {
@@ -17,8 +17,8 @@
             "vertexShader": "standard",
             "fragmentShader": "pbr",
             "baseColor": [0.8, 0.7, 0.6, 1.0],
-            "metallic": 0.0,
-            "roughness": 0.4,
+            "metallic": 1.0,
+            "roughness": 0.0,
             "position": [0.03, -1.19, -0.28],
             "rotation": [-90.0, 0.0, 45.0],
             "scale": [10.0, 10.0, 10.0]

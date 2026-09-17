@@ -8,34 +8,67 @@
 #include <stdexcept>
 
 #include <ktx.h>
-#include <ktxvulkan.h>
 
 CubemapAtlas::CubemapAtlas(VulkanContext const& ctx, CommandService const& cmds,
         std::string const& path) {
-    ktxTexture2* kTexture = nullptr;
-    KTX_error_code result = ktxTexture2_CreateFromNamedFile(path.c_str(),
-            KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
-    if (result != KTX_SUCCESS) {
-        throw std::runtime_error(
-                "failed to load cubemap KTX2: " + std::string(ktxErrorString(result)));
-    }
-
-    if (ktxTexture2_NeedsTranscoding(kTexture)) {
-        result = ktxTexture2_TranscodeBasis(kTexture, KTX_TTF_BC7_RGBA, 0);
-        if (result != KTX_SUCCESS) {
-            ktxTexture_Destroy(ktxTexture(kTexture));
-            throw std::runtime_error(
-                    "failed to transcode cubemap: " + std::string(ktxErrorString(result)));
+    // Detect KTX version from the identifier bytes (byte 7: '1' or '2')
+    ktxTexture* kBase = nullptr;
+    bool isKtx1 = false;
+    {
+        FILE* f = fopen(path.c_str(), "rb");
+        if (f) {
+            uint8_t id[12] = {};
+            fread(id, 1, 12, f);
+            fclose(f);
+            isKtx1 = (id[5] == '1');
         }
     }
 
-    uint32_t texWidth = kTexture->baseWidth;
-    uint32_t texHeight = kTexture->baseHeight;
-    mipLevels = kTexture->numLevels;
-    uint32_t numFaces = kTexture->numFaces;
-    format = static_cast<vk::Format>(kTexture->vkFormat);
+    vk::Format uploadFormat;
 
-    ktxTexture* kBase = ktxTexture(kTexture);
+    if (isKtx1) {
+        ktxTexture1* kt1 = nullptr;
+        KTX_error_code result = ktxTexture1_CreateFromNamedFile(path.c_str(),
+                KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kt1);
+        if (result != KTX_SUCCESS)
+            throw std::runtime_error("failed to load cubemap KTX1: " + std::string(ktxErrorString(result)));
+        // Map GL internal format to VkFormat for the formats cmgen produces
+        vk::Format glToVk = vk::Format::eUndefined;
+        switch (kt1->glInternalformat) {
+            case 0x8C3A: glToVk = vk::Format::eB10G11R11UfloatPack32; break; // GL_R11F_G11F_B10F
+            case 0x881B: glToVk = vk::Format::eR16G16B16Sfloat;        break; // GL_RGB16F
+            case 0x881A: glToVk = vk::Format::eR16G16B16A16Sfloat;     break; // GL_RGBA16F
+            case 0x1907: glToVk = vk::Format::eR8G8B8Unorm;            break; // GL_RGB
+            case 0x1908: glToVk = vk::Format::eR8G8B8A8Unorm;          break; // GL_RGBA
+            default:
+                ktxTexture_Destroy(ktxTexture(kt1));
+                throw std::runtime_error("unsupported KTX1 GL internal format: " +
+                        std::to_string(kt1->glInternalformat));
+        }
+        uploadFormat = glToVk;
+        kBase = ktxTexture(kt1);
+    } else {
+        ktxTexture2* kt2 = nullptr;
+        KTX_error_code result = ktxTexture2_CreateFromNamedFile(path.c_str(),
+                KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kt2);
+        if (result != KTX_SUCCESS)
+            throw std::runtime_error("failed to load cubemap KTX2: " + std::string(ktxErrorString(result)));
+        if (ktxTexture2_NeedsTranscoding(kt2)) {
+            result = ktxTexture2_TranscodeBasis(kt2, KTX_TTF_BC7_RGBA, 0);
+            if (result != KTX_SUCCESS) {
+                ktxTexture_Destroy(ktxTexture(kt2));
+                throw std::runtime_error("failed to transcode cubemap: " + std::string(ktxErrorString(result)));
+            }
+        }
+        uploadFormat = static_cast<vk::Format>(kt2->vkFormat);
+        kBase = ktxTexture(kt2);
+    }
+
+    uint32_t texWidth = kBase->baseWidth;
+    uint32_t texHeight = kBase->baseHeight;
+    mipLevels = kBase->numLevels;
+    uint32_t numFaces = kBase->numFaces;
+    format = uploadFormat;
     vk::DeviceSize totalSize = ktxTexture_GetDataSize(kBase);
 
     auto [stagingBuffer, stagingBufferMemory] = vkutil::createBuffer(ctx, totalSize,
