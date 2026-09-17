@@ -157,7 +157,11 @@ vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metalli
     float lod = 4.0 * roughness * (2.0 - roughness);
     vec3 prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
     vec2 brdf = texture(brdfLut, vec2(NdotV, 1.0 - roughness)).rg;
-    vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y);
+    vec3 Fr = prefilteredColor * (kS * brdf.x + brdf.y);
+    // Energy compensation (Karis 2017): corrects single-scattering energy loss at high roughness.
+    float directionalAlbedo = brdf.x + brdf.y;
+    vec3 energyCompensation = 1.0 + F0 * (1.0 / directionalAlbedo - 1.0);
+    vec3 specular = Fr * energyCompensation;
 
     return diffuse + specular;
 }
