@@ -25,7 +25,9 @@ layout(binding = 2) uniform LightUBO {
 } lights;
 
 #ifdef USE_IBL
-layout(binding = 3) uniform samplerCube irradianceMap;
+layout(binding = 3) uniform IblSHUBO {
+    vec4 sh[9];
+} iblSH;
 layout(binding = 4) uniform samplerCube prefilterMap;
 layout(binding = 5) uniform sampler2D   brdfLut;
 #endif
@@ -132,16 +134,34 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+vec3 shIrradiance(vec3 N) {
+    return iblSH.sh[0].rgb
+         + iblSH.sh[1].rgb * N.y
+         + iblSH.sh[2].rgb * N.z
+         + iblSH.sh[3].rgb * N.x
+         + iblSH.sh[4].rgb * N.x * N.y
+         + iblSH.sh[5].rgb * N.y * N.z
+         + iblSH.sh[6].rgb * (3.0 * N.z * N.z - 1.0)
+         + iblSH.sh[7].rgb * N.x * N.z
+         + iblSH.sh[8].rgb * (N.x * N.x - N.y * N.y);
+}
+
 vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metallic, float roughness) {
     vec3 kS = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD = (1.0 - kS) * (1.0 - metallic);
 
-    vec3 diffuse = kD * texture(irradianceMap, N).rgb * albedo;
+    vec3 diffuse = kD * max(shIrradiance(N), vec3(0.0)) * albedo;
 
     vec3 R = reflect(-V, N);
-    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * 4.0).rgb;
-    vec2 brdf = texture(brdfLut, vec2(NdotV, roughness)).rg;
-    vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y);
+    // perceptualRoughnessToLod from filament/shaders/src/surface_light_indirect.fs
+    float lod = 4.0 * roughness * (2.0 - roughness);
+    vec3 prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
+    vec2 brdf = texture(brdfLut, vec2(NdotV, 1.0 - roughness)).rg;
+    vec3 Fr = prefilteredColor * (kS * brdf.x + brdf.y);
+    // Energy compensation (Karis 2017): corrects single-scattering energy loss at high roughness.
+    float directionalAlbedo = brdf.x + brdf.y;
+    vec3 energyCompensation = 1.0 + F0 * (1.0 / directionalAlbedo - 1.0);
+    vec3 specular = Fr * energyCompensation;
 
     return diffuse + specular;
 }
@@ -227,7 +247,7 @@ void main() {
 
     vec3 color = ambient + Lo;
     color = color / (color + vec3(1.0));          // Reinhard tone mapping
-    color = pow(color, vec3(1.0 / 2.2));          // gamma correction
+    // No manual gamma: sRGB swapchain handles it
 
     outColor = vec4(color, texColor.a * fragBaseColor.a);
 }

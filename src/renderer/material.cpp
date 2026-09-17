@@ -41,7 +41,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     addSampler(1); // albedo
     addUbo(2, vk::ShaderStageFlagBits::eFragment); // lights
     if (hasFeature(features, ShaderFeatures::Ibl)) {
-        addSampler(3); // irradiance
+        addUbo(3, vk::ShaderStageFlagBits::eFragment); // SH irradiance
         addSampler(4); // prefilter
         addSampler(5); // BRDF LUT
     }
@@ -63,7 +63,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     uint32_t uboCount = 2; // binding 0 + binding 2 always present
     uint32_t samplerCount = 1; // binding 1 always present
-    if (hasFeature(features, ShaderFeatures::Ibl)) samplerCount += 3;
+    if (hasFeature(features, ShaderFeatures::Ibl)) { samplerCount += 2; uboCount += 1; }
     if (hasFeature(features, ShaderFeatures::NormalMap)) samplerCount += 1;
     if (hasFeature(features, ShaderFeatures::HardShadow) || hasFeature(features, ShaderFeatures::PcfShadow)) {
         samplerCount += 1;
@@ -222,11 +222,20 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
                 .pSetLayouts = layouts.data(),
             });
 
-    // Build image infos for optional features (only used when present)
-    vk::DescriptorImageInfo irradianceInfo, prefilterInfo, brdfLutInfo;
     if (ibl) {
-        irradianceInfo = { *ibl->irradiance.sampler, *ibl->irradiance.imageView,
-            vk::ImageLayout::eShaderReadOnlyOptimal };
+        auto [buf, mem] = vkutil::createBuffer(ctx, sizeof(IblSHUBO),
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        void* mapped = mem.mapMemory(0, sizeof(IblSHUBO));
+        memcpy(mapped, &ibl->sh, sizeof(IblSHUBO));
+        mem.unmapMemory();
+        inst.shBuffer = std::move(buf);
+        inst.shBufferMemory = std::move(mem);
+    }
+
+    // Build image infos for optional features (only used when present)
+    vk::DescriptorImageInfo prefilterInfo, brdfLutInfo;
+    if (ibl) {
         prefilterInfo = { *ibl->prefilter.sampler, *ibl->prefilter.imageView,
             vk::ImageLayout::eShaderReadOnlyOptimal };
         brdfLutInfo = { *ibl->brdfLut.sampler, *ibl->brdfLut.imageView,
@@ -257,9 +266,10 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
 
         uboInfos.push_back(uboInfo);
         uboInfos.push_back(lightInfo);
+        if (ibl)
+            uboInfos.push_back({ *inst.shBuffer, 0, sizeof(IblSHUBO) });
         imageInfos.push_back(albedoInfo);
         if (ibl) {
-            imageInfos.push_back(irradianceInfo);
             imageInfos.push_back(prefilterInfo);
             imageInfos.push_back(brdfLutInfo);
         }
@@ -294,7 +304,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         writeUbo(0);
         writeSampler(1);
         writeUbo(2);
-        if (ibl) { writeSampler(3); writeSampler(4); writeSampler(5); }
+        if (ibl) { writeUbo(3); writeSampler(4); writeSampler(5); }
         if (normalMap) { writeSampler(6); }
         if (shadowMap) { writeSampler(7); writeUbo(8); }
 

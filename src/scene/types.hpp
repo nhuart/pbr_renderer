@@ -223,6 +223,10 @@ struct UniformBufferObject {
     alignas(16) glm::vec4 pbrParams = { 0.0f, 0.5f, 0.0f, 0.0f }; // x=metallic, y=roughness
 };
 
+struct IblSHUBO {
+    alignas(16) glm::vec4 sh[9]; // L0..L2 SH coefficients (RGB in xyz, w unused)
+};
+
 struct ShadowUBO {
     alignas(16) glm::mat4 lightSpaceTransform; // VP*M for vertex pass, VP for fragment pass
     alignas(16) float shadowBias = 0.005f;

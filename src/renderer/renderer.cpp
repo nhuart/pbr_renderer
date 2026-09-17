@@ -74,8 +74,9 @@ void Renderer::initVulkan() {
     mLightBuffer.emplace(*mCtx, LightUBO{});
 
     if (mScene.iblPath) {
-        mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "_irradiance.ktx2",
-                *mScene.iblPath + "_prefilter.ktx2", "textures/ibl/brdf_lut.ktx2");
+        mIblEnvironment.emplace(*mCtx, *mCmds,
+                *mScene.iblPath + "/ibl_ibl.ktx",
+                *mScene.iblPath + "/sh.txt");
         if (mScene.skybox) {
             mSkyboxPipeline.emplace(*mCtx, *mSwapchain, *mIblEnvironment);
         }
