@@ -2,6 +2,7 @@
 #include "core/resource_allocator.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -74,8 +75,8 @@ void Renderer::initVulkan() {
     mLightBuffer.emplace(*mCtx, LightUBO{});
 
     if (mScene.iblPath) {
-        mIblEnvironment.emplace(*mCtx, *mCmds,
-                *mScene.iblPath + "/ibl_ibl.ktx",
+        auto iblName = std::filesystem::path(*mScene.iblPath).filename().string();
+        mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "/" + iblName + "_ibl.ktx",
                 *mScene.iblPath + "/sh.txt");
         if (mScene.skybox) {
             mSkyboxPipeline.emplace(*mCtx, *mSwapchain, *mIblEnvironment);
@@ -110,9 +111,9 @@ void Renderer::initVulkan() {
         bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
         auto key = inst.vertexShader + "+" + inst.resolvedFragShader + (doubleSided ? "+ds" : "");
         if (!mMaterials.contains(key)) {
-            mMaterials.emplace(key, Material(*mCtx, *mSwapchain, inst.vertexShader,
-                                            inst.resolvedFragShader, inst.shaderFeatures,
-                                            doubleSided));
+            mMaterials.emplace(key,
+                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.resolvedFragShader,
+                            inst.shaderFeatures, doubleSided));
         }
     }
 

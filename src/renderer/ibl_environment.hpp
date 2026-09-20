@@ -28,15 +28,18 @@ struct IblEnvironment {
 private:
     void parseSH(std::string const& path) {
         std::ifstream f(path);
-        if (!f)
+        if (!f) {
             throw std::runtime_error("failed to open SH file: " + path);
+        }
         for (int i = 0; i < 9; ++i) {
             std::string line;
-            if (!std::getline(f, line))
+            if (!std::getline(f, line)) {
                 throw std::runtime_error("sh.txt: expected 9 lines");
+            }
             float r, g, b;
-            if (sscanf(line.c_str(), "( %f, %f, %f)", &r, &g, &b) != 3)
+            if (sscanf(line.c_str(), "( %f, %f, %f)", &r, &g, &b) != 3) {
                 throw std::runtime_error("sh.txt: parse error on line " + std::to_string(i));
+            }
             sh.sh[i] = glm::vec4(r, g, b, 0.0f);
         }
     }

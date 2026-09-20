@@ -37,19 +37,21 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
             .stageFlags = vk::ShaderStageFlagBits::eFragment });
     };
 
-    addUbo(0, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment); // per-instance UBO
-    addSampler(1); // albedo
-    addUbo(2, vk::ShaderStageFlagBits::eFragment); // lights
+    addUbo(0, vk::ShaderStageFlagBits::eVertex |
+                      vk::ShaderStageFlagBits::eFragment); // per-instance UBO
+    addSampler(1);                                         // albedo
+    addUbo(2, vk::ShaderStageFlagBits::eFragment);         // lights
     if (hasFeature(features, ShaderFeatures::Ibl)) {
         addUbo(3, vk::ShaderStageFlagBits::eFragment); // SH irradiance
-        addSampler(4); // prefilter
-        addSampler(5); // BRDF LUT
+        addSampler(4);                                 // prefilter
+        addSampler(5);                                 // BRDF LUT
     }
     if (hasFeature(features, ShaderFeatures::NormalMap)) {
         addSampler(6); // normal map
     }
-    if (hasFeature(features, ShaderFeatures::HardShadow) || hasFeature(features, ShaderFeatures::PcfShadow)) {
-        addSampler(7); // shadow map
+    if (hasFeature(features, ShaderFeatures::HardShadow) ||
+            hasFeature(features, ShaderFeatures::PcfShadow)) {
+        addSampler(7);                                 // shadow map
         addUbo(8, vk::ShaderStageFlagBits::eFragment); // shadow UBO
     }
 
@@ -61,11 +63,17 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 
     // Pool sized for active bindings only
     auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    uint32_t uboCount = 2; // binding 0 + binding 2 always present
+    uint32_t uboCount = 2;     // binding 0 + binding 2 always present
     uint32_t samplerCount = 1; // binding 1 always present
-    if (hasFeature(features, ShaderFeatures::Ibl)) { samplerCount += 2; uboCount += 1; }
-    if (hasFeature(features, ShaderFeatures::NormalMap)) samplerCount += 1;
-    if (hasFeature(features, ShaderFeatures::HardShadow) || hasFeature(features, ShaderFeatures::PcfShadow)) {
+    if (hasFeature(features, ShaderFeatures::Ibl)) {
+        samplerCount += 2;
+        uboCount += 1;
+    }
+    if (hasFeature(features, ShaderFeatures::NormalMap)) {
+        samplerCount += 1;
+    }
+    if (hasFeature(features, ShaderFeatures::HardShadow) ||
+            hasFeature(features, ShaderFeatures::PcfShadow)) {
         samplerCount += 1;
         uboCount += 1;
     }
@@ -223,9 +231,10 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             });
 
     if (ibl) {
-        auto [buf, mem] = vkutil::createBuffer(ctx, sizeof(IblSHUBO),
-                vk::BufferUsageFlagBits::eUniformBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        auto [buf, mem] =
+                vkutil::createBuffer(ctx, sizeof(IblSHUBO), vk::BufferUsageFlagBits::eUniformBuffer,
+                        vk::MemoryPropertyFlagBits::eHostVisible |
+                                vk::MemoryPropertyFlagBits::eHostCoherent);
         void* mapped = mem.mapMemory(0, sizeof(IblSHUBO));
         memcpy(mapped, &ibl->sh, sizeof(IblSHUBO));
         mem.unmapMemory();
@@ -266,8 +275,9 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
 
         uboInfos.push_back(uboInfo);
         uboInfos.push_back(lightInfo);
-        if (ibl)
+        if (ibl) {
             uboInfos.push_back({ *inst.shBuffer, 0, sizeof(IblSHUBO) });
+        }
         imageInfos.push_back(albedoInfo);
         if (ibl) {
             imageInfos.push_back(prefilterInfo);
@@ -304,9 +314,18 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         writeUbo(0);
         writeSampler(1);
         writeUbo(2);
-        if (ibl) { writeUbo(3); writeSampler(4); writeSampler(5); }
-        if (normalMap) { writeSampler(6); }
-        if (shadowMap) { writeSampler(7); writeUbo(8); }
+        if (ibl) {
+            writeUbo(3);
+            writeSampler(4);
+            writeSampler(5);
+        }
+        if (normalMap) {
+            writeSampler(6);
+        }
+        if (shadowMap) {
+            writeSampler(7);
+            writeUbo(8);
+        }
 
         ctx.device.updateDescriptorSets(writes, {});
     }
