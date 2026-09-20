@@ -93,12 +93,9 @@ void Renderer::initVulkan() {
         }
     }
     if (shadowCastingLight) {
-        uint32_t shadowCasterCount = 0;
-        for (auto const& inst: mScene.meshInstances) {
-            if (inst.castShadows) {
-                ++shadowCasterCount;
-            }
-        }
+        uint32_t shadowCasterCount = static_cast<uint32_t>(std::count_if(
+                mScene.meshInstances.begin(), mScene.meshInstances.end(),
+                [](MeshInstance const& inst) { return inst.castShadows; }));
         mShadowMap.emplace(*mCtx, *mCmds, shadowCasterCount);
         mShadowMap->shadowType = shadowCastingLight->shadowType;
         mShadowMap->shadowBias = shadowCastingLight->shadowBias;
@@ -201,7 +198,7 @@ void Renderer::updateUniforms() {
 
     glm::vec3 camPos = mCamera.position();
 
-    // Build and upload the light UBO once (lights are static).
+    // Lights are static but the UBO is re-uploaded every frame for simplicity.
     LightUBO lightUbo{};
     uint32_t lightCount = 0;
     for (auto const& light: mScene.lights) {

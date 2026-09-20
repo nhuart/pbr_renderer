@@ -56,6 +56,9 @@ void applyMaterial(Engine& engine, MeshEntry const& entry) {
         if (!renderableInstance) {
             continue;
         }
+        renderableManager.setCastShadows(renderableInstance, entry.castShadows);
+        renderableManager.setReceiveShadows(renderableInstance, entry.receiveShadows);
+
         size_t primitiveCount = renderableManager.getPrimitiveCount(renderableInstance);
         for (size_t primitiveIndex = 0; primitiveIndex < primitiveCount; ++primitiveIndex) {
             MaterialInstance* materialInstance =
@@ -66,6 +69,9 @@ void applyMaterial(Engine& engine, MeshEntry const& entry) {
             materialInstance->setParameter("baseColorFactor", entry.baseColor);
             materialInstance->setParameter("metallicFactor", entry.metallic);
             materialInstance->setParameter("roughnessFactor", entry.roughness);
+            if (!entry.useNormalMap) {
+                materialInstance->setParameter("normalScale", 0.0f);
+            }
         }
     }
 }

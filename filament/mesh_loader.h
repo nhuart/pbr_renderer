@@ -23,6 +23,9 @@ struct MeshEntry {
     float4 baseColor = { 1, 1, 1, 1 };
     float metallic = 0.0f;
     float roughness = 1.0f;
+    bool castShadows = false;
+    bool receiveShadows = false;
+    bool useNormalMap = true;
 
     filament::gltfio::FilamentAsset* asset = nullptr;
     filament::gltfio::ResourceLoader* resourceLoader = nullptr;
