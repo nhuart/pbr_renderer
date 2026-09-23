@@ -18,7 +18,7 @@ inline SceneDesc buildBunnyPbrPointScene() {
             .type = filament::LightManager::Type::POINT,
             .position = { 1.5f, 0.5f, 1.5f },
             .color = { 1.0f, 1.0f, 1.0f },
-            .intensity = 10000.0f,
+            .intensity = 500000.0f,
             .range = 8.0f,
         },
     };

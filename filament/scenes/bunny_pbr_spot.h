@@ -19,7 +19,7 @@ inline SceneDesc buildBunnyPbrSpotScene() {
             .direction = { 0.0f, -1.0f, 0.0f },
             .position = { 0.03f, 3.0f, -0.28f },
             .color = { 1.0f, 1.0f, 1.0f },
-            .intensity = 15000.0f,
+            .intensity = 500000.0f,
             .range = 6.0f,
             .innerConeAngleDegrees = 20.0f,
             .outerConeAngleDegrees = 30.0f,

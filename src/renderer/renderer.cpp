@@ -41,7 +41,7 @@ void Renderer::run() {
 void Renderer::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, mScreenshotPath.empty() ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     mWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(mWindow, this);
     glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
@@ -739,7 +739,6 @@ void Renderer::drawFrame() {
              presentResult == vk::Result::eSuboptimalKHR)) {
         captureScreenshot(imageIndex);
         mScreenshotPath.clear();
-        glfwSetWindowShouldClose(mWindow, GLFW_TRUE);
     }
 
     if (presentResult == vk::Result::eErrorOutOfDateKHR) {
