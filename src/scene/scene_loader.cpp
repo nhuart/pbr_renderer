@@ -150,12 +150,18 @@ Scene loadScene(std::string const& path) {
             requireFields({ "intensity" });
             AmbientLight light;
             light.intensity = lightJson["intensity"].get<float>();
+            if (lightJson.contains("iblIntensity")) {
+                light.iblIntensity = lightJson["iblIntensity"].get<float>();
+            }
             return light;
         } else if (lightType == "directional") {
             requireFields({ "direction", "color" });
             DirectionalLight light;
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
+            if (lightJson.contains("intensity")) {
+                light.intensity = lightJson["intensity"].get<float>();
+            }
             if (lightJson.contains("castShadow")) {
                 light.castShadow = lightJson["castShadow"].get<bool>();
             }
@@ -178,6 +184,9 @@ Scene loadScene(std::string const& path) {
             light.position = vec3FromJson(lightJson["position"]);
             light.direction = vec3FromJson(lightJson["direction"]);
             light.color = vec3FromJson(lightJson["color"]);
+            if (lightJson.contains("intensity")) {
+                light.intensity = lightJson["intensity"].get<float>();
+            }
             light.innerConeAngle = lightJson["innerConeAngle"].get<float>();
             light.outerConeAngle = lightJson["outerConeAngle"].get<float>();
             light.range = lightJson["range"].get<float>();
@@ -188,6 +197,9 @@ Scene loadScene(std::string const& path) {
             light.position = vec3FromJson(lightJson["position"]);
             light.color = vec3FromJson(lightJson["color"]);
             light.range = lightJson["range"].get<float>();
+            if (lightJson.contains("intensity")) {
+                light.intensity = lightJson["intensity"].get<float>();
+            }
             return light;
         } else {
             throw std::runtime_error("unknown light.type '" + lightType + "': " + path);
@@ -210,6 +222,15 @@ Scene loadScene(std::string const& path) {
     scene.camera.fovDegrees = cameraJson.at("fov").get<double>();
     scene.camera.nearPlane = cameraJson.at("near").get<double>();
     scene.camera.farPlane = cameraJson.at("far").get<double>();
+    if (cameraJson.contains("aperture")) {
+        scene.camera.aperture = cameraJson["aperture"].get<double>();
+    }
+    if (cameraJson.contains("shutterSpeed")) {
+        scene.camera.shutterSpeed = cameraJson["shutterSpeed"].get<double>();
+    }
+    if (cameraJson.contains("sensitivity")) {
+        scene.camera.sensitivity = cameraJson["sensitivity"].get<double>();
+    }
 
     validateScene(scene, path);
     return scene;
