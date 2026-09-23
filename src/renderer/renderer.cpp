@@ -16,13 +16,13 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-static float ambientIntensityFromLights(std::vector<Light> const& lights) {
+static AmbientLight const* ambientLightFromLights(std::vector<Light> const& lights) {
     for (auto const& light: lights) {
         if (auto const* a = std::get_if<AmbientLight>(&light)) {
-            return a->intensity;
+            return a;
         }
     }
-    return 0.0f;
+    return nullptr;
 }
 
 Renderer::Renderer(std::string scenePath, std::string screenshotPath)
@@ -41,7 +41,7 @@ void Renderer::run() {
 void Renderer::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_RESIZABLE, mScreenshotPath.empty() ? GLFW_TRUE : GLFW_FALSE);
     mWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(mWindow, this);
     glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
@@ -199,6 +199,11 @@ void Renderer::updateUniforms() {
     glm::vec3 camPos = mCamera.position();
 
     // Lights are static but the UBO is re-uploaded every frame for simplicity.
+    // exposure = 1 / (1.2 × aperture² / shutter × 100 / ISO)  (matches Filament's Exposure.cpp)
+    float exposure = 1.0f / (1.2f * static_cast<float>(
+            mScene.camera.aperture * mScene.camera.aperture
+            / mScene.camera.shutterSpeed * 100.0 / mScene.camera.sensitivity));
+
     LightUBO lightUbo{};
     uint32_t lightCount = 0;
     for (auto const& light: mScene.lights) {
@@ -210,8 +215,9 @@ void Renderer::updateUniforms() {
         if (std::holds_alternative<AmbientLight>(light)) {
             continue;
         }
-        lightUbo.lights[lightCount++] =
-                std::visit([](auto const& l) { return GpuLight::from(l); }, light);
+        lightUbo.lights[lightCount++] = std::visit(
+                [exposure](auto const& l) { return GpuLight::from(l, exposure); },
+                light);
     }
     lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
     memcpy(mLightBuffer->mapped, &lightUbo, sizeof(lightUbo));
@@ -229,7 +235,13 @@ void Renderer::updateUniforms() {
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
             .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness,
-                    ambientIntensityFromLights(mScene.lights), 0.0f),
+                    [&] {
+                        // Matches Filament: sh0 = intensity/sqrt(4π), Fd = sh0 * iblLuminance
+                        // (diffuseBRDF=1 since irradiance() coefficients are not pre-divided by π)
+                        constexpr float InvSqrt4Pi = 1.0f / 3.54490770181f; // 1/sqrt(4π)
+                        auto const* ambientLight = ambientLightFromLights(mScene.lights);
+                        return ambientLight ? ambientLight->intensity * InvSqrt4Pi * ambientLight->iblIntensity * exposure : 0.0f;
+                    }(), 0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
@@ -722,13 +734,24 @@ void Renderer::drawFrame() {
     };
     vk::Result presentResult = mCtx->graphicsQueue.presentKHR(presentInfo);
 
-    if (!mScreenshotPath.empty() && presentResult == vk::Result::eSuccess) {
+    if (!mScreenshotPath.empty() &&
+            (presentResult == vk::Result::eSuccess ||
+             presentResult == vk::Result::eSuboptimalKHR)) {
         captureScreenshot(imageIndex);
         mScreenshotPath.clear();
+        glfwSetWindowShouldClose(mWindow, GLFW_TRUE);
     }
 
-    if (presentResult == vk::Result::eErrorOutOfDateKHR ||
-            presentResult == vk::Result::eSuboptimalKHR || mFramebufferResized) {
+    if (presentResult == vk::Result::eErrorOutOfDateKHR) {
+        if (!mScreenshotPath.empty()) {
+            // Swapchain out of date but we need a screenshot — grab it from the acquired image
+            // before the swapchain is destroyed.
+            captureScreenshot(imageIndex);
+            mScreenshotPath.clear();
+        }
+        mFramebufferResized = false;
+        recreateSwapchain();
+    } else if (presentResult == vk::Result::eSuboptimalKHR || mFramebufferResized) {
         mFramebufferResized = false;
         recreateSwapchain();
     } else if (presentResult != vk::Result::eSuccess) {

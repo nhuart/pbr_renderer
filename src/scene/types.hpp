@@ -68,6 +68,7 @@ struct ParticleSystem {
 
 struct AmbientLight {
     float intensity;
+    float iblIntensity = 30000.0f; // matches Filament's IndirectLight::Builder::intensity()
 };
 
 enum class ShadowType { Hard, PCF };
@@ -75,6 +76,7 @@ enum class ShadowType { Hard, PCF };
 struct DirectionalLight {
     glm::vec3 direction;
     glm::vec3 color;
+    float intensity = 1.0f; // illuminance in lux = lm/m2
     bool castShadow = false;
     ShadowType shadowType = ShadowType::Hard;
     float shadowBias = 0.005f;
@@ -84,6 +86,7 @@ struct SpotLight {
     glm::vec3 position;
     glm::vec3 direction;
     glm::vec3 color;
+    float intensity = 1.0f; // luminous power in lm;
     float innerConeAngle; // degrees
     float outerConeAngle; // degrees
     float range;
@@ -92,6 +95,7 @@ struct SpotLight {
 struct PointLight {
     glm::vec3 position;
     glm::vec3 color;
+    float intensity = 1.0f; // luminous power in lm;
     float range;
 };
 
@@ -179,30 +183,33 @@ struct GpuLight {
     alignas(16) glm::vec4 direction;       // xyz=normalized direction (directional/spot), w=unused
     alignas(16) glm::vec4 coneScaleOffset; // x=scale, y=offset for cone attenuation (spot only)
 
-    static GpuLight from(AmbientLight const& /*l*/) { return GpuLight{}; }
+    static GpuLight from(AmbientLight const& /*l*/, float /*exposure*/) { return GpuLight{}; }
 
-    static GpuLight from(DirectionalLight const& l) {
+    static GpuLight from(DirectionalLight const& l, float exposure) {
         GpuLight g{};
-        g.colorAndType = glm::vec4(l.color, 1.0f);
+        g.colorAndType = glm::vec4(l.color * l.intensity * exposure, 1.0f);
         g.direction = glm::vec4(glm::normalize(l.direction), 0.0f);
         return g;
     }
 
-    static GpuLight from(SpotLight const& l) {
-        float cosInner = glm::cos(glm::radians(l.innerConeAngle));
+    static GpuLight from(SpotLight const& l, float exposure) {
         float cosOuter = glm::cos(glm::radians(l.outerConeAngle));
+        float cosInner = glm::cos(glm::radians(l.innerConeAngle));
+        constexpr float InvPi = 1.0f / 3.14159265358979f;
+        float luminousIntensity = l.intensity * InvPi; // matches Filament Type::SPOT: lm/π
         float scale = 1.0f / glm::max(cosInner - cosOuter, 1e-4f);
         GpuLight g{};
-        g.colorAndType = glm::vec4(l.color, 2.0f);
+        g.colorAndType = glm::vec4(l.color * luminousIntensity * exposure, 2.0f);
         g.positionAndInvRange = glm::vec4(l.position, 1.0f / glm::max(l.range, 1e-4f));
         g.direction = glm::vec4(glm::normalize(l.direction), 0.0f);
         g.coneScaleOffset = glm::vec4(scale, -cosOuter * scale, 0.0f, 0.0f);
         return g;
     }
 
-    static GpuLight from(PointLight const& l) {
+    static GpuLight from(PointLight const& l, float exposure) {
+        constexpr float Inv4Pi = 1.0f / (4.0f * 3.14159265358979f);
         GpuLight g{};
-        g.colorAndType = glm::vec4(l.color, 3.0f);
+        g.colorAndType = glm::vec4(l.color * l.intensity * Inv4Pi * exposure, 3.0f);
         g.positionAndInvRange = glm::vec4(l.position, 1.0f / glm::max(l.range, 1e-4f));
         return g;
     }

@@ -7,7 +7,8 @@
         {
             "type": "directional",
             "direction": [1.0, 2.0, 1.0],
-            "color": [3.0, 3.0, 3.0],
+            "color": [1.0, 1.0, 1.0],
+            "intensity": 10000.0,
             "castShadow": true
         }
     ],
@@ -18,7 +19,8 @@
         "radius": 3.5,
         "fov": 45.0,
         "near": 0.1,
-        "far": 100.0
+        "far": 100.0,
+        "aperture": 4.0
     },
     "meshInstances": [
         {
