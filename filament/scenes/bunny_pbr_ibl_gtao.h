@@ -5,16 +5,17 @@
 
 #include <utils/Path.h>
 
-inline SceneDesc buildBunnyPbrIblSaoScene() {
+inline SceneDesc buildBunnyPbrIblGtaoScene() {
     SceneDesc sceneDesc;
-    sceneDesc.title = "Stanford Bunny - PBR IBL SAO";
+    sceneDesc.title = "Stanford Bunny - PBR IBL GTAO";
     sceneDesc.iblDir = "ibl/tree_lined_driveway_4k";
     sceneDesc.camera.eye = { 2.143304f, 1.750000f, 2.143304f };
     sceneDesc.ambientOcclusion = filament::View::AmbientOcclusionOptions{
+        .aoType = filament::View::AmbientOcclusionOptions::AmbientOcclusionType::GTAO,
         .radius = 1.0f,
-        .bias = 0.004f,
         .resolution = 1.0f,
         .quality = filament::View::QualityLevel::HIGH,
+        .lowPassFilter = filament::View::QualityLevel::HIGH,
         .enabled = true,
     };
 
