@@ -87,8 +87,8 @@ struct SpotLight {
     glm::vec3 direction;
     glm::vec3 color;
     float intensity = 1.0f; // luminous power in lm;
-    float innerConeAngle; // degrees
-    float outerConeAngle; // degrees
+    float innerConeAngle;   // degrees
+    float outerConeAngle;   // degrees
     float range;
 };
 

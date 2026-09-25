@@ -14,9 +14,9 @@ struct Camera {
     double fovDegrees;
     double nearPlane;
     double farPlane;
-    double aperture     = 16.0;  // f-stop
+    double aperture = 16.0; // f-stop
     double shutterSpeed = 1.0 / 125.0;
-    double sensitivity  = 100.0; // ISO
+    double sensitivity = 100.0; // ISO
 
     [[nodiscard]] glm::dvec3 position() const {
         double az = glm::radians(azimuth);
