@@ -93,9 +93,9 @@ void Renderer::initVulkan() {
         }
     }
     if (shadowCastingLight) {
-        uint32_t shadowCasterCount = static_cast<uint32_t>(std::count_if(
-                mScene.meshInstances.begin(), mScene.meshInstances.end(),
-                [](MeshInstance const& inst) { return inst.castShadows; }));
+        uint32_t shadowCasterCount = static_cast<uint32_t>(
+                std::count_if(mScene.meshInstances.begin(), mScene.meshInstances.end(),
+                        [](MeshInstance const& inst) { return inst.castShadows; }));
         mShadowMap.emplace(*mCtx, *mCmds, shadowCasterCount);
         mShadowMap->shadowType = shadowCastingLight->shadowType;
         mShadowMap->shadowBias = shadowCastingLight->shadowBias;
@@ -200,9 +200,10 @@ void Renderer::updateUniforms() {
 
     // Lights are static but the UBO is re-uploaded every frame for simplicity.
     // exposure = 1 / (1.2 × aperture² / shutter × 100 / ISO)  (matches Filament's Exposure.cpp)
-    float exposure = 1.0f / (1.2f * static_cast<float>(
-            mScene.camera.aperture * mScene.camera.aperture
-            / mScene.camera.shutterSpeed * 100.0 / mScene.camera.sensitivity));
+    float exposure =
+            1.0f / (1.2f * static_cast<float>(mScene.camera.aperture * mScene.camera.aperture /
+                                              mScene.camera.shutterSpeed * 100.0 /
+                                              mScene.camera.sensitivity));
 
     LightUBO lightUbo{};
     uint32_t lightCount = 0;
@@ -216,8 +217,7 @@ void Renderer::updateUniforms() {
             continue;
         }
         lightUbo.lights[lightCount++] = std::visit(
-                [exposure](auto const& l) { return GpuLight::from(l, exposure); },
-                light);
+                [exposure](auto const& l) { return GpuLight::from(l, exposure); }, light);
     }
     lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
     memcpy(mLightBuffer->mapped, &lightUbo, sizeof(lightUbo));
@@ -234,14 +234,18 @@ void Renderer::updateUniforms() {
             .normalMatrix = glm::transpose(glm::inverse(model)),
             .baseColor = meshInst.baseColor,
             .cameraPos = glm::vec4(camPos, 0.0f),
-            .pbrParams = glm::vec4(meshInst.metallic, meshInst.roughness,
+            .pbrParams = glm::vec4(
+                    meshInst.metallic, meshInst.roughness,
                     [&] {
                         // Matches Filament: sh0 = intensity/sqrt(4π), Fd = sh0 * iblLuminance
                         // (diffuseBRDF=1 since irradiance() coefficients are not pre-divided by π)
                         constexpr float InvSqrt4Pi = 1.0f / 3.54490770181f; // 1/sqrt(4π)
                         auto const* ambientLight = ambientLightFromLights(mScene.lights);
-                        return ambientLight ? ambientLight->intensity * InvSqrt4Pi * ambientLight->iblIntensity * exposure : 0.0f;
-                    }(), 0.0f),
+                        return ambientLight ? ambientLight->intensity * InvSqrt4Pi *
+                                                      ambientLight->iblIntensity * exposure
+                                            : 0.0f;
+                    }(),
+                    0.0f),
         };
         ro.materialInstance.updateUBO(mFrameIndex, ubo);
     }
@@ -734,9 +738,8 @@ void Renderer::drawFrame() {
     };
     vk::Result presentResult = mCtx->graphicsQueue.presentKHR(presentInfo);
 
-    if (!mScreenshotPath.empty() &&
-            (presentResult == vk::Result::eSuccess ||
-             presentResult == vk::Result::eSuboptimalKHR)) {
+    if (!mScreenshotPath.empty() && (presentResult == vk::Result::eSuccess ||
+                                            presentResult == vk::Result::eSuboptimalKHR)) {
         captureScreenshot(imageIndex);
         mScreenshotPath.clear();
     }

@@ -79,6 +79,9 @@ screenshot-stanford-bunny-lambertian:
 screenshot-stanford-bunny-pbr-ibl:
 	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl.json ARGS='--screenshot results/standford_bunny/pbr_ibl.png'
 
+screenshot-stanford-bunny-pbr-ibl-m0-r05:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl_m0_r05.json ARGS='--screenshot results/standford_bunny/pbr_ibl_m0_r05.png'
+
 screenshot-stanford-bunny-pbr-normal-map:
 	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_normal_map.json ARGS='--screenshot results/standford_bunny/pbr_normal_map.png'
 
