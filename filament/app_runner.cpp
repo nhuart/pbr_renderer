@@ -67,6 +67,18 @@ static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
     view->setDithering(View::Dithering::NONE);
     view->setShadowType(app.scene.shadowType);
 
+    if (app.scene.sao) {
+        view->setAmbientOcclusionOptions({
+            .radius = 1.0f,
+            .power = 1.0f,
+            .bias = 0.004f,
+            .resolution = 0.5f,
+            .intensity = 1.0f,
+            .quality = View::QualityLevel::HIGH,
+            .enabled = true,
+        });
+    }
+
     double aspect = double(app.scene.width) / double(app.scene.height);
     applyCamera(view->getCamera(), app.scene.camera, aspect);
 

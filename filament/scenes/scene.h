@@ -18,5 +18,6 @@ struct SceneDesc {
     std::vector<LightDesc> lights;
     float ambientIntensity = 0.0f;
     filament::ShadowType shadowType = filament::ShadowType::PCF;
+    bool sao = false;
     std::vector<MeshEntry> meshes;
 };

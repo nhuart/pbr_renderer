@@ -152,6 +152,7 @@ endfunction()
 # ─── scene executables ───────────────────────────────────────────────────────
 add_scene(stanford_bunny_pbr_ibl           scenes/bunny_pbr_ibl.h            buildBunnyPbrIblScene            stanford_bunny_pbr_ibl)
 add_scene(stanford_bunny_pbr_ibl_m0_r05    scenes/bunny_pbr_ibl_m0_r05.h     buildBunnyPbrIblM0R05Scene       stanford_bunny_pbr_ibl_m0_r05)
+add_scene(stanford_bunny_pbr_ibl_sao       scenes/bunny_pbr_ibl_sao.h        buildBunnyPbrIblSaoScene         stanford_bunny_pbr_ibl_sao)
 add_scene(stanford_bunny_pbr_directional   scenes/bunny_pbr_directional.h    buildBunnyPbrDirectionalScene    stanford_bunny_pbr_directional)
 add_scene(stanford_bunny_pbr_point         scenes/bunny_pbr_point.h          buildBunnyPbrPointScene          stanford_bunny_pbr_point)
 add_scene(stanford_bunny_pbr_spot          scenes/bunny_pbr_spot.h           buildBunnyPbrSpotScene           stanford_bunny_pbr_spot)
