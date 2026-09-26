@@ -22,4 +22,5 @@ struct SceneDesc {
     filament::ShadowType shadowType = filament::ShadowType::PCF;
     std::optional<filament::View::AmbientOcclusionOptions> ambientOcclusion;
     std::vector<MeshEntry> meshes;
+    bool showSkybox = true;
 };

@@ -12,11 +12,15 @@ inline SceneDesc buildBunnyPbrIblSaoScene() {
     sceneDesc.camera.eye = { 2.143304f, 1.750000f, 2.143304f };
     sceneDesc.ambientOcclusion = filament::View::AmbientOcclusionOptions{
         .radius = 1.0f,
+        .power = 1.5f,
         .bias = 0.004f,
         .resolution = 1.0f,
+        .intensity = 2.0f,
         .quality = filament::View::QualityLevel::HIGH,
         .enabled = true,
     };
+
+    sceneDesc.showSkybox = false;
 
     sceneDesc.meshes = {
         MeshEntry{
@@ -25,13 +29,6 @@ inline SceneDesc buildBunnyPbrIblSaoScene() {
             .baseColor = { 0.8f, 0.7f, 0.6f, 1.0f },
             .metallic = 0.0f,
             .roughness = 0.5f,
-        },
-        MeshEntry{
-            .path = utils::Path("models/plane.glb"),
-            .transform = planeTransform(),
-            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
-            .metallic = 0.0f,
-            .roughness = 0.8f,
         },
     };
 

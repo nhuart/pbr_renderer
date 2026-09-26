@@ -84,6 +84,10 @@ static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
         scene->setIndirectLight(app.ambientIndirectLight);
     }
 
+    if (!app.scene.showSkybox) {
+        scene->setSkybox(nullptr);
+    }
+
     MeshLoaderContext ctx{ engine, app.appLoader, app.gltfLoader };
     for (auto& entry: app.scene.meshes) {
         loadMesh(ctx, entry);
