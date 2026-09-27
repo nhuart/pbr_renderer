@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PBR Renderer vs Filament</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #eee; font-family: system-ui, sans-serif; padding: 2rem; min-height: 100vh; }
+    h1 { font-size: 1.4rem; margin-bottom: 2rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 2rem; }
+    .card { background: #1c1c1c; border-radius: 8px; overflow: hidden; }
+    .card-title { padding: 0.6rem 1rem; font-size: 0.85rem; font-weight: 600; background: #222; border-bottom: 1px solid #333; }
+    .card-title span { color: #888; font-weight: 400; }
+
+    .compare { position: relative; user-select: none; cursor: ew-resize; overflow: hidden; }
+    .compare img { display: block; width: 100%; height: auto; pointer-events: none; }
+    .compare .right-wrap { position: absolute; inset: 0; clip-path: inset(0 50% 0 0); }
+    .compare .right-wrap img { display: block; width: 100%; height: auto; }
+    .compare .divider {
+      position: absolute; top: 0; bottom: 0; width: 2px; background: #fff;
+      transform: translateX(-50%); pointer-events: none;
+    }
+    .compare .handle {
+      position: absolute; top: 50%; width: 36px; height: 36px;
+      background: #fff; border-radius: 50%; transform: translate(-50%, -50%);
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; box-shadow: 0 0 6px rgba(0,0,0,.5);
+    }
+    .compare .handle::before,
+    .compare .handle::after {
+      content: ''; border: 6px solid transparent; display: block;
+    }
+    .compare .handle::before { border-right-color: #333; margin-right: 2px; }
+    .compare .handle::after  { border-left-color:  #333; margin-left:  2px; }
+    .label {
+      position: absolute; bottom: 8px; padding: 2px 8px;
+      font-size: 0.75rem; background: rgba(0,0,0,.55); border-radius: 4px; pointer-events: none;
+    }
+    .label-left  { left:  8px; }
+    .label-right { right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>PBR Renderer vs Filament</h1>
+  <p style="margin-bottom:1.5rem;font-size:0.85rem;color:#888;">See also: <a href="filament_internal_comparisons.html" style="color:#aaa;">Filament internal comparisons</a></p>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    const SCENES = [
+      { title: "IBL",                  filament: "../filament/stanford_bunny_pbr_ibl.png",           ours: "../standford_bunny/pbr_ibl.png" },
+      { title: "IBL (m=0 r=0.5)",      filament: "../filament/stanford_bunny_pbr_ibl_m0_r05.png",   ours: "../standford_bunny/pbr_ibl_m0_r05.png" },
+      { title: "Directional",          filament: "../filament/stanford_bunny_pbr_directional.png",   ours: "../standford_bunny/pbr_directional.png" },
+      { title: "Point light",          filament: "../filament/stanford_bunny_pbr_point.png",         ours: "../standford_bunny/pbr_point.png" },
+      { title: "Spot light",           filament: "../filament/stanford_bunny_pbr_spot.png",          ours: "../standford_bunny/pbr_spot.png" },
+      { title: "PCF Shadow",           filament: "../filament/stanford_bunny_pbr_shadow_pcf.png",    ours: "../standford_bunny/pbr_shadow_pcf.png" },
+      { title: "Normal map",           filament: "../filament/stanford_bunny_pbr_normal_map.png",    ours: "../standford_bunny/pbr_normal_map.png" },
+      { title: "No normal map",        filament: "../filament/stanford_bunny_pbr_no_normal_map.png", ours: "../standford_bunny/pbr_no_normal_map.png" },
+    ];
+
+    function makeCard({ title, filament, ours }) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="card-title">${title} <span>← filament · pbr_renderer →</span></div>
+        <div class="compare">
+          <img src="${ours}" alt="pbr_renderer" />
+          <div class="right-wrap"><img src="${filament}" alt="Filament" /></div>
+          <div class="divider"></div>
+          <div class="handle"></div>
+          <span class="label label-left">Filament</span>
+          <span class="label label-right">pbr_renderer</span>
+        </div>`;
+
+      const cmp       = card.querySelector('.compare');
+      const rightWrap = card.querySelector('.right-wrap');
+      const divider   = card.querySelector('.divider');
+      const handle    = card.querySelector('.handle');
+
+      function setPos(x) {
+        const { left: l, width: w } = cmp.getBoundingClientRect();
+        const pct = Math.min(Math.max((x - l) / w, 0), 1) * 100;
+        rightWrap.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+        divider.style.left       = pct + '%';
+        handle.style.left        = pct + '%';
+      }
+
+      requestAnimationFrame(() => {
+        const { left: l, width: w } = cmp.getBoundingClientRect();
+        setPos(l + w / 2);
+      });
+
+      let dragging = false;
+      cmp.addEventListener('mousedown',  e => { dragging = true; setPos(e.clientX); });
+      cmp.addEventListener('touchstart', e => { dragging = true; setPos(e.touches[0].clientX); }, { passive: true });
+      window.addEventListener('mousemove',  e => { if (dragging) setPos(e.clientX); });
+      window.addEventListener('touchmove',  e => { if (dragging) setPos(e.touches[0].clientX); }, { passive: true });
+      window.addEventListener('mouseup',  () => dragging = false);
+      window.addEventListener('touchend', () => dragging = false);
+
+      return card;
+    }
+
+    const grid = document.getElementById('grid');
+    SCENES.forEach(s => grid.appendChild(makeCard(s)));
+  </script>
+</body>
+</html>

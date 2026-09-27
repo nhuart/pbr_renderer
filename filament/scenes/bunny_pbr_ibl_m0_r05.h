@@ -19,7 +19,28 @@ inline SceneDesc buildBunnyPbrIblM0R05Scene() {
             .baseColor = { 0.8f, 0.7f, 0.6f, 1.0f },
             .metallic = 0.0f,
             .roughness = 0.5f,
-        }
+        },
+        MeshEntry{
+            .path = utils::Path("models/plane.glb"),
+            .transform = planeTransform(),
+            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
+            .metallic = 0.0f,
+            .roughness = 0.8f,
+        },
+        MeshEntry{
+            .path = utils::Path("models/plane.glb"),
+            .transform = backWallZTransform(),
+            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
+            .metallic = 0.0f,
+            .roughness = 0.8f,
+        },
+        MeshEntry{
+            .path = utils::Path("models/plane.glb"),
+            .transform = backWallXTransform(),
+            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
+            .metallic = 0.0f,
+            .roughness = 0.8f,
+        },
     };
 
     return sceneDesc;

@@ -13,11 +13,15 @@ inline SceneDesc buildBunnyPbrIblGtaoScene() {
     sceneDesc.ambientOcclusion = filament::View::AmbientOcclusionOptions{
         .aoType = filament::View::AmbientOcclusionOptions::AmbientOcclusionType::GTAO,
         .radius = 1.0f,
+        .power = 2.0f,
         .resolution = 1.0f,
+        .intensity = 1.0f,
         .quality = filament::View::QualityLevel::HIGH,
         .lowPassFilter = filament::View::QualityLevel::HIGH,
         .enabled = true,
+        // .bias = 0.004f,
     };
+    sceneDesc.showSkybox = false;
 
     sceneDesc.meshes = {
         MeshEntry{
@@ -30,6 +34,20 @@ inline SceneDesc buildBunnyPbrIblGtaoScene() {
         MeshEntry{
             .path = utils::Path("models/plane.glb"),
             .transform = planeTransform(),
+            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
+            .metallic = 0.0f,
+            .roughness = 0.8f,
+        },
+        MeshEntry{
+            .path = utils::Path("models/plane.glb"),
+            .transform = backWallZTransform(),
+            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
+            .metallic = 0.0f,
+            .roughness = 0.8f,
+        },
+        MeshEntry{
+            .path = utils::Path("models/plane.glb"),
+            .transform = backWallXTransform(),
             .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
             .metallic = 0.0f,
             .roughness = 0.8f,

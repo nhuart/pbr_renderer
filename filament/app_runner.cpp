@@ -154,6 +154,12 @@ void runScene(SceneDesc scene, const char* screenshotName) {
     auto animate = [app](Engine*, View* view, double) { animateApp(*app, view); };
 
     auto postRender = [app, aspect](Engine*, View* view, Scene*, Renderer* renderer) {
+        Renderer::ClearOptions clearOpts;
+        clearOpts.clearColor = { 0.0, 0.0, 0.0, 1.0 };
+        clearOpts.clear = true;
+        clearOpts.discard = true;
+        renderer->setClearOptions(clearOpts);
+
         // Re-apply camera every frame to prevent the manipulator from overriding it.
         applyCamera(view->getCamera(), app->scene.camera, aspect);
 
