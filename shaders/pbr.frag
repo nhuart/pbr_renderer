@@ -44,6 +44,10 @@ layout(binding = 8) uniform ShadowUBO {
 } shadowUbo;
 #endif
 
+#ifdef USE_SAO
+layout(binding = 9) uniform sampler2D aoMap;
+#endif
+
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragNormal;
@@ -54,6 +58,13 @@ layout(location = 5) in vec3 fragTangent;
 #endif
 
 layout(location = 0) out vec4 outColor;
+
+#ifdef USE_SAO
+// Returns screen-space UV of the current fragment for AO map lookup.
+vec2 screenUV() {
+    return gl_FragCoord.xy / vec2(textureSize(aoMap, 0));
+}
+#endif
 
 const float PI = 3.14159265359;
 
@@ -243,6 +254,11 @@ void main() {
     vec3 ambient = iblAmbient(N, V, NdotV, albedo, F0, metallic, roughness);
 #else
     vec3 ambient = ambientIntensity * albedo;
+#endif
+
+#ifdef USE_SAO
+    float ao = texture(aoMap, screenUV()).r;
+    ambient *= ao;
 #endif
 
     vec3 color = ambient + Lo;

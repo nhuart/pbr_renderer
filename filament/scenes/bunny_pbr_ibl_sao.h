@@ -20,8 +20,6 @@ inline SceneDesc buildBunnyPbrIblSaoScene() {
         .enabled = true,
     };
 
-    sceneDesc.showSkybox = false;
-
     sceneDesc.meshes = {
         MeshEntry{
             .path = utils::Path("models/stanford_bunny.glb"),

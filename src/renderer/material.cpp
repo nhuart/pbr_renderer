@@ -3,7 +3,8 @@
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
 #include "renderer/ibl_environment.hpp"
-#include "renderer/shadow_map.hpp"
+#include "renderer/sao_pipeline.hpp"
+#include "renderer/shadow_pipeline.hpp"
 #include "renderer/texture_atlas.hpp"
 
 #include <array>
@@ -54,6 +55,9 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         addSampler(7);                                 // shadow map
         addUbo(8, vk::ShaderStageFlagBits::eFragment); // shadow UBO
     }
+    if (hasFeature(features, ShaderFeatures::Sao)) {
+        addSampler(9); // AO map
+    }
 
     descriptorSetLayout = vk::raii::DescriptorSetLayout(ctx.device,
             vk::DescriptorSetLayoutCreateInfo{
@@ -76,6 +80,9 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
             hasFeature(features, ShaderFeatures::PcfShadow)) {
         samplerCount += 1;
         uboCount += 1;
+    }
+    if (hasFeature(features, ShaderFeatures::Sao)) {
+        samplerCount += 1;
     }
     std::vector<vk::DescriptorPoolSize> poolSizes = {
         { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = setCount * uboCount },
@@ -203,7 +210,8 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 
 MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
         vk::raii::Buffer const& lightBuffer, IblEnvironment const* ibl,
-        TextureAtlas const* normalMap, ShadowMap const* shadowMap) const {
+        TextureAtlas const* normalMap, ShadowPipeline const* shadowMap,
+        SaoPipeline const* saoPipeline) const {
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -257,6 +265,12 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             vk::ImageLayout::eShaderReadOnlyOptimal };
     }
 
+    vk::DescriptorImageInfo aoMapInfo;
+    if (saoPipeline) {
+        aoMapInfo = { saoPipeline->finalAoSampler(), saoPipeline->finalAoView(),
+            vk::ImageLayout::eShaderReadOnlyOptimal };
+    }
+
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vk::DescriptorBufferInfo uboInfo{
             .buffer = *inst.uniformBuffers[i],
@@ -290,6 +304,9 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             imageInfos.push_back({ *shadowMap->sampler, *shadowMap->imageView,
                 vk::ImageLayout::eShaderReadOnlyOptimal });
             uboInfos.push_back({ *shadowMap->fragmentUbo[i].buffer, 0, sizeof(ShadowUBO) });
+        }
+        if (saoPipeline) {
+            imageInfos.push_back(aoMapInfo);
         }
 
         // Build writes pointing into the stable vectors above
@@ -325,6 +342,9 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         if (shadowMap) {
             writeSampler(7);
             writeUbo(8);
+        }
+        if (saoPipeline) {
+            writeSampler(9);
         }
 
         ctx.device.updateDescriptorSets(writes, {});

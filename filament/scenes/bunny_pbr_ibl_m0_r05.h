@@ -10,7 +10,6 @@ inline SceneDesc buildBunnyPbrIblM0R05Scene() {
     sceneDesc.title = "Stanford Bunny - PBR IBL (m=0 r=0.5)";
     sceneDesc.iblDir = "ibl/tree_lined_driveway_4k";
     sceneDesc.camera.eye = { 2.143304f, 1.750000f, 2.143304f };
-    sceneDesc.showSkybox = false;
 
     sceneDesc.meshes = {
         MeshEntry{
@@ -23,20 +22,6 @@ inline SceneDesc buildBunnyPbrIblM0R05Scene() {
         MeshEntry{
             .path = utils::Path("models/plane.glb"),
             .transform = planeTransform(),
-            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
-            .metallic = 0.0f,
-            .roughness = 0.8f,
-        },
-        MeshEntry{
-            .path = utils::Path("models/plane.glb"),
-            .transform = backWallZTransform(),
-            .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
-            .metallic = 0.0f,
-            .roughness = 0.8f,
-        },
-        MeshEntry{
-            .path = utils::Path("models/plane.glb"),
-            .transform = backWallXTransform(),
             .baseColor = { 0.6f, 0.6f, 0.6f, 1.0f },
             .metallic = 0.0f,
             .roughness = 0.8f,

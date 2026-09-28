@@ -47,6 +47,10 @@ set(SHADER_SOURCES
     shaders/particle.vert
     shaders/particle.frag
     shaders/particle.comp
+    shaders/fullscreen.vert
+    shaders/view_space_normals.frag
+    shaders/sao.frag
+    shaders/sao_blur.frag
 )
 
 set(SHADER_SPIRV_OUTPUTS "")
@@ -76,6 +80,16 @@ set(PBR_VARIANTS
     "pbr_normal_pcf|USE_NORMAL_MAP USE_SHADOW USE_PCF"
     "pbr_ibl_pcf|USE_IBL USE_SHADOW USE_PCF"
     "pbr_ibl_normal_pcf|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_PCF"
+    "pbr_sao|USE_SAO"
+    "pbr_ibl_sao|USE_IBL USE_SAO"
+    "pbr_normal_sao|USE_NORMAL_MAP USE_SAO"
+    "pbr_ibl_normal_sao|USE_IBL USE_NORMAL_MAP USE_SAO"
+    "pbr_shadow_sao|USE_SHADOW USE_SAO"
+    "pbr_ibl_shadow_sao|USE_IBL USE_SHADOW USE_SAO"
+    "pbr_ibl_normal_shadow_sao|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_SAO"
+    "pbr_pcf_sao|USE_SHADOW USE_PCF USE_SAO"
+    "pbr_ibl_pcf_sao|USE_IBL USE_SHADOW USE_PCF USE_SAO"
+    "pbr_ibl_normal_pcf_sao|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_PCF USE_SAO"
 )
 foreach(VARIANT ${PBR_VARIANTS})
     string(REPLACE "|" ";" VARIANT_PARTS "${VARIANT}")
@@ -121,7 +135,8 @@ add_executable(pbr_renderer
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
     src/renderer/material.cpp
-    src/renderer/shadow_map.cpp
+    src/renderer/shadow_pipeline.cpp
+    src/renderer/sao_pipeline.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )

@@ -32,6 +32,7 @@ enum class ShaderFeatures : uint8_t {
     NormalMap = 1 << 1,
     HardShadow = 1 << 2,
     PcfShadow = 1 << 3,
+    Sao = 1 << 4,
 };
 inline ShaderFeatures operator|(ShaderFeatures a, ShaderFeatures b) {
     return static_cast<ShaderFeatures>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
@@ -101,6 +102,17 @@ struct PointLight {
 
 using Light = std::variant<AmbientLight, DirectionalLight, SpotLight, PointLight>;
 
+struct SaoConfig {
+    float radius         = 1.0f;
+    float bias           = 0.004f;
+    float power          = 0.75f;
+    float intensity      = 1.0f;
+    int   sampleCount    = 16;
+    int   spiralTurns    = 7;
+    int   kernelRadius   = 4;
+    float depthThreshold = 0.001f;
+};
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
@@ -108,6 +120,7 @@ struct Scene {
     Camera camera;
     std::optional<std::string> iblPath;
     bool skybox = false;
+    std::optional<SaoConfig> sao;
 };
 
 // ---------------------------------------------------------------------------

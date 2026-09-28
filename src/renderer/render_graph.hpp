@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -77,6 +78,9 @@ public:
 private:
     std::vector<RenderGraphPhysicalImage> mImages;
     std::vector<RenderGraphPass> mPasses;
+    // image indices read by any pass after they are written
+    // use this set to determine which images the gpu needs to keep in memory between passes
+    std::unordered_set<uint32_t> mSubsequentlyRead;
 
     void buildBarriers();
 

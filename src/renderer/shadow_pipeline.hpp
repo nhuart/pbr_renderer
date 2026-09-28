@@ -25,7 +25,7 @@ struct ShadowObjectData {
     vk::raii::DescriptorSets descriptorSets{ nullptr };
 };
 
-struct ShadowMap {
+struct ShadowPipeline {
     vk::raii::Image image{ nullptr };
     vk::raii::DeviceMemory memory{ nullptr };
     vk::raii::ImageView imageView{ nullptr };
@@ -47,7 +47,7 @@ struct ShadowMap {
     // Per-frame UBOs for material binding 8 (lightSpaceTransform VP — used in fragment shader)
     std::array<ShadowFrameBuffer, MAX_FRAMES_IN_FLIGHT> fragmentUbo;
 
-    ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount);
+    ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount);
 
     void allocateObjectData(VulkanContext const& ctx, uint32_t objectCount);
     void updateLightSpaceMatrix(DirectionalLight const& light);

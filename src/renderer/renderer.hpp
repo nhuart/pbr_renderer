@@ -21,7 +21,8 @@
 #include "renderer/render_graph.hpp"
 #include "renderer/render_object.hpp"
 #include "renderer/resource_manager.hpp"
-#include "renderer/shadow_map.hpp"
+#include "renderer/sao_pipeline.hpp"
+#include "renderer/shadow_pipeline.hpp"
 #include "renderer/skybox_pipeline.hpp"
 #include "scene/scene_loader.hpp"
 #include "scene/types.hpp"
@@ -53,10 +54,15 @@ private:
     std::map<std::string, Material> mMaterials;
     std::optional<LightBuffer> mLightBuffer;
     std::optional<IblEnvironment> mIblEnvironment;
-    std::optional<ShadowMap> mShadowMap;
+    std::optional<ShadowPipeline> mShadowPipeline;
     RenderGraphImageHandle mShadowMapImageHandle{};
     std::optional<SkyboxPipeline> mSkyboxPipeline;
     std::optional<ParticlePipeline> mParticlePipeline;
+    std::optional<SaoPipeline> mSaoPipeline;
+    RenderGraphImageHandle mNormalsImageHandle{};
+    RenderGraphImageHandle mAoRawImageHandle{};
+    RenderGraphImageHandle mAoBlurImageHandle{};
+    RenderGraphImageHandle mDepthPrepassImageHandle{};
     std::vector<GameObject> mGameObjects;
     std::vector<RenderObject> mRenderObjects;
 
@@ -73,6 +79,7 @@ private:
     void recordComputeCommandBuffer(uint32_t frameIdx);
     void captureScreenshot(uint32_t imageIndex);
     void captureShadowMapDebug();
+    void captureAoTextureDebug();
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);

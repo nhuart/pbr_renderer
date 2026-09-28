@@ -4,6 +4,7 @@
 	screenshot-stanford-bunny-pbr-ibl \
 	screenshot-stanford-bunny-pbr-normal-map screenshot-stanford-bunny-pbr-no-normal-map \
 	screenshot-stanford-bunny-pbr-directional-shadow screenshot-stanford-bunny-pbr-directional-shadow-pcf \
+	screenshot-stanford-bunny-pbr-ibl-sao \
 	screenshot-viking-room screenshot-viking-room-particles
 
 help:
@@ -26,6 +27,7 @@ help:
 	@echo "  make screenshot-stanford-bunny-pbr-no-normal-map  - Stanford bunny PBR without normal map"
 	@echo "  make screenshot-stanford-bunny-pbr-directional-shadow     - Stanford bunny PBR hard shadow"
 	@echo "  make screenshot-stanford-bunny-pbr-directional-shadow-pcf - Stanford bunny PBR PCF shadow"
+	@echo "  make screenshot-stanford-bunny-pbr-ibl-sao - Stanford bunny PBR IBL + SAO"
 	@echo "  make screenshot-viking-room               - Viking room (single)"
 	@echo "  make screenshot-viking-room-particles     - Three viking rooms with particles"
 
@@ -94,10 +96,13 @@ screenshot-stanford-bunny-pbr-directional-shadow:
 screenshot-stanford-bunny-pbr-directional-shadow-pcf:
 	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_shadow_pcf.json ARGS='--screenshot results/standford_bunny/pbr_shadow_pcf.png'
 
+screenshot-stanford-bunny-pbr-ibl-sao:
+	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl_sao.json ARGS='--screenshot results/standford_bunny/pbr_ibl_sao.png'
+
 screenshot-viking-room:
 	$(MAKE) run-debug SCENE=scenes/viking_room.json ARGS='--screenshot results/viking_room/single.png'
 
 screenshot-viking-room-particles:
 	$(MAKE) run-debug SCENE=scenes/three_viking_rooms_particles.json ARGS='--screenshot results/viking_room/three_rooms.png'
 
-screenshot-all: screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-stanford-bunny-pbr-ibl screenshot-stanford-bunny-pbr-normal-map screenshot-stanford-bunny-pbr-no-normal-map screenshot-stanford-bunny-pbr-directional-shadow screenshot-stanford-bunny-pbr-directional-shadow-pcf screenshot-viking-room screenshot-viking-room-particles
+screenshot-all: screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-stanford-bunny-pbr-ibl screenshot-stanford-bunny-pbr-normal-map screenshot-stanford-bunny-pbr-no-normal-map screenshot-stanford-bunny-pbr-directional-shadow screenshot-stanford-bunny-pbr-directional-shadow-pcf screenshot-stanford-bunny-pbr-ibl-sao screenshot-viking-room screenshot-viking-room-particles
