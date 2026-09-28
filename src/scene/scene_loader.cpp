@@ -86,13 +86,13 @@ Scene loadScene(std::string const& path) {
     if (j.contains("sao")) {
         auto const& saoJson = j["sao"];
         SaoConfig saoConfig;
-        saoConfig.radius         = saoJson.value("radius", saoConfig.radius);
-        saoConfig.bias           = saoJson.value("bias", saoConfig.bias);
-        saoConfig.power          = saoJson.value("power", saoConfig.power);
-        saoConfig.intensity      = saoJson.value("intensity", saoConfig.intensity);
-        saoConfig.sampleCount    = saoJson.value("sampleCount", saoConfig.sampleCount);
-        saoConfig.spiralTurns    = saoJson.value("spiralTurns", saoConfig.spiralTurns);
-        saoConfig.kernelRadius   = saoJson.value("kernelRadius", saoConfig.kernelRadius);
+        saoConfig.radius = saoJson.value("radius", saoConfig.radius);
+        saoConfig.bias = saoJson.value("bias", saoConfig.bias);
+        saoConfig.power = saoJson.value("power", saoConfig.power);
+        saoConfig.intensity = saoJson.value("intensity", saoConfig.intensity);
+        saoConfig.sampleCount = saoJson.value("sampleCount", saoConfig.sampleCount);
+        saoConfig.spiralTurns = saoJson.value("spiralTurns", saoConfig.spiralTurns);
+        saoConfig.kernelRadius = saoJson.value("kernelRadius", saoConfig.kernelRadius);
         saoConfig.depthThreshold = saoJson.value("depthThreshold", saoConfig.depthThreshold);
         scene.sao = saoConfig;
     }

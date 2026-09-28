@@ -10,7 +10,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-ShadowPipeline::ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount) {
+ShadowPipeline::ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds,
+        uint32_t objectCount) {
     createDepthImage(ctx, cmds);
     createFragmentUboBuffers(ctx);
     createPipeline(ctx, objectCount);
@@ -259,7 +260,8 @@ void ShadowPipeline::updateLightSpaceMatrix(DirectionalLight const& light) {
     lightSpaceMatrix = lightProj * lightView;
 }
 
-void ShadowPipeline::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex, glm::mat4 const& model) {
+void ShadowPipeline::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex,
+        glm::mat4 const& model) {
     glm::mat4 mvp = lightSpaceMatrix * model;
     ShadowUBO ubo{ .lightSpaceTransform = mvp };
     memcpy(objects[objectIndex].frames[frameIndex].mapped, &ubo, sizeof(ubo));

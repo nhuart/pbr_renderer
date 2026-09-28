@@ -103,13 +103,13 @@ struct PointLight {
 using Light = std::variant<AmbientLight, DirectionalLight, SpotLight, PointLight>;
 
 struct SaoConfig {
-    float radius         = 1.0f;
-    float bias           = 0.004f;
-    float power          = 0.75f;
-    float intensity      = 1.0f;
-    int   sampleCount    = 16;
-    int   spiralTurns    = 7;
-    int   kernelRadius   = 4;
+    float radius = 1.0f;
+    float bias = 0.004f;
+    float power = 0.75f;
+    float intensity = 1.0f;
+    int sampleCount = 16;
+    int spiralTurns = 7;
+    int kernelRadius = 4;
     float depthThreshold = 0.001f;
 };
 

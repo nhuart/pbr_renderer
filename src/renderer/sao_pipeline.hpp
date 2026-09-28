@@ -17,21 +17,21 @@ struct SaoUBO {
     float power;
     float intensity;
     float projScale;
-    int   sampleCount;
-    int   spiralTurns;
+    int sampleCount;
+    int spiralTurns;
     float nearPlane;
     float farPlane;
     float pad[2];
 };
 
 struct BlurUBO {
-    int   passIndex;
+    int passIndex;
     float farPlaneOverEdgeDistance; // -far / bilateralThreshold
-    int   kernelRadius;
+    int kernelRadius;
     float pad;
 };
 
-// NormalsUBO mirrors UniformBufferObject so normals_prepass.frag works with standard.vert
+// NormalsUBO mirrors UniformBufferObject so view_space_normals.frag works with standard.vert
 struct NormalsUBO {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
@@ -44,63 +44,63 @@ struct NormalsUBO {
 
 struct SaoPipeline {
     // Single-sample depth image shared by normals prepass and SAO pass
-    vk::raii::Image        depthImage{ nullptr };
+    vk::raii::Image depthImage{ nullptr };
     vk::raii::DeviceMemory depthMemory{ nullptr };
-    vk::raii::ImageView    depthView{ nullptr };
-    vk::raii::Sampler      depthSampler{ nullptr };
+    vk::raii::ImageView depthView{ nullptr };
+    vk::raii::Sampler depthSampler{ nullptr };
 
     // Normals prepass (writes view-space normals)
-    vk::raii::Image       normalsImage{ nullptr };
+    vk::raii::Image normalsImage{ nullptr };
     vk::raii::DeviceMemory normalsMemory{ nullptr };
-    vk::raii::ImageView   normalsView{ nullptr };
-    vk::raii::Sampler     normalsSampler{ nullptr };
+    vk::raii::ImageView normalsView{ nullptr };
+    vk::raii::Sampler normalsSampler{ nullptr };
 
     vk::raii::DescriptorSetLayout normalsDescLayout{ nullptr };
-    vk::raii::PipelineLayout      normalsPipeLayout{ nullptr };
-    vk::raii::DescriptorPool      normalsDescPool{ nullptr };
-    vk::raii::Pipeline            normalsPipeline{ nullptr };
+    vk::raii::PipelineLayout normalsPipeLayout{ nullptr };
+    vk::raii::DescriptorPool normalsDescPool{ nullptr };
+    vk::raii::Pipeline normalsPipeline{ nullptr };
 
     // Per-object, per-frame normals UBOs and descriptor sets
     struct NormalsObject {
-        std::array<vk::raii::Buffer,      MAX_FRAMES_IN_FLIGHT> uboBuffers{ nullptr, nullptr };
+        std::array<vk::raii::Buffer, MAX_FRAMES_IN_FLIGHT> uboBuffers{ nullptr, nullptr };
         std::array<vk::raii::DeviceMemory, MAX_FRAMES_IN_FLIGHT> uboMemory{ nullptr, nullptr };
-        std::array<void*,                  MAX_FRAMES_IN_FLIGHT> uboMapped{};
+        std::array<void*, MAX_FRAMES_IN_FLIGHT> uboMapped{};
         vk::raii::DescriptorSets descriptorSets{ nullptr };
     };
     std::vector<NormalsObject> normalsObjects;
 
     // Raw AO image (output of SAO occlusion pass)
-    vk::raii::Image        aoRawImage{ nullptr };
+    vk::raii::Image aoRawImage{ nullptr };
     vk::raii::DeviceMemory aoRawMemory{ nullptr };
-    vk::raii::ImageView    aoRawView{ nullptr };
-    vk::raii::Sampler      aoRawSampler{ nullptr };
+    vk::raii::ImageView aoRawView{ nullptr };
+    vk::raii::Sampler aoRawSampler{ nullptr };
 
     // Blurred AO image (output of bilateral blur)
-    vk::raii::Image        aoBlurImage{ nullptr };
+    vk::raii::Image aoBlurImage{ nullptr };
     vk::raii::DeviceMemory aoBlurMemory{ nullptr };
-    vk::raii::ImageView    aoBlurView{ nullptr };
-    vk::raii::Sampler      aoBlurSampler{ nullptr };
+    vk::raii::ImageView aoBlurView{ nullptr };
+    vk::raii::Sampler aoBlurSampler{ nullptr };
 
     // SAO occlusion pipeline
     vk::raii::DescriptorSetLayout saoDescLayout{ nullptr };
-    vk::raii::PipelineLayout      saoPipeLayout{ nullptr };
-    vk::raii::DescriptorPool      saoDescPool{ nullptr };
-    vk::raii::Pipeline            saoPipeline{ nullptr };
+    vk::raii::PipelineLayout saoPipeLayout{ nullptr };
+    vk::raii::DescriptorPool saoDescPool{ nullptr };
+    vk::raii::Pipeline saoPipeline{ nullptr };
     std::vector<vk::raii::DescriptorSet> saoDescSets;
-    std::vector<vk::raii::Buffer>        saoUboBuffers;
-    std::vector<vk::raii::DeviceMemory>  saoUboMemory;
-    std::vector<void*>                   saoUboMapped;
+    std::vector<vk::raii::Buffer> saoUboBuffers;
+    std::vector<vk::raii::DeviceMemory> saoUboMemory;
+    std::vector<void*> saoUboMapped;
 
     // Blur pipeline (shared for H and V passes, different UBO)
     vk::raii::DescriptorSetLayout blurDescLayout{ nullptr };
-    vk::raii::PipelineLayout      blurPipeLayout{ nullptr };
-    vk::raii::DescriptorPool      blurDescPool{ nullptr };
-    vk::raii::Pipeline            blurPipeline{ nullptr };
+    vk::raii::PipelineLayout blurPipeLayout{ nullptr };
+    vk::raii::DescriptorPool blurDescPool{ nullptr };
+    vk::raii::Pipeline blurPipeline{ nullptr };
     // [frame][pass]: pass 0=H writes aoBlur, pass 1=V reads aoBlur writes aoRaw (ping-pong)
     std::vector<std::array<vk::raii::DescriptorSet, 2>> blurDescSets;
-    std::vector<std::array<vk::raii::Buffer, 2>>        blurUboBuffers;
-    std::vector<std::array<vk::raii::DeviceMemory, 2>>  blurUboMemory;
-    std::vector<std::array<void*, 2>>                   blurUboMapped;
+    std::vector<std::array<vk::raii::Buffer, 2>> blurUboBuffers;
+    std::vector<std::array<vk::raii::DeviceMemory, 2>> blurUboMemory;
+    std::vector<std::array<void*, 2>> blurUboMapped;
 
     SaoConfig config;
 
@@ -112,11 +112,11 @@ struct SaoPipeline {
             float fovYRad, float height, float nearPlane, float farPlane);
 
     [[nodiscard]] vk::ImageView finalAoView() const { return *aoRawView; }
-    [[nodiscard]] vk::Sampler   finalAoSampler() const { return *aoRawSampler; }
+    [[nodiscard]] vk::Sampler finalAoSampler() const { return *aoRawSampler; }
 
 private:
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
-    void createNormalsPass(VulkanContext const& ctx, Swapchain const& swapchain);
+    void createNormalsPass(VulkanContext const& ctx);
     void createSaoPass(VulkanContext const& ctx);
     void createBlurPass(VulkanContext const& ctx);
 };

@@ -16,29 +16,73 @@
 
 static vk::raii::Sampler makeNearestSampler(VulkanContext const& ctx) {
     return vk::raii::Sampler(ctx.device, vk::SamplerCreateInfo{
-        .magFilter = vk::Filter::eNearest,
-        .minFilter = vk::Filter::eNearest,
-        .mipmapMode = vk::SamplerMipmapMode::eNearest,
-        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-        .addressModeW = vk::SamplerAddressMode::eClampToEdge,
-        .minLod = 0.0f,
-        .maxLod = 0.0f,
-    });
+                                             .magFilter = vk::Filter::eNearest,
+                                             .minFilter = vk::Filter::eNearest,
+                                             .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                                             .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+                                             .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+                                             .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+                                             .minLod = 0.0f,
+                                             .maxLod = 0.0f,
+                                         });
 }
 
-static std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> makeUboBuffer(
-        VulkanContext const& ctx, vk::DeviceSize size) {
+struct FullscreenPipelineState {
+    std::vector<vk::DynamicState> dynStates;
+    vk::PipelineDynamicStateCreateInfo dynInfo;
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+    vk::PipelineInputAssemblyStateCreateInfo iaInfo;
+    vk::PipelineViewportStateCreateInfo vpInfo;
+    vk::PipelineRasterizationStateCreateInfo rsInfo;
+    vk::PipelineMultisampleStateCreateInfo msInfo;
+    vk::PipelineColorBlendAttachmentState cbAttach;
+    vk::PipelineColorBlendStateCreateInfo cbInfo;
+};
+
+static FullscreenPipelineState makeFullscreenPipelineState() {
+    FullscreenPipelineState s;
+    s.dynStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    s.dynInfo = vk::PipelineDynamicStateCreateInfo{
+        .dynamicStateCount = static_cast<uint32_t>(s.dynStates.size()),
+        .pDynamicStates = s.dynStates.data(),
+    };
+    s.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};
+    s.iaInfo = vk::PipelineInputAssemblyStateCreateInfo{
+        .topology = vk::PrimitiveTopology::eTriangleList,
+    };
+    s.vpInfo = vk::PipelineViewportStateCreateInfo{ .viewportCount = 1, .scissorCount = 1 };
+    s.rsInfo = vk::PipelineRasterizationStateCreateInfo{
+        .polygonMode = vk::PolygonMode::eFill,
+        .cullMode = vk::CullModeFlagBits::eNone,
+        .frontFace = vk::FrontFace::eCounterClockwise,
+        .lineWidth = 1.0f,
+    };
+    s.msInfo = vk::PipelineMultisampleStateCreateInfo{
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+    };
+    s.cbAttach = vk::PipelineColorBlendAttachmentState{
+        .blendEnable = vk::False,
+        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+    };
+    s.cbInfo = vk::PipelineColorBlendStateCreateInfo{
+        .attachmentCount = 1,
+        .pAttachments = &s.cbAttach,
+    };
+    return s;
+}
+
+static std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> makeUboBuffer(VulkanContext const& ctx,
+        vk::DeviceSize size) {
     return vkutil::createBuffer(ctx, size, vk::BufferUsageFlagBits::eUniformBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 }
 
 
-SaoPipeline::SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-        SaoConfig const& cfg)
+SaoPipeline::SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg)
         : config(cfg) {
     createImages(ctx, swapchain.extent);
-    createNormalsPass(ctx, swapchain);
+    createNormalsPass(ctx);
     createSaoPass(ctx);
     createBlurPass(ctx);
 }
@@ -46,59 +90,58 @@ SaoPipeline::SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
 
 void SaoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
     constexpr vk::Format normalsFormat = vk::Format::eR8G8B8A8Unorm;
-    // R=AO value (0=occluded, 1=unoccluded); G+B=linearized depth packed as 16-bit (G*256/257 + B/257)
-    // for bilateral blur: depth is compared per-neighbor to avoid blurring AO across depth discontinuities
-    constexpr vk::Format aoFormat      = vk::Format::eR8G8B8A8Unorm;
+    // R=AO value (0=occluded, 1=unoccluded); G+B=linearized depth packed as 16-bit (G*256/257 +
+    // B/257) for bilateral blur: depth is compared per-neighbor to avoid blurring AO across depth
+    // discontinuities
+    constexpr vk::Format aoFormat = vk::Format::eR8G8B8A8Unorm;
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
 
     auto createImage = [&](vk::Format format, vk::ImageUsageFlags usage)
             -> std::pair<vk::raii::Image, vk::raii::DeviceMemory> {
-        return vkutil::createImage(ctx, extent.width, extent.height, 1,
-                vk::SampleCountFlagBits::e1, format, vk::ImageTiling::eOptimal, usage,
-                vk::MemoryPropertyFlagBits::eDeviceLocal);
+        return vkutil::createImage(ctx, extent.width, extent.height, 1, vk::SampleCountFlagBits::e1,
+                format, vk::ImageTiling::eOptimal, usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
     };
 
-    constexpr vk::ImageUsageFlags colorUsage =
-            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled |
-            vk::ImageUsageFlagBits::eTransferSrc;
+    constexpr vk::ImageUsageFlags colorUsage = vk::ImageUsageFlagBits::eColorAttachment |
+                                               vk::ImageUsageFlagBits::eSampled |
+                                               vk::ImageUsageFlagBits::eTransferSrc;
 
     // Single-sample depth (used for normals prepass depth write + SAO depth read)
     auto [di, dm] = createImage(depthFormat,
             vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
-    depthImage  = std::move(di);
+    depthImage = std::move(di);
     depthMemory = std::move(dm);
-    depthView   = vkutil::createImageView(ctx, *depthImage, depthFormat,
-            vk::ImageAspectFlagBits::eDepth);
+    depthView =
+            vkutil::createImageView(ctx, *depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
     depthSampler = makeNearestSampler(ctx);
 
     auto [ni, nm] = createImage(normalsFormat, colorUsage);
-    normalsImage  = std::move(ni);
+    normalsImage = std::move(ni);
     normalsMemory = std::move(nm);
-    normalsView   = vkutil::createImageView(ctx, *normalsImage, normalsFormat);
+    normalsView = vkutil::createImageView(ctx, *normalsImage, normalsFormat);
     normalsSampler = makeNearestSampler(ctx);
 
     auto [ri, rm] = createImage(aoFormat, colorUsage);
-    aoRawImage  = std::move(ri);
+    aoRawImage = std::move(ri);
     aoRawMemory = std::move(rm);
-    aoRawView   = vkutil::createImageView(ctx, *aoRawImage, aoFormat);
+    aoRawView = vkutil::createImageView(ctx, *aoRawImage, aoFormat);
     aoRawSampler = makeNearestSampler(ctx);
 
     auto [bi, bm] = createImage(aoFormat, colorUsage);
-    aoBlurImage  = std::move(bi);
+    aoBlurImage = std::move(bi);
     aoBlurMemory = std::move(bm);
-    aoBlurView   = vkutil::createImageView(ctx, *aoBlurImage, aoFormat);
+    aoBlurView = vkutil::createImageView(ctx, *aoBlurImage, aoFormat);
     aoBlurSampler = makeNearestSampler(ctx);
 }
 
 
-void SaoPipeline::createNormalsPass(VulkanContext const& ctx, Swapchain const& /*swapchain*/) {
+void SaoPipeline::createNormalsPass(VulkanContext const& ctx) {
     // Descriptor set layout: binding 0 = UniformBufferObject (vert+frag)
     std::array<vk::DescriptorSetLayoutBinding, 1> bindings{ {
         { .binding = 0,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eVertex |
-                          vk::ShaderStageFlagBits::eFragment },
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },
     } };
     normalsDescLayout = vk::raii::DescriptorSetLayout(ctx.device,
             vk::DescriptorSetLayoutCreateInfo{
@@ -106,18 +149,7 @@ void SaoPipeline::createNormalsPass(VulkanContext const& ctx, Swapchain const& /
                 .pBindings = bindings.data(),
             });
 
-    // Pool is allocated lazily by allocateNormalsObjects; create a minimal placeholder.
-    // The pool will be recreated when allocateNormalsObjects is called.
-    std::array<vk::DescriptorPoolSize, 1> poolSizes{ {
-        { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1 },
-    } };
-    normalsDescPool = vk::raii::DescriptorPool(ctx.device,
-            vk::DescriptorPoolCreateInfo{
-                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                .maxSets = 1,
-                .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-                .pPoolSizes = poolSizes.data(),
-            });
+    // normalsDescPool is created (or recreated) by allocateNormalsObjects once the object count is known.
 
     vk::DescriptorSetLayout dslHandle = *normalsDescLayout;
     normalsPipeLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
@@ -187,8 +219,8 @@ void SaoPipeline::createNormalsPass(VulkanContext const& ctx, Swapchain const& /
         .depthCompareOp = vk::CompareOp::eLess,
     };
 
-    constexpr vk::Format normalsFormat = vk::Format::eR8G8B8A8Unorm;
-    vk::Format depthFormat = vkutil::findDepthFormat(ctx);
+    constexpr vk::Format normalsColorFormat = vk::Format::eR8G8B8A8Unorm;
+    vk::Format normalsDepthFormat = vkutil::findDepthFormat(ctx);
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
         {
@@ -206,12 +238,12 @@ void SaoPipeline::createNormalsPass(VulkanContext const& ctx, Swapchain const& /
         },
         {
             .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &normalsFormat,
-            .depthAttachmentFormat = depthFormat,
+            .pColorAttachmentFormats = &normalsColorFormat,
+            .depthAttachmentFormat = normalsDepthFormat,
         },
     };
-    normalsPipeline = vk::raii::Pipeline(ctx.device, nullptr,
-            chain.get<vk::GraphicsPipelineCreateInfo>());
+    normalsPipeline =
+            vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
     std::cout << "SAO normals prepass pipeline: created\n";
 }
 
@@ -270,12 +302,19 @@ void SaoPipeline::createSaoPass(VulkanContext const& ctx) {
     for (uint32_t i = 0; i < frameCount; i++) {
         vk::DescriptorBufferInfo uboInfo{ *saoUboBuffers[i], 0, sizeof(SaoUBO) };
         std::array<vk::WriteDescriptorSet, 3> writes{ {
-            { .dstSet = *sets[i], .dstBinding = 0, .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &uboInfo },
-            { .dstSet = *sets[i], .dstBinding = 1, .descriptorCount = 1,
+            { .dstSet = *sets[i],
+                .dstBinding = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .pBufferInfo = &uboInfo },
+            { .dstSet = *sets[i],
+                .dstBinding = 1,
+                .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                 .pImageInfo = &depthInfo },
-            { .dstSet = *sets[i], .dstBinding = 2, .descriptorCount = 1,
+            { .dstSet = *sets[i],
+                .dstBinding = 2,
+                .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                 .pImageInfo = &normalsInfo },
         } };
@@ -307,47 +346,20 @@ void SaoPipeline::createSaoPass(VulkanContext const& ctx) {
         },
     };
 
-    std::vector<vk::DynamicState> dynStates = { vk::DynamicState::eViewport,
-        vk::DynamicState::eScissor };
-    vk::PipelineDynamicStateCreateInfo dynInfo{
-        .dynamicStateCount = static_cast<uint32_t>(dynStates.size()),
-        .pDynamicStates = dynStates.data(),
-    };
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vk::PipelineInputAssemblyStateCreateInfo iaInfo{
-        .topology = vk::PrimitiveTopology::eTriangleList,
-    };
-    vk::PipelineViewportStateCreateInfo vpInfo{ .viewportCount = 1, .scissorCount = 1 };
-    vk::PipelineRasterizationStateCreateInfo rsInfo{
-        .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eNone,
-        .frontFace = vk::FrontFace::eCounterClockwise,
-        .lineWidth = 1.0f,
-    };
-    vk::PipelineMultisampleStateCreateInfo msInfo{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-    };
+    auto ps = makeFullscreenPipelineState();
     constexpr vk::Format aoFormat = vk::Format::eR8G8B8A8Unorm;
-    vk::PipelineColorBlendAttachmentState cbAttach{
-        .blendEnable = vk::False,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
-    };
-    vk::PipelineColorBlendStateCreateInfo cbInfo{
-        .attachmentCount = 1, .pAttachments = &cbAttach,
-    };
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
         {
             .stageCount = static_cast<uint32_t>(stages.size()),
             .pStages = stages.data(),
-            .pVertexInputState = &vertexInputInfo,
-            .pInputAssemblyState = &iaInfo,
-            .pViewportState = &vpInfo,
-            .pRasterizationState = &rsInfo,
-            .pMultisampleState = &msInfo,
-            .pColorBlendState = &cbInfo,
-            .pDynamicState = &dynInfo,
+            .pVertexInputState = &ps.vertexInputInfo,
+            .pInputAssemblyState = &ps.iaInfo,
+            .pViewportState = &ps.vpInfo,
+            .pRasterizationState = &ps.rsInfo,
+            .pMultisampleState = &ps.msInfo,
+            .pColorBlendState = &ps.cbInfo,
+            .pDynamicState = &ps.dynInfo,
             .layout = *saoPipeLayout,
         },
         {
@@ -355,8 +367,8 @@ void SaoPipeline::createSaoPass(VulkanContext const& ctx) {
             .pColorAttachmentFormats = &aoFormat,
         },
     };
-    saoPipeline = vk::raii::Pipeline(ctx.device, nullptr,
-            chain.get<vk::GraphicsPipelineCreateInfo>());
+    saoPipeline =
+            vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
     std::cout << "SAO occlusion pipeline: created\n";
 }
 
@@ -416,18 +428,17 @@ void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
 
         // Allocate 2 descriptor sets for this frame
         std::vector<vk::DescriptorSetLayout> layouts(passesPerFrame, *blurDescLayout);
-        auto sets = vk::raii::DescriptorSets(ctx.device,
-                vk::DescriptorSetAllocateInfo{
-                    .descriptorPool = *blurDescPool,
-                    .descriptorSetCount = passesPerFrame,
-                    .pSetLayouts = layouts.data(),
-                });
+        auto sets = vk::raii::DescriptorSets(ctx.device, vk::DescriptorSetAllocateInfo{
+                                                             .descriptorPool = *blurDescPool,
+                                                             .descriptorSetCount = passesPerFrame,
+                                                             .pSetLayouts = layouts.data(),
+                                                         });
 
         // Pass 0: reads aoRaw (binding 1 — depth packed in GB)
         // Pass 1: reads aoBlur (binding 1 — depth packed in GB)
         for (uint32_t pi = 0; pi < passesPerFrame; pi++) {
             vk::ImageView aoView = (pi == 0) ? *aoRawView : *aoBlurView;
-            vk::Sampler   aoSamp = (pi == 0) ? *aoRawSampler : *aoBlurSampler;
+            vk::Sampler aoSamp = (pi == 0) ? *aoRawSampler : *aoBlurSampler;
             vk::DescriptorImageInfo aoInfo{
                 .sampler = aoSamp,
                 .imageView = aoView,
@@ -436,9 +447,14 @@ void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
 
             vk::DescriptorBufferInfo uboInfo{ *blurUboBuffers[fi][pi], 0, sizeof(BlurUBO) };
             std::array<vk::WriteDescriptorSet, 2> writes{ {
-                { .dstSet = *sets[pi], .dstBinding = 0, .descriptorCount = 1,
-                    .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &uboInfo },
-                { .dstSet = *sets[pi], .dstBinding = 1, .descriptorCount = 1,
+                { .dstSet = *sets[pi],
+                    .dstBinding = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eUniformBuffer,
+                    .pBufferInfo = &uboInfo },
+                { .dstSet = *sets[pi],
+                    .dstBinding = 1,
+                    .descriptorCount = 1,
                     .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                     .pImageInfo = &aoInfo },
             } };
@@ -471,47 +487,20 @@ void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
         },
     };
 
-    std::vector<vk::DynamicState> dynStates = { vk::DynamicState::eViewport,
-        vk::DynamicState::eScissor };
-    vk::PipelineDynamicStateCreateInfo dynInfo{
-        .dynamicStateCount = static_cast<uint32_t>(dynStates.size()),
-        .pDynamicStates = dynStates.data(),
-    };
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vk::PipelineInputAssemblyStateCreateInfo iaInfo{
-        .topology = vk::PrimitiveTopology::eTriangleList,
-    };
-    vk::PipelineViewportStateCreateInfo vpInfo{ .viewportCount = 1, .scissorCount = 1 };
-    vk::PipelineRasterizationStateCreateInfo rsInfo{
-        .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eNone,
-        .frontFace = vk::FrontFace::eCounterClockwise,
-        .lineWidth = 1.0f,
-    };
-    vk::PipelineMultisampleStateCreateInfo msInfo{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-    };
+    auto ps = makeFullscreenPipelineState();
     constexpr vk::Format aoFormat = vk::Format::eR8G8B8A8Unorm;
-    vk::PipelineColorBlendAttachmentState cbAttach{
-        .blendEnable = vk::False,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
-    };
-    vk::PipelineColorBlendStateCreateInfo cbInfo{
-        .attachmentCount = 1, .pAttachments = &cbAttach,
-    };
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
         {
             .stageCount = static_cast<uint32_t>(stages.size()),
             .pStages = stages.data(),
-            .pVertexInputState = &vertexInputInfo,
-            .pInputAssemblyState = &iaInfo,
-            .pViewportState = &vpInfo,
-            .pRasterizationState = &rsInfo,
-            .pMultisampleState = &msInfo,
-            .pColorBlendState = &cbInfo,
-            .pDynamicState = &dynInfo,
+            .pVertexInputState = &ps.vertexInputInfo,
+            .pInputAssemblyState = &ps.iaInfo,
+            .pViewportState = &ps.vpInfo,
+            .pRasterizationState = &ps.rsInfo,
+            .pMultisampleState = &ps.msInfo,
+            .pColorBlendState = &ps.cbInfo,
+            .pDynamicState = &ps.dynInfo,
             .layout = *blurPipeLayout,
         },
         {
@@ -519,8 +508,8 @@ void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
             .pColorAttachmentFormats = &aoFormat,
         },
     };
-    blurPipeline = vk::raii::Pipeline(ctx.device, nullptr,
-            chain.get<vk::GraphicsPipelineCreateInfo>());
+    blurPipeline =
+            vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
     std::cout << "SAO blur pipeline: created\n";
 }
 
@@ -551,12 +540,12 @@ void SaoPipeline::allocateNormalsObjects(VulkanContext const& ctx, uint32_t obje
         }
 
         std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *normalsDescLayout);
-        obj.descriptorSets = vk::raii::DescriptorSets(ctx.device,
-                vk::DescriptorSetAllocateInfo{
-                    .descriptorPool = *normalsDescPool,
-                    .descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
-                    .pSetLayouts = layouts.data(),
-                });
+        obj.descriptorSets =
+                vk::raii::DescriptorSets(ctx.device, vk::DescriptorSetAllocateInfo{
+                                                         .descriptorPool = *normalsDescPool,
+                                                         .descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
+                                                         .pSetLayouts = layouts.data(),
+                                                     });
 
         for (uint32_t fi = 0; fi < MAX_FRAMES_IN_FLIGHT; fi++) {
             vk::DescriptorBufferInfo uboInfo{ *obj.uboBuffers[fi], 0, sizeof(NormalsUBO) };

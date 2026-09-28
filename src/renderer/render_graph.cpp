@@ -70,7 +70,8 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
+                .storeOp =
+                        isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
                 .clearValue = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f },
             };
             if (pass.resolveTarget.isValid()) {
@@ -91,7 +92,8 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
+                .storeOp =
+                        isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
                 .clearValue = vk::ClearDepthStencilValue{ 1.0f, 0 },
             };
         }

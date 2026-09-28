@@ -23,22 +23,23 @@ inline mat4f planeTransform() {
 
 // Back wall: faces +Z toward camera
 inline mat4f backWallZTransform() {
-    float groundY   = -0.857f;
+    float groundY = -0.857f;
     float halfWidth = 3.0f;
     float halfHeight = 0.375f;
-    mat4f rotX  = mat4f::rotation(-float(M_PI) * 0.5f, float3{ 1, 0, 0 });
+    mat4f rotX = mat4f::rotation(-float(M_PI) * 0.5f, float3{ 1, 0, 0 });
     mat4f scale = mat4f::scaling(float3{ halfWidth, halfHeight, 1.0f });
     mat4f trans = mat4f::translation(float3{ 0.03f, groundY + halfHeight, -0.28f - halfWidth });
     return trans * scale * rotX;
 }
 
-// Left wall: faces +X toward camera; use rotX(-90) so winding matches backWallZ, then rotY(+90) to face +X
+// Left wall: faces +X toward camera; use rotX(-90) so winding matches backWallZ, then rotY(+90) to
+// face +X
 inline mat4f backWallXTransform() {
-    float groundY   = -0.857f;
+    float groundY = -0.857f;
     float halfWidth = 3.0f;
     float halfHeight = 0.375f;
-    mat4f rotX  = mat4f::rotation(-float(M_PI) * 0.5f, float3{ 1, 0, 0 });
-    mat4f rotY  = mat4f::rotation( float(M_PI) * 0.5f, float3{ 0, 1, 0 });
+    mat4f rotX = mat4f::rotation(-float(M_PI) * 0.5f, float3{ 1, 0, 0 });
+    mat4f rotY = mat4f::rotation(float(M_PI) * 0.5f, float3{ 0, 1, 0 });
     mat4f scale = mat4f::scaling(float3{ halfWidth, halfHeight, 1.0f });
     mat4f trans = mat4f::translation(float3{ 0.03f - halfWidth, groundY + halfHeight, -0.28f });
     return trans * scale * rotY * rotX;
