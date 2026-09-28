@@ -404,6 +404,7 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     }
     if (mSaoPipeline) {
         captureAoTextureDebug();
+        captureNormalsTextureDebug();
     }
 }
 
@@ -446,11 +447,11 @@ static std::vector<uint8_t> depthFloatsToGrayscaleRgba(float const* depthPixels,
     return rgba;
 }
 
-void Renderer::captureShadowMapDebug() {
-    constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
-    constexpr uint32_t pixelCount = shadowMapSize * shadowMapSize;
-    // Depth image is R32 float (or D32/D24) — copy as 4 bytes per pixel
-    vk::DeviceSize readbackBufferSize = vk::DeviceSize(pixelCount) * sizeof(float);
+void Renderer::captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
+        vk::ImageAspectFlags aspect, uint32_t width, uint32_t height, uint32_t bytesPerPixel,
+        std::string const& outputPath, PixelTransform transform) {
+    uint32_t pixelCount = width * height;
+    vk::DeviceSize readbackBufferSize = vk::DeviceSize(pixelCount) * bytesPerPixel;
 
     auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, readbackBufferSize,
             vk::BufferUsageFlagBits::eTransferDst,
@@ -467,33 +468,21 @@ void Renderer::captureShadowMapDebug() {
 
     cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 
-    vkutil::transitionImageLayout(cmd, *mShadowPipeline->image,
-            vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal,
+    vkutil::transitionImageLayout(cmd, image, currentLayout, vk::ImageLayout::eTransferSrcOptimal,
             vk::AccessFlagBits2::eShaderRead, vk::AccessFlagBits2::eTransferRead,
             vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eTransfer,
-            vk::ImageAspectFlagBits::eDepth);
+            aspect);
 
     vk::BufferImageCopy copyRegion{
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = vk::ImageAspectFlagBits::eDepth,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .imageOffset = { 0, 0, 0 },
-        .imageExtent = { shadowMapSize, shadowMapSize, 1 },
+        .imageSubresource = { .aspectMask = aspect, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+        .imageExtent = { width, height, 1 },
     };
-    cmd.copyImageToBuffer(*mShadowPipeline->image, vk::ImageLayout::eTransferSrcOptimal,
-            *readbackBuffer, copyRegion);
+    cmd.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, *readbackBuffer, copyRegion);
 
-    vkutil::transitionImageLayout(cmd, *mShadowPipeline->image,
-            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+    vkutil::transitionImageLayout(cmd, image, vk::ImageLayout::eTransferSrcOptimal, currentLayout,
             vk::AccessFlagBits2::eTransferRead, vk::AccessFlagBits2::eShaderRead,
             vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eFragmentShader,
-            vk::ImageAspectFlagBits::eDepth);
+            aspect);
 
     cmd.end();
 
@@ -503,111 +492,70 @@ void Renderer::captureShadowMapDebug() {
             vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
     if (mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max()) !=
             vk::Result::eSuccess) {
-        throw std::runtime_error("shadow map debug capture: fence wait failed");
+        throw std::runtime_error("captureImageToPng: fence wait failed");
     }
 
-    auto* depthPixels = static_cast<float*>(readbackMemory.mapMemory(0, readbackBufferSize));
-    mCtx->device.invalidateMappedMemoryRanges(vk::MappedMemoryRange{ .memory = *readbackMemory,
-        .offset = 0,
-        .size = readbackBufferSize });
+    void* mapped = readbackMemory.mapMemory(0, readbackBufferSize);
+    mCtx->device.invalidateMappedMemoryRanges(
+            vk::MappedMemoryRange{ .memory = *readbackMemory, .offset = 0, .size = readbackBufferSize });
 
-    std::vector<uint8_t> rgba = depthFloatsToGrayscaleRgba(depthPixels, pixelCount);
+    std::vector<uint8_t> rgba;
+    if (transform) {
+        rgba = transform(mapped, pixelCount);
+    } else {
+        rgba.assign(static_cast<uint8_t const*>(mapped),
+                static_cast<uint8_t const*>(mapped) + pixelCount * 4);
+    }
     readbackMemory.unmapMemory();
 
-    // Always write to shadow_depth.png in the same directory as the screenshot
-    std::string debugPath = mScreenshotPath;
-    auto slash = debugPath.rfind('/');
-    debugPath =
-            (slash != std::string::npos ? debugPath.substr(0, slash + 1) : "") + "shadow_depth.png";
+    stbi_write_png(outputPath.c_str(), static_cast<int>(width), static_cast<int>(height), 4,
+            rgba.data(), static_cast<int>(width) * 4);
+    std::cout << outputPath << " saved\n";
+}
 
-    stbi_write_png(debugPath.c_str(), static_cast<int>(shadowMapSize),
-            static_cast<int>(shadowMapSize), 4, rgba.data(), static_cast<int>(shadowMapSize) * 4);
-    std::cout << "Shadow depth map saved: " << debugPath << "\n";
+void Renderer::captureShadowMapDebug() {
+    constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
+    auto slash = mScreenshotPath.rfind('/');
+    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
+                       "shadow_depth.png";
+    captureImageToPng(*mShadowPipeline->image, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eDepth, shadowMapSize, shadowMapSize, sizeof(float), path,
+            [](void const* data, uint32_t pixelCount) {
+                return depthFloatsToGrayscaleRgba(static_cast<float const*>(data), pixelCount);
+            });
 }
 
 void Renderer::captureAoTextureDebug() {
     uint32_t width = mSwapchain->extent.width;
     uint32_t height = mSwapchain->extent.height;
-    uint32_t pixelCount = width * height;
-    // R8G8B8A8Unorm: 4 bytes per pixel (R=AO, GB=packed depth, A=unused)
-    vk::DeviceSize readbackBufferSize = vk::DeviceSize(pixelCount) * 4;
+    auto slash = mScreenshotPath.rfind('/');
+    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
+                       "ao_texture.png";
+    // Extract R (AO value) and expand to grayscale RGBA
+    captureImageToPng(*mSaoPipeline->aoRawImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eColor, width, height, 4, path,
+            [](void const* data, uint32_t pixelCount) {
+                auto* src = static_cast<uint8_t const*>(data);
+                std::vector<uint8_t> rgba(pixelCount * 4);
+                for (uint32_t i = 0; i < pixelCount; ++i) {
+                    uint8_t ao = src[i * 4];
+                    rgba[i * 4 + 0] = ao;
+                    rgba[i * 4 + 1] = ao;
+                    rgba[i * 4 + 2] = ao;
+                    rgba[i * 4 + 3] = 255;
+                }
+                return rgba;
+            });
+}
 
-    auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, readbackBufferSize,
-            vk::BufferUsageFlagBits::eTransferDst,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCached);
-
-    vk::raii::CommandBuffer cmd =
-            std::move(mCtx->device
-                              .allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-                                  .commandPool = *mCmds->commandPool,
-                                  .level = vk::CommandBufferLevel::ePrimary,
-                                  .commandBufferCount = 1,
-                              })
-                              .front());
-
-    cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-
-    vkutil::transitionImageLayout(cmd, *mSaoPipeline->aoRawImage,
-            vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal,
-            vk::AccessFlagBits2::eShaderRead, vk::AccessFlagBits2::eTransferRead,
-            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eTransfer);
-
-    vk::BufferImageCopy copyRegion{
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .imageOffset = { 0, 0, 0 },
-        .imageExtent = { width, height, 1 },
-    };
-    cmd.copyImageToBuffer(*mSaoPipeline->aoRawImage, vk::ImageLayout::eTransferSrcOptimal,
-            *readbackBuffer, copyRegion);
-
-    vkutil::transitionImageLayout(cmd, *mSaoPipeline->aoRawImage,
-            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::AccessFlagBits2::eTransferRead, vk::AccessFlagBits2::eShaderRead,
-            vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eFragmentShader);
-
-    cmd.end();
-
-    vk::raii::Fence fence(mCtx->device, vk::FenceCreateInfo{});
-    vk::CommandBuffer cmdHandle = *cmd;
-    mCtx->graphicsQueue.submit(
-            vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
-    if (mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max()) !=
-            vk::Result::eSuccess) {
-        throw std::runtime_error("AO texture capture: fence wait failed");
-    }
-
-    auto* aoPixels = static_cast<uint8_t*>(readbackMemory.mapMemory(0, readbackBufferSize));
-    mCtx->device.invalidateMappedMemoryRanges(vk::MappedMemoryRange{ .memory = *readbackMemory,
-        .offset = 0,
-        .size = readbackBufferSize });
-
-    // Extract R channel (AO) and expand to grayscale RGBA for stb_image_write
-    std::vector<uint8_t> rgba(pixelCount * 4);
-    for (uint32_t i = 0; i < pixelCount; ++i) {
-        uint8_t ao = aoPixels[i * 4 + 0];
-        rgba[i * 4 + 0] = ao;
-        rgba[i * 4 + 1] = ao;
-        rgba[i * 4 + 2] = ao;
-        rgba[i * 4 + 3] = 255;
-    }
-    readbackMemory.unmapMemory();
-
-    std::string debugPath = mScreenshotPath;
-    auto slash = debugPath.rfind('/');
-    debugPath =
-            (slash != std::string::npos ? debugPath.substr(0, slash + 1) : "") + "ao_texture.png";
-
-    stbi_write_png(debugPath.c_str(), static_cast<int>(width), static_cast<int>(height), 4,
-            rgba.data(), static_cast<int>(width) * 4);
-    std::cout << "AO texture saved: " << debugPath << "\n";
+void Renderer::captureNormalsTextureDebug() {
+    uint32_t width = mSwapchain->extent.width;
+    uint32_t height = mSwapchain->extent.height;
+    auto slash = mScreenshotPath.rfind('/');
+    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
+                       "normals_texture.png";
+    captureImageToPng(*mSaoPipeline->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eColor, width, height, 4, path);
 }
 
 void Renderer::resolveShaderVariants() {

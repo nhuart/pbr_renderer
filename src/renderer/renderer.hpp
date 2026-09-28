@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -80,6 +81,12 @@ private:
     void captureScreenshot(uint32_t imageIndex);
     void captureShadowMapDebug();
     void captureAoTextureDebug();
+    void captureNormalsTextureDebug();
+    using PixelTransform = std::function<std::vector<uint8_t>(void const*, uint32_t pixelCount)>;
+    void captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
+            vk::ImageAspectFlags aspect, uint32_t width, uint32_t height,
+            uint32_t bytesPerPixel, std::string const& outputPath,
+            PixelTransform transform = {});
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);

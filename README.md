@@ -96,8 +96,6 @@ src/
   scene/     CPU data — scene graph, JSON loading, UBO types
 ```
 
-Dependency flow: `scene/` ← `core/` ← `renderer/`. Nothing in `core/` knows about pipelines; nothing in `scene/` touches Vulkan.
-
 ## TODO
 
 - [ ] Replace per-resource `allocateMemory` with [VulkanMemoryAllocator (VMA)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) — `maxMemoryAllocationCount` can be as low as 4096, one allocation per buffer doesn't scale.
