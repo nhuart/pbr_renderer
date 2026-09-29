@@ -13,6 +13,7 @@
 #include "core/context.hpp"
 #include "core/swapchain.hpp"
 #include "core/sync.hpp"
+#include "renderer/ao_pipeline.hpp"
 #include "renderer/camera.hpp"
 #include "renderer/ibl_environment.hpp"
 #include "renderer/light_buffer.hpp"
@@ -22,7 +23,6 @@
 #include "renderer/render_graph.hpp"
 #include "renderer/render_object.hpp"
 #include "renderer/resource_manager.hpp"
-#include "renderer/sao_pipeline.hpp"
 #include "renderer/shadow_pipeline.hpp"
 #include "renderer/skybox_pipeline.hpp"
 #include "scene/scene_loader.hpp"
@@ -59,7 +59,7 @@ private:
     RenderGraphImageHandle mShadowMapImageHandle{};
     std::optional<SkyboxPipeline> mSkyboxPipeline;
     std::optional<ParticlePipeline> mParticlePipeline;
-    std::optional<SaoPipeline> mSaoPipeline;
+    std::optional<AoPipeline> mAoPipeline;
     RenderGraphImageHandle mNormalsImageHandle{};
     RenderGraphImageHandle mAoRawImageHandle{};
     RenderGraphImageHandle mAoBlurImageHandle{};
@@ -84,9 +84,8 @@ private:
     void captureNormalsTextureDebug();
     using PixelTransform = std::function<std::vector<uint8_t>(void const*, uint32_t pixelCount)>;
     void captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
-            vk::ImageAspectFlags aspect, uint32_t width, uint32_t height,
-            uint32_t bytesPerPixel, std::string const& outputPath,
-            PixelTransform transform = {});
+            vk::ImageAspectFlags aspect, uint32_t width, uint32_t height, uint32_t bytesPerPixel,
+            std::string const& outputPath, PixelTransform transform = {});
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);

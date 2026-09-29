@@ -137,7 +137,7 @@ add_executable(pbr_renderer
     src/renderer/skybox_pipeline.cpp
     src/renderer/material.cpp
     src/renderer/shadow_pipeline.cpp
-    src/renderer/sao_pipeline.cpp
+    src/renderer/ao_pipeline.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )

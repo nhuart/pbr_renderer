@@ -16,7 +16,7 @@ struct Swapchain;
 struct TextureAtlas;
 struct IblEnvironment;
 struct ShadowPipeline;
-struct SaoPipeline;
+struct AoPipeline;
 
 struct MaterialInstance {
     std::vector<vk::raii::Buffer> uniformBuffers;
@@ -49,5 +49,5 @@ struct Material {
             TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,
             IblEnvironment const* ibl = nullptr, TextureAtlas const* normalMap = nullptr,
             ShadowPipeline const* shadowMap = nullptr,
-            SaoPipeline const* saoPipeline = nullptr) const;
+            AoPipeline const* aoPipeline = nullptr) const;
 };

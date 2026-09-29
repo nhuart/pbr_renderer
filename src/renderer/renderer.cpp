@@ -1,6 +1,6 @@
 #include "renderer/renderer.hpp"
 #include "core/resource_allocator.hpp"
-#include "renderer/sao_pipeline.hpp"
+#include "renderer/ao_pipeline.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -104,12 +104,12 @@ void Renderer::initVulkan() {
     }
 
     if (mScene.sao) {
-        mSaoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
+        mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
     } else if (mScene.gtao) {
-        mSaoPipeline.emplace(*mCtx, *mSwapchain, *mScene.gtao);
+        mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.gtao);
     }
-    if (mSaoPipeline) {
-        mSaoPipeline->allocateNormalsObjects(*mCtx,
+    if (mAoPipeline) {
+        mAoPipeline->allocateNormalsObjects(*mCtx,
                 static_cast<uint32_t>(mScene.meshInstances.size()));
     }
 
@@ -141,7 +141,7 @@ void Renderer::initVulkan() {
                         hasFeature(inst.shaderFeatures, ShaderFeatures::PcfShadow))
                         ? &*mShadowPipeline
                         : nullptr,
-                hasFeature(inst.shaderFeatures, ShaderFeatures::Sao) ? &*mSaoPipeline : nullptr);
+                hasFeature(inst.shaderFeatures, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
     }
 
     if (mScene.particles) {
@@ -286,9 +286,9 @@ void Renderer::updateUniforms() {
         memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
     }
 
-    if (mSaoPipeline) {
+    if (mAoPipeline) {
         float fovYRad = static_cast<float>(glm::radians(mScene.camera.fovDegrees));
-        mSaoPipeline->updateUBOs(mFrameIndex, view, proj, fovYRad,
+        mAoPipeline->updateUBOs(mFrameIndex, view, proj, fovYRad,
                 static_cast<float>(mSwapchain->extent.height),
                 static_cast<float>(mCamera.nearPlane), static_cast<float>(mCamera.farPlane));
 
@@ -301,7 +301,7 @@ void Renderer::updateUniforms() {
                 .proj = proj,
                 .normalMatrix = glm::transpose(glm::inverse(model)),
             };
-            mSaoPipeline->updateNormalsUBO(static_cast<uint32_t>(i), mFrameIndex, nubo);
+            mAoPipeline->updateNormalsUBO(static_cast<uint32_t>(i), mFrameIndex, nubo);
         }
     }
 }
@@ -395,7 +395,7 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     if (mShadowPipeline) {
         captureShadowMapDebug();
     }
-    if (mSaoPipeline) {
+    if (mAoPipeline) {
         captureAoTextureDebug();
         captureNormalsTextureDebug();
     }
@@ -467,7 +467,10 @@ void Renderer::captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
             aspect);
 
     vk::BufferImageCopy copyRegion{
-        .imageSubresource = { .aspectMask = aspect, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+        .imageSubresource = { .aspectMask = aspect,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1 },
         .imageExtent = { width, height, 1 },
     };
     cmd.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, *readbackBuffer, copyRegion);
@@ -489,8 +492,9 @@ void Renderer::captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
     }
 
     void* mapped = readbackMemory.mapMemory(0, readbackBufferSize);
-    mCtx->device.invalidateMappedMemoryRanges(
-            vk::MappedMemoryRange{ .memory = *readbackMemory, .offset = 0, .size = readbackBufferSize });
+    mCtx->device.invalidateMappedMemoryRanges(vk::MappedMemoryRange{ .memory = *readbackMemory,
+        .offset = 0,
+        .size = readbackBufferSize });
 
     std::vector<uint8_t> rgba;
     if (transform) {
@@ -525,7 +529,7 @@ void Renderer::captureAoTextureDebug() {
     std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
                        (mScene.gtao ? "gtao_texture.png" : "ao_texture.png");
     // Extract R (AO value) and expand to grayscale RGBA
-    captureImageToPng(*mSaoPipeline->aoRawImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+    captureImageToPng(*mAoPipeline->aoRawImage, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eColor, width, height, 4, path,
             [](void const* data, uint32_t pixelCount) {
                 auto* src = static_cast<uint8_t const*>(data);
@@ -547,7 +551,7 @@ void Renderer::captureNormalsTextureDebug() {
     auto slash = mScreenshotPath.rfind('/');
     std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
                        "normals_texture.png";
-    captureImageToPng(*mSaoPipeline->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+    captureImageToPng(*mAoPipeline->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eColor, width, height, 4, path);
 }
 
@@ -561,7 +565,7 @@ void Renderer::resolveShaderVariants() {
         bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
         bool hasShadow = inst.receiveShadows && mShadowPipeline.has_value();
         bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
-        bool hasSao = mSaoPipeline.has_value();
+        bool hasAo = mAoPipeline.has_value();
 
         ShaderFeatures features = ShaderFeatures::None;
         std::string frag = "pbr";
@@ -581,9 +585,9 @@ void Renderer::resolveShaderVariants() {
             features = features | ShaderFeatures::HardShadow;
             frag += "_shadow";
         }
-        if (hasSao) {
+        if (hasAo) {
             // The PBR AO sampler/variant is shared by SAO and GTAO.
-            features = features | ShaderFeatures::Sao;
+            features = features | ShaderFeatures::Ao;
             frag += "_sao";
         }
 
@@ -682,11 +686,11 @@ void Renderer::buildRenderGraph() {
                 });
     }
 
-    if (mSaoPipeline) {
+    if (mAoPipeline) {
         vk::Format depthFmt = vkutil::findDepthFormat(*mCtx);
 
-        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass",
-                *mSaoPipeline->normalsImage, *mSaoPipeline->normalsView,
+        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass", *mAoPipeline->normalsImage,
+                *mAoPipeline->normalsView,
                 RenderGraphImage{
                     .format = vk::Format::eR8G8B8A8Unorm,
                     .extent = swapchainExtent,
@@ -697,7 +701,7 @@ void Renderer::buildRenderGraph() {
                 });
 
         mDepthPrepassImageHandle = mRenderGraph.importImage("depthPrepass",
-                *mSaoPipeline->depthImage, *mSaoPipeline->depthView,
+                *mAoPipeline->depthImage, *mAoPipeline->depthView,
                 RenderGraphImage{
                     .format = depthFmt,
                     .extent = swapchainExtent,
@@ -707,20 +711,20 @@ void Renderer::buildRenderGraph() {
                     .samples = vk::SampleCountFlagBits::e1,
                 });
 
-        mAoRawImageHandle = mRenderGraph.importImage("aoRaw", *mSaoPipeline->aoRawImage,
-                *mSaoPipeline->aoRawView,
-                RenderGraphImage{
-                    .format = vk::Format::eR8Unorm,
-                    .extent = swapchainExtent,
-                    .usage = vk::ImageUsageFlagBits::eColorAttachment |
-                             vk::ImageUsageFlagBits::eSampled |
-                             vk::ImageUsageFlagBits::eTransferSrc,
-                    .aspect = vk::ImageAspectFlagBits::eColor,
-                    .samples = vk::SampleCountFlagBits::e1,
-                });
+        mAoRawImageHandle =
+                mRenderGraph.importImage("aoRaw", *mAoPipeline->aoRawImage, *mAoPipeline->aoRawView,
+                        RenderGraphImage{
+                            .format = vk::Format::eR8Unorm,
+                            .extent = swapchainExtent,
+                            .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                                     vk::ImageUsageFlagBits::eSampled |
+                                     vk::ImageUsageFlagBits::eTransferSrc,
+                            .aspect = vk::ImageAspectFlagBits::eColor,
+                            .samples = vk::SampleCountFlagBits::e1,
+                        });
 
-        mAoBlurImageHandle = mRenderGraph.importImage("aoBlur", *mSaoPipeline->aoBlurImage,
-                *mSaoPipeline->aoBlurView,
+        mAoBlurImageHandle = mRenderGraph.importImage("aoBlur", *mAoPipeline->aoBlurImage,
+                *mAoPipeline->aoBlurView,
                 RenderGraphImage{
                     .format = vk::Format::eR8Unorm,
                     .extent = swapchainExtent,
@@ -743,13 +747,13 @@ void Renderer::buildRenderGraph() {
                                            .maxDepth = 1.0f });
                     cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                            *mSaoPipeline->normalsPipeline);
+                            *mAoPipeline->normalsPipeline);
                     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
                     cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
                     for (size_t i = 0; i < mRenderObjects.size(); ++i) {
                         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                *mSaoPipeline->normalsPipeLayout, 0,
-                                *mSaoPipeline->normalsObjects[i].descriptorSets[mFrameIndex], {});
+                                *mAoPipeline->normalsPipeLayout, 0,
+                                *mAoPipeline->normalsObjects[i].descriptorSets[mFrameIndex], {});
                         cmd.drawIndexed(mRenderObjects[i].range.indexCount, 1,
                                 mRenderObjects[i].range.firstIndex, 0, 0);
                     }
@@ -768,10 +772,10 @@ void Renderer::buildRenderGraph() {
                                            .minDepth = 0.0f,
                                            .maxDepth = 1.0f });
                     cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mSaoPipeline->saoPipeline);
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->aoPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *mSaoPipeline->saoPipeLayout, 0,
-                            *mSaoPipeline->saoDescSets[mFrameIndex], {});
+                            *mAoPipeline->aoPipeLayout, 0, *mAoPipeline->aoDescSets[mFrameIndex],
+                            {});
                     cmd.draw(3, 1, 0, 0);
                 });
 
@@ -787,10 +791,10 @@ void Renderer::buildRenderGraph() {
                                            .minDepth = 0.0f,
                                            .maxDepth = 1.0f });
                     cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mSaoPipeline->blurPipeline);
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *mSaoPipeline->blurPipeLayout, 0,
-                            *mSaoPipeline->blurDescSets[mFrameIndex][0], {});
+                            *mAoPipeline->blurPipeLayout, 0,
+                            *mAoPipeline->blurDescSets[mFrameIndex][0], {});
                     cmd.draw(3, 1, 0, 0);
                 });
 
@@ -806,10 +810,10 @@ void Renderer::buildRenderGraph() {
                                            .minDepth = 0.0f,
                                            .maxDepth = 1.0f });
                     cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mSaoPipeline->blurPipeline);
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *mSaoPipeline->blurPipeLayout, 0,
-                            *mSaoPipeline->blurDescSets[mFrameIndex][1], {});
+                            *mAoPipeline->blurPipeLayout, 0,
+                            *mAoPipeline->blurDescSets[mFrameIndex][1], {});
                     cmd.draw(3, 1, 0, 0);
                 });
     }

@@ -60,7 +60,7 @@ struct NormalsUBO {
     alignas(16) glm::vec4 pbrParams = {};
 };
 
-struct SaoPipeline {
+struct AoPipeline {
     // Single-sample depth image shared by normals prepass and AO pass
     vk::raii::Image depthImage{ nullptr };
     vk::raii::DeviceMemory depthMemory{ nullptr };
@@ -100,14 +100,14 @@ struct SaoPipeline {
     vk::raii::Sampler aoBlurSampler{ nullptr };
 
     // SAO or GTAO occlusion pipeline (shared descriptor layout and render targets)
-    vk::raii::DescriptorSetLayout saoDescLayout{ nullptr };
-    vk::raii::PipelineLayout saoPipeLayout{ nullptr };
-    vk::raii::DescriptorPool saoDescPool{ nullptr };
-    vk::raii::Pipeline saoPipeline{ nullptr };
-    std::vector<vk::raii::DescriptorSet> saoDescSets;
-    std::vector<vk::raii::Buffer> saoUboBuffers;
-    std::vector<vk::raii::DeviceMemory> saoUboMemory;
-    std::vector<void*> saoUboMapped;
+    vk::raii::DescriptorSetLayout aoDescLayout{ nullptr };
+    vk::raii::PipelineLayout aoPipeLayout{ nullptr };
+    vk::raii::DescriptorPool aoDescPool{ nullptr };
+    vk::raii::Pipeline aoPipeline{ nullptr };
+    std::vector<vk::raii::DescriptorSet> aoDescSets;
+    std::vector<vk::raii::Buffer> aoUboBuffers;
+    std::vector<vk::raii::DeviceMemory> aoUboMemory;
+    std::vector<void*> aoUboMapped;
 
     // Blur pipeline (shared for H and V passes, different UBO)
     vk::raii::DescriptorSetLayout blurDescLayout{ nullptr };
@@ -122,8 +122,8 @@ struct SaoPipeline {
 
     std::variant<SaoConfig, GtaoConfig> config;
 
-    SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg);
-    SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg);
+    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg);
+    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg);
 
     void allocateNormalsObjects(VulkanContext const& ctx, uint32_t objectCount);
     void updateNormalsUBO(uint32_t objectIndex, uint32_t frameIndex, NormalsUBO const& ubo);
@@ -134,10 +134,10 @@ struct SaoPipeline {
     [[nodiscard]] vk::Sampler finalAoSampler() const { return *aoRawSampler; }
 
 private:
-    SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
             std::variant<SaoConfig, GtaoConfig> cfg);
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
     void createNormalsPass(VulkanContext const& ctx);
-    void createSaoPass(VulkanContext const& ctx);
+    void createAoPass(VulkanContext const& ctx);
     void createBlurPass(VulkanContext const& ctx);
 };

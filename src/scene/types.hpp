@@ -32,7 +32,7 @@ enum class ShaderFeatures : uint8_t {
     NormalMap = 1 << 1,
     HardShadow = 1 << 2,
     PcfShadow = 1 << 3,
-    Sao = 1 << 4,
+    Ao = 1 << 4,
 };
 inline ShaderFeatures operator|(ShaderFeatures a, ShaderFeatures b) {
     return static_cast<ShaderFeatures>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));

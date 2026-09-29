@@ -116,7 +116,8 @@ Scene loadScene(std::string const& path) {
         auto const& gtaoJson = j["gtao"];
         GtaoConfig gtaoConfig;
         gtaoConfig.radius = gtaoJson.value("radius", gtaoConfig.radius);
-        gtaoConfig.thicknessHeuristic = gtaoJson.value("thicknessHeuristic", gtaoConfig.thicknessHeuristic);
+        gtaoConfig.thicknessHeuristic =
+                gtaoJson.value("thicknessHeuristic", gtaoConfig.thicknessHeuristic);
         gtaoConfig.power = gtaoJson.value("power", gtaoConfig.power);
         gtaoConfig.intensity = gtaoJson.value("intensity", gtaoConfig.intensity);
         gtaoConfig.stepCount = gtaoJson.value("stepCount", gtaoConfig.stepCount);

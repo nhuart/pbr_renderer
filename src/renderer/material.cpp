@@ -2,8 +2,8 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "renderer/ao_pipeline.hpp"
 #include "renderer/ibl_environment.hpp"
-#include "renderer/sao_pipeline.hpp"
 #include "renderer/shadow_pipeline.hpp"
 #include "renderer/texture_atlas.hpp"
 
@@ -55,7 +55,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         addSampler(7);                                 // shadow map
         addUbo(8, vk::ShaderStageFlagBits::eFragment); // shadow UBO
     }
-    if (hasFeature(features, ShaderFeatures::Sao)) {
+    if (hasFeature(features, ShaderFeatures::Ao)) {
         addSampler(9); // AO map
     }
 
@@ -81,7 +81,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
         samplerCount += 1;
         uboCount += 1;
     }
-    if (hasFeature(features, ShaderFeatures::Sao)) {
+    if (hasFeature(features, ShaderFeatures::Ao)) {
         samplerCount += 1;
     }
     std::vector<vk::DescriptorPoolSize> poolSizes = {
@@ -211,7 +211,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
         vk::raii::Buffer const& lightBuffer, IblEnvironment const* ibl,
         TextureAtlas const* normalMap, ShadowPipeline const* shadowMap,
-        SaoPipeline const* saoPipeline) const {
+        AoPipeline const* aoPipeline) const {
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -266,8 +266,8 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
     }
 
     vk::DescriptorImageInfo aoMapInfo;
-    if (saoPipeline) {
-        aoMapInfo = { saoPipeline->finalAoSampler(), saoPipeline->finalAoView(),
+    if (aoPipeline) {
+        aoMapInfo = { aoPipeline->finalAoSampler(), aoPipeline->finalAoView(),
             vk::ImageLayout::eShaderReadOnlyOptimal };
     }
 
@@ -305,7 +305,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
                 vk::ImageLayout::eShaderReadOnlyOptimal });
             uboInfos.push_back({ *shadowMap->fragmentUbo[i].buffer, 0, sizeof(ShadowUBO) });
         }
-        if (saoPipeline) {
+        if (aoPipeline) {
             imageInfos.push_back(aoMapInfo);
         }
 
@@ -343,7 +343,7 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
             writeSampler(7);
             writeUbo(8);
         }
-        if (saoPipeline) {
+        if (aoPipeline) {
             writeSampler(9);
         }
 
