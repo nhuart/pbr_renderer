@@ -80,7 +80,15 @@ static std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> makeUboBuffer(VulkanC
 
 
 SaoPipeline::SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg)
-        : config(cfg) {
+        : SaoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
+
+SaoPipeline::SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+        GtaoConfig const& cfg)
+        : SaoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
+
+SaoPipeline::SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+        std::variant<SaoConfig, GtaoConfig> cfg)
+        : config(std::move(cfg)) {
     createImages(ctx, swapchain.extent);
     createNormalsPass(ctx);
     createSaoPass(ctx);
@@ -106,7 +114,7 @@ void SaoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
                                                vk::ImageUsageFlagBits::eSampled |
                                                vk::ImageUsageFlagBits::eTransferSrc;
 
-    // Single-sample depth (used for normals prepass depth write + SAO depth read)
+    // Single-sample depth (used for normals prepass depth write + AO depth read)
     auto [di, dm] = createImage(depthFormat,
             vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
     depthImage = std::move(di);
@@ -149,7 +157,7 @@ void SaoPipeline::createNormalsPass(VulkanContext const& ctx) {
                 .pBindings = bindings.data(),
             });
 
-    // normalsDescPool is created (or recreated) by allocateNormalsObjects once the object count is known.
+    // normalsDescPool is created by allocateNormalsObjects once the object count is known.
 
     vk::DescriptorSetLayout dslHandle = *normalsDescLayout;
     normalsPipeLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
@@ -244,7 +252,7 @@ void SaoPipeline::createNormalsPass(VulkanContext const& ctx) {
     };
     normalsPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "SAO normals prepass pipeline: created\n";
+    std::cout << "AO normals prepass pipeline: created\n";
 }
 
 void SaoPipeline::createSaoPass(VulkanContext const& ctx) {
@@ -329,7 +337,9 @@ void SaoPipeline::createSaoPass(VulkanContext const& ctx) {
                                                          });
 
     auto vertCode = vkutil::readSpirv("shaders/compiled/fullscreen.vert.spv");
-    auto fragCode = vkutil::readSpirv("shaders/compiled/sao.frag.spv");
+    bool gtao = std::holds_alternative<GtaoConfig>(config);
+    auto fragCode = vkutil::readSpirv(
+            gtao ? "shaders/compiled/gtao.frag.spv" : "shaders/compiled/sao.frag.spv");
     auto vertMod = vkutil::createShaderModule(ctx, vertCode);
     auto fragMod = vkutil::createShaderModule(ctx, fragCode);
 
@@ -369,13 +379,14 @@ void SaoPipeline::createSaoPass(VulkanContext const& ctx) {
     };
     saoPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "SAO occlusion pipeline: created\n";
+    std::cout << (gtao ? "GTAO" : "SAO") << " occlusion pipeline: created\n";
 }
 
 
 void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
     constexpr uint32_t frameCount = MAX_FRAMES_IN_FLIGHT;
     constexpr uint32_t passesPerFrame = 2; // H + V
+    int kernelRadius = std::visit([](auto const& cfg) { return cfg.kernelRadius; }, config);
 
     // bindings: 0=BlurUBO, 1=aoSampler (depth packed in GB channels, no separate depth sampler)
     std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
@@ -421,7 +432,7 @@ void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
             BlurUBO blurUbo{
                 .passIndex = static_cast<int>(pi),
                 .farPlaneOverEdgeDistance = 0.0f, // updated each frame via updateUBOs
-                .kernelRadius = config.kernelRadius,
+                .kernelRadius = kernelRadius,
             };
             memcpy(blurUboMapped[fi][pi], &blurUbo, sizeof(blurUbo));
         }
@@ -510,7 +521,7 @@ void SaoPipeline::createBlurPass(VulkanContext const& ctx) {
     };
     blurPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "SAO blur pipeline: created\n";
+    std::cout << "AO blur pipeline: created\n";
 }
 
 
@@ -571,28 +582,48 @@ void SaoPipeline::updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::ma
         float fovYRad, float height, float nearPlane, float farPlane) {
     float projScale = (0.5f * height) / std::tan(0.5f * fovYRad);
 
-    SaoUBO saoUbo{
-        .proj = proj,
-        .invProj = glm::inverse(proj),
-        .radius = config.radius,
-        .bias = config.bias,
-        .power = config.power,
-        .intensity = config.intensity,
-        .projScale = projScale,
-        .sampleCount = config.sampleCount,
-        .spiralTurns = config.spiralTurns,
-        .nearPlane = nearPlane,
-        .farPlane = farPlane,
-    };
-    memcpy(saoUboMapped[frameIndex], &saoUbo, sizeof(saoUbo));
+    if (auto const* gtao = std::get_if<GtaoConfig>(&config)) {
+        GtaoUBO ubo{
+            .proj = proj,
+            .invProj = glm::inverse(proj),
+            .radius = gtao->radius,
+            .thicknessHeuristic = gtao->thicknessHeuristic,
+            .power = gtao->power,
+            .intensity = gtao->intensity,
+            .projScale = projScale,
+            .stepCount = gtao->stepCount,
+            .directionCount = gtao->directionCount,
+            .nearPlane = nearPlane,
+            .farPlane = farPlane,
+        };
+        memcpy(saoUboMapped[frameIndex], &ubo, sizeof(ubo));
+    } else {
+        auto const& sao = std::get<SaoConfig>(config);
+        SaoUBO ubo{
+            .proj = proj,
+            .invProj = glm::inverse(proj),
+            .radius = sao.radius,
+            .bias = sao.bias,
+            .power = sao.power,
+            .intensity = sao.intensity,
+            .projScale = projScale,
+            .sampleCount = sao.sampleCount,
+            .spiralTurns = sao.spiralTurns,
+            .nearPlane = nearPlane,
+            .farPlane = farPlane,
+        };
+        memcpy(saoUboMapped[frameIndex], &ubo, sizeof(ubo));
+    }
 
     // farPlaneOverEdgeDistance = -far / bilateralThreshold (matching Filament's convention)
-    float farPlaneOverEdge = -farPlane / config.depthThreshold;
+    float depthThreshold = std::visit([](auto const& cfg) { return cfg.depthThreshold; }, config);
+    int kernelRadius = std::visit([](auto const& cfg) { return cfg.kernelRadius; }, config);
+    float farPlaneOverEdge = -farPlane / depthThreshold;
     for (uint32_t pi = 0; pi < 2; pi++) {
         BlurUBO blurUbo{
             .passIndex = static_cast<int>(pi),
             .farPlaneOverEdgeDistance = farPlaneOverEdge,
-            .kernelRadius = config.kernelRadius,
+            .kernelRadius = kernelRadius,
         };
         memcpy(blurUboMapped[frameIndex][pi], &blurUbo, sizeof(blurUbo));
     }

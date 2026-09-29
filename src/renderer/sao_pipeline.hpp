@@ -2,6 +2,7 @@
 
 #include <array>
 #include <glm/glm.hpp>
+#include <variant>
 #include <vulkan/vulkan_raii.hpp>
 
 #include "scene/types.hpp"
@@ -24,6 +25,23 @@ struct SaoUBO {
     float pad[2];
 };
 
+// Shares the descriptor layout with SaoUBO, but uses horizon-search parameters.
+struct GtaoUBO {
+    alignas(16) glm::mat4 proj;
+    alignas(16) glm::mat4 invProj;
+    float radius;
+    float thicknessHeuristic;
+    float power;
+    float intensity;
+    float projScale;
+    int stepCount;
+    int directionCount;
+    float nearPlane;
+    float farPlane;
+    float pad[2];
+};
+static_assert(sizeof(GtaoUBO) == sizeof(SaoUBO));
+
 struct BlurUBO {
     int passIndex;
     float farPlaneOverEdgeDistance; // -far / bilateralThreshold
@@ -43,7 +61,7 @@ struct NormalsUBO {
 };
 
 struct SaoPipeline {
-    // Single-sample depth image shared by normals prepass and SAO pass
+    // Single-sample depth image shared by normals prepass and AO pass
     vk::raii::Image depthImage{ nullptr };
     vk::raii::DeviceMemory depthMemory{ nullptr };
     vk::raii::ImageView depthView{ nullptr };
@@ -69,7 +87,7 @@ struct SaoPipeline {
     };
     std::vector<NormalsObject> normalsObjects;
 
-    // Raw AO image (output of SAO occlusion pass)
+    // Raw AO image (output of the selected occlusion pass)
     vk::raii::Image aoRawImage{ nullptr };
     vk::raii::DeviceMemory aoRawMemory{ nullptr };
     vk::raii::ImageView aoRawView{ nullptr };
@@ -81,7 +99,7 @@ struct SaoPipeline {
     vk::raii::ImageView aoBlurView{ nullptr };
     vk::raii::Sampler aoBlurSampler{ nullptr };
 
-    // SAO occlusion pipeline
+    // SAO or GTAO occlusion pipeline (shared descriptor layout and render targets)
     vk::raii::DescriptorSetLayout saoDescLayout{ nullptr };
     vk::raii::PipelineLayout saoPipeLayout{ nullptr };
     vk::raii::DescriptorPool saoDescPool{ nullptr };
@@ -102,9 +120,10 @@ struct SaoPipeline {
     std::vector<std::array<vk::raii::DeviceMemory, 2>> blurUboMemory;
     std::vector<std::array<void*, 2>> blurUboMapped;
 
-    SaoConfig config;
+    std::variant<SaoConfig, GtaoConfig> config;
 
     SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg);
+    SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg);
 
     void allocateNormalsObjects(VulkanContext const& ctx, uint32_t objectCount);
     void updateNormalsUBO(uint32_t objectIndex, uint32_t frameIndex, NormalsUBO const& ubo);
@@ -115,6 +134,8 @@ struct SaoPipeline {
     [[nodiscard]] vk::Sampler finalAoSampler() const { return *aoRawSampler; }
 
 private:
+    SaoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+            std::variant<SaoConfig, GtaoConfig> cfg);
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
     void createNormalsPass(VulkanContext const& ctx);
     void createSaoPass(VulkanContext const& ctx);

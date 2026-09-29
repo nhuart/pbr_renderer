@@ -113,6 +113,17 @@ struct SaoConfig {
     float depthThreshold = 0.001f;
 };
 
+struct GtaoConfig {
+    float radius = 1.0f;
+    float thicknessHeuristic = 0.004f;
+    float power = 2.0f;
+    float intensity = 1.0f;
+    int stepCount = 3;
+    int directionCount = 4;
+    int kernelRadius = 11;
+    float depthThreshold = 0.05f;
+};
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
@@ -121,6 +132,7 @@ struct Scene {
     std::optional<std::string> iblPath;
     bool skybox = false;
     std::optional<SaoConfig> sao;
+    std::optional<GtaoConfig> gtao;
 };
 
 // ---------------------------------------------------------------------------

@@ -104,18 +104,11 @@ void Renderer::initVulkan() {
     }
 
     if (mScene.sao) {
-        auto const& s = *mScene.sao;
-        SaoConfig cfg{
-            .radius = s.radius,
-            .bias = s.bias,
-            .power = s.power,
-            .intensity = s.intensity,
-            .sampleCount = s.sampleCount,
-            .spiralTurns = s.spiralTurns,
-            .kernelRadius = s.kernelRadius,
-            .depthThreshold = s.depthThreshold,
-        };
-        mSaoPipeline.emplace(*mCtx, *mSwapchain, cfg);
+        mSaoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
+    } else if (mScene.gtao) {
+        mSaoPipeline.emplace(*mCtx, *mSwapchain, *mScene.gtao);
+    }
+    if (mSaoPipeline) {
         mSaoPipeline->allocateNormalsObjects(*mCtx,
                 static_cast<uint32_t>(mScene.meshInstances.size()));
     }
@@ -530,7 +523,7 @@ void Renderer::captureAoTextureDebug() {
     uint32_t height = mSwapchain->extent.height;
     auto slash = mScreenshotPath.rfind('/');
     std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
-                       "ao_texture.png";
+                       (mScene.gtao ? "gtao_texture.png" : "ao_texture.png");
     // Extract R (AO value) and expand to grayscale RGBA
     captureImageToPng(*mSaoPipeline->aoRawImage, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eColor, width, height, 4, path,
@@ -589,6 +582,7 @@ void Renderer::resolveShaderVariants() {
             frag += "_shadow";
         }
         if (hasSao) {
+            // The PBR AO sampler/variant is shared by SAO and GTAO.
             features = features | ShaderFeatures::Sao;
             frag += "_sao";
         }
@@ -761,7 +755,7 @@ void Renderer::buildRenderGraph() {
                     }
                 });
 
-        mRenderGraph.addPass("SaoPass")
+        mRenderGraph.addPass(mScene.gtao ? "GtaoPass" : "SaoPass")
                 .writesColor(mAoRawImageHandle)
                 .reads(mDepthPrepassImageHandle)
                 .reads(mNormalsImageHandle)
