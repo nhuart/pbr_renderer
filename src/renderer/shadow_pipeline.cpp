@@ -1,4 +1,4 @@
-#include "renderer/shadow_map.hpp"
+#include "renderer/shadow_pipeline.hpp"
 #include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
@@ -10,14 +10,15 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-ShadowMap::ShadowMap(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount) {
+ShadowPipeline::ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds,
+        uint32_t objectCount) {
     createDepthImage(ctx, cmds);
     createFragmentUboBuffers(ctx);
     createPipeline(ctx, objectCount);
     allocateObjectData(ctx, objectCount);
 }
 
-void ShadowMap::createDepthImage(VulkanContext const& ctx, CommandService const& cmds) {
+void ShadowPipeline::createDepthImage(VulkanContext const& ctx, CommandService const& cmds) {
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
     auto [depthImage, depthMemory] = vkutil::createImage(ctx, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 1,
             vk::SampleCountFlagBits::e1, depthFormat, vk::ImageTiling::eOptimal,
@@ -69,7 +70,7 @@ void ShadowMap::createDepthImage(VulkanContext const& ctx, CommandService const&
     std::ignore = ctx.device.waitForFences(*fence, vk::True, UINT64_MAX);
 }
 
-void ShadowMap::createFragmentUboBuffers(VulkanContext const& ctx) {
+void ShadowPipeline::createFragmentUboBuffers(VulkanContext const& ctx) {
     // Per-frame UBO for the fragment shader: lightSpaceTransform VP (no model matrix)
     for (int frameIndex = 0; frameIndex < MAX_FRAMES_IN_FLIGHT; ++frameIndex) {
         auto [uboBuffer, uboMemory] = vkutil::createBuffer(ctx, sizeof(ShadowUBO),
@@ -82,7 +83,7 @@ void ShadowMap::createFragmentUboBuffers(VulkanContext const& ctx) {
     }
 }
 
-void ShadowMap::createPipeline(VulkanContext const& ctx, uint32_t objectCount) {
+void ShadowPipeline::createPipeline(VulkanContext const& ctx, uint32_t objectCount) {
     // Descriptor set layout: binding 0 = per-object lightSpaceTransform UBO (vertex stage)
     std::array<vk::DescriptorSetLayoutBinding, 1> descriptorBindings{ { {
         .binding = 0,
@@ -206,7 +207,7 @@ void ShadowMap::createPipeline(VulkanContext const& ctx, uint32_t objectCount) {
     std::cout << "Shadow pipeline: created\n";
 }
 
-void ShadowMap::allocateObjectData(VulkanContext const& ctx, uint32_t objectCount) {
+void ShadowPipeline::allocateObjectData(VulkanContext const& ctx, uint32_t objectCount) {
     objects.clear();
     objects.resize(objectCount);
     for (uint32_t o = 0; o < objectCount; ++o) {
@@ -247,7 +248,7 @@ void ShadowMap::allocateObjectData(VulkanContext const& ctx, uint32_t objectCoun
     }
 }
 
-void ShadowMap::updateLightSpaceMatrix(DirectionalLight const& light) {
+void ShadowPipeline::updateLightSpaceMatrix(DirectionalLight const& light) {
     glm::vec3 dir = glm::normalize(light.direction);
     glm::vec3 up = (std::abs(dir.y) > 0.99f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
     glm::vec3 lightPos = dir * 10.0f;
@@ -259,13 +260,14 @@ void ShadowMap::updateLightSpaceMatrix(DirectionalLight const& light) {
     lightSpaceMatrix = lightProj * lightView;
 }
 
-void ShadowMap::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex, glm::mat4 const& model) {
+void ShadowPipeline::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex,
+        glm::mat4 const& model) {
     glm::mat4 mvp = lightSpaceMatrix * model;
     ShadowUBO ubo{ .lightSpaceTransform = mvp };
     memcpy(objects[objectIndex].frames[frameIndex].mapped, &ubo, sizeof(ubo));
 }
 
-void ShadowMap::updateFragmentUBO(uint32_t frameIndex) {
+void ShadowPipeline::updateFragmentUBO(uint32_t frameIndex) {
     ShadowUBO ubo{ .lightSpaceTransform = lightSpaceMatrix, .shadowBias = shadowBias };
     memcpy(fragmentUbo[frameIndex].mapped, &ubo, sizeof(ubo));
 }

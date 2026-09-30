@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PBR Renderer vs Filament</title>
+  <title>Filament Internal Comparisons</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #111; color: #eee; font-family: system-ui, sans-serif; padding: 2rem; min-height: 100vh; }
@@ -42,33 +42,30 @@
   </style>
 </head>
 <body>
-  <h1>PBR Renderer vs Filament</h1>
+  <h1>Filament Internal Comparisons</h1>
+  <p style="margin-bottom:1.5rem;font-size:0.85rem;color:#888;">See also: <a href="filament_validations.html" style="color:#aaa;">PBR Renderer vs Filament</a></p>
   <div class="grid" id="grid"></div>
 
   <script>
     const SCENES = [
-      { title: "IBL",                  left: "../standford_bunny/pbr_ibl.png",           right: "../filament/stanford_bunny_pbr_ibl.png" },
-      { title: "IBL (m=0 r=0.5)",      left: "../standford_bunny/pbr_ibl_m0_r05.png",   right: "../filament/stanford_bunny_pbr_ibl_m0_r05.png" },
-      { title: "Directional",          left: "../standford_bunny/pbr_directional.png",   right: "../filament/stanford_bunny_pbr_directional.png" },
-      { title: "Point light",          left: "../standford_bunny/pbr_point.png",         right: "../filament/stanford_bunny_pbr_point.png" },
-      { title: "Spot light",           left: "../standford_bunny/pbr_spot.png",          right: "../filament/stanford_bunny_pbr_spot.png" },
-      { title: "PCF Shadow",           left: "../standford_bunny/pbr_shadow_pcf.png",    right: "../filament/stanford_bunny_pbr_shadow_pcf.png" },
-      { title: "Normal map",           left: "../standford_bunny/pbr_normal_map.png",    right: "../filament/stanford_bunny_pbr_normal_map.png" },
-      { title: "No normal map",        left: "../standford_bunny/pbr_no_normal_map.png", right: "../filament/stanford_bunny_pbr_no_normal_map.png" },
+      { title: "SAO - GTAO",      left: "../filament/ao_texture.png",                    right: "../filament/gtao_texture.png",                     labelLeft: "SAO",    labelRight: "GTAO" },
+      { title: "SAO - GTAO",      left: "../filament/stanford_bunny_pbr_ibl_sao.png",    right: "../filament/stanford_bunny_pbr_ibl_gtao.png",       labelLeft: "SAO",    labelRight: "GTAO" },
+      { title: "GTAO - filament", left: "../filament/stanford_bunny_pbr_ibl_gtao.png",   right: "../filament/stanford_bunny_pbr_ibl_m0_r05.png",     labelLeft: "GTAO",   labelRight: "No AO" },
+      { title: "SAO - filament",  left: "../filament/stanford_bunny_pbr_ibl_sao.png",    right: "../filament/stanford_bunny_pbr_ibl_m0_r05.png",     labelLeft: "SAO",    labelRight: "No AO" },
     ];
 
-    function makeCard({ title, left, right }) {
+    function makeCard({ title, left, right, labelLeft, labelRight }) {
       const card = document.createElement('div');
       card.className = 'card';
       card.innerHTML = `
-        <div class="card-title">${title} <span>← filament · pbr_renderer →</span></div>
+        <div class="card-title">${title} <span>← ${labelLeft} · ${labelRight} →</span></div>
         <div class="compare">
-          <img src="${left}" alt="pbr_renderer" />
-          <div class="right-wrap"><img src="${right}" alt="Filament" /></div>
+          <img src="${right}" alt="${labelRight}" />
+          <div class="right-wrap"><img src="${left}" alt="${labelLeft}" /></div>
           <div class="divider"></div>
           <div class="handle"></div>
-          <span class="label label-left">Filament</span>
-          <span class="label label-right">pbr_renderer</span>
+          <span class="label label-left">${labelLeft}</span>
+          <span class="label label-right">${labelRight}</span>
         </div>`;
 
       const cmp       = card.querySelector('.compare');

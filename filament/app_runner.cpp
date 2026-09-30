@@ -30,7 +30,11 @@
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 using namespace filament;
@@ -55,8 +59,22 @@ struct App {
 static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
     app.engine = engine;
     app.names = new NameComponentManager(EntityManager::get());
-    app.materials =
-            createUbershaderProvider(engine, UBERARCHIVE_DEFAULT_DATA, UBERARCHIVE_DEFAULT_SIZE);
+    if (app.scene.disableMultiBounceAO) {
+        auto archivePath =
+                std::filesystem::path(utils::Path::getCurrentExecutable().getParent().c_str()) /
+                "ao_no_multibounce.uberz";
+        std::ifstream archiveFile(archivePath, std::ios::binary);
+        if (!archiveFile) {
+            throw std::runtime_error("Could not open AO material archive: " + archivePath.string());
+        }
+        std::vector<uint8_t> archive((std::istreambuf_iterator<char>(archiveFile)),
+                std::istreambuf_iterator<char>());
+        app.materials = createUbershaderProvider(engine, archive.data(), archive.size());
+        std::cout << "Using AO material archive: " << archivePath << std::endl;
+    } else {
+        app.materials =
+                createUbershaderProvider(engine, UBERARCHIVE_DEFAULT_DATA, UBERARCHIVE_DEFAULT_SIZE);
+    }
     app.gltfLoader = gltfio::AssetLoader::create({ engine, app.materials, app.names });
 
     ReinhardToneMapper reinhard;
@@ -66,6 +84,10 @@ static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
     view->setAntiAliasing(View::AntiAliasing::NONE);
     view->setDithering(View::Dithering::NONE);
     view->setShadowType(app.scene.shadowType);
+
+    if (app.scene.ambientOcclusion) {
+        view->setAmbientOcclusionOptions(*app.scene.ambientOcclusion);
+    }
 
     double aspect = double(app.scene.width) / double(app.scene.height);
     applyCamera(view->getCamera(), app.scene.camera, aspect);
@@ -78,6 +100,10 @@ static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
         app.ambientIndirectLight =
                 IndirectLight::Builder().irradiance(1, sh).intensity(30000.0f).build(*engine);
         scene->setIndirectLight(app.ambientIndirectLight);
+    }
+
+    if (!app.scene.showSkybox) {
+        scene->setSkybox(nullptr);
     }
 
     MeshLoaderContext ctx{ engine, app.appLoader, app.gltfLoader };
@@ -146,6 +172,12 @@ void runScene(SceneDesc scene, const char* screenshotName) {
     auto animate = [app](Engine*, View* view, double) { animateApp(*app, view); };
 
     auto postRender = [app, aspect](Engine*, View* view, Scene*, Renderer* renderer) {
+        Renderer::ClearOptions clearOpts;
+        clearOpts.clearColor = { 0.0, 0.0, 0.0, 1.0 };
+        clearOpts.clear = true;
+        clearOpts.discard = true;
+        renderer->setClearOptions(clearOpts);
+
         // Re-apply camera every frame to prevent the manipulator from overriding it.
         applyCamera(view->getCamera(), app->scene.camera, aspect);
 

@@ -28,5 +28,5 @@ cmake --build . -- -j$(nproc)
 Run from the repository root so that relative paths to models and IBL resolve correctly:
 
 ```sh
-./filament/build/filament_scene
+./filament/build/<scene>
 ```

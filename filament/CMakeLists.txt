@@ -149,9 +149,45 @@ function(add_scene target scene_header builder_fn screenshot_name)
     )
 endfunction()
 
+# Compile the glTF lit/opaque ubershader with single-bounce AO for the two AO comparisons.
+# Multi-bounce AO is a material compile option, not a View::AmbientOcclusionOptions setting.
+set(AO_MATERIAL_DIR "${CMAKE_CURRENT_BINARY_DIR}/ao_material")
+file(MAKE_DIRECTORY "${AO_MATERIAL_DIR}")
+file(READ "${FILAMENT_SRC_DIR}/libs/gltfio/materials/base.mat.in" AO_MATERIAL_SOURCE)
+string(REPLACE "specularAmbientOcclusion : simple,"
+    "specularAmbientOcclusion : simple,\n    multiBounceAmbientOcclusion : false,"
+    AO_MATERIAL_SOURCE "${AO_MATERIAL_SOURCE}")
+file(GENERATE OUTPUT "${AO_MATERIAL_DIR}/lit_opaque.mat" CONTENT "${AO_MATERIAL_SOURCE}")
+configure_file("${FILAMENT_SRC_DIR}/libs/gltfio/materials/base.spec.in"
+    "${AO_MATERIAL_DIR}/lit_opaque.spec" COPYONLY)
+
+set(AO_MATERIAL_ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/ao_no_multibounce.uberz")
+add_custom_command(
+    OUTPUT "${AO_MATERIAL_ARCHIVE}"
+    COMMAND "${FILAMENT_BUILD_DIR}/tools/matc/matc" -a opengl -a vulkan -p desktop
+        "-TCUSTOM_PARAMS=// no custom params" "-TCUSTOM_VERTEX=// no custom vertex"
+        "-TCUSTOM_FRAGMENT=// no custom fragment" -TDOUBLESIDED=false
+        -TTRANSPARENCY=default -TSHADINGMODEL=lit -TBLENDING=opaque
+        -o lit_opaque.filamat lit_opaque.mat
+    COMMAND "${FILAMENT_BUILD_DIR}/tools/uberz/uberz" -o "${AO_MATERIAL_ARCHIVE}"
+        "-TCUSTOM_PARAMS=// no custom params" "-TCUSTOM_VERTEX=// no custom vertex"
+        "-TCUSTOM_FRAGMENT=// no custom fragment" -TDOUBLESIDED=false
+        -TTRANSPARENCY=default -TSHADINGMODEL=lit -TBLENDING=opaque lit_opaque
+    DEPENDS "${AO_MATERIAL_DIR}/lit_opaque.mat" "${AO_MATERIAL_DIR}/lit_opaque.spec"
+        "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
+    WORKING_DIRECTORY "${AO_MATERIAL_DIR}"
+    COMMENT "Building glTF material archive without multi-bounce AO"
+    VERBATIM
+)
+add_custom_target(ao_no_multibounce_archive DEPENDS "${AO_MATERIAL_ARCHIVE}")
+
 # ─── scene executables ───────────────────────────────────────────────────────
 add_scene(stanford_bunny_pbr_ibl           scenes/bunny_pbr_ibl.h            buildBunnyPbrIblScene            stanford_bunny_pbr_ibl)
 add_scene(stanford_bunny_pbr_ibl_m0_r05    scenes/bunny_pbr_ibl_m0_r05.h     buildBunnyPbrIblM0R05Scene       stanford_bunny_pbr_ibl_m0_r05)
+add_scene(stanford_bunny_pbr_ibl_sao       scenes/bunny_pbr_ibl_sao.h        buildBunnyPbrIblSaoScene         stanford_bunny_pbr_ibl_sao)
+add_scene(stanford_bunny_pbr_ibl_gtao      scenes/bunny_pbr_ibl_gtao.h       buildBunnyPbrIblGtaoScene        stanford_bunny_pbr_ibl_gtao)
+add_dependencies(stanford_bunny_pbr_ibl_sao ao_no_multibounce_archive)
+add_dependencies(stanford_bunny_pbr_ibl_gtao ao_no_multibounce_archive)
 add_scene(stanford_bunny_pbr_directional   scenes/bunny_pbr_directional.h    buildBunnyPbrDirectionalScene    stanford_bunny_pbr_directional)
 add_scene(stanford_bunny_pbr_point         scenes/bunny_pbr_point.h          buildBunnyPbrPointScene          stanford_bunny_pbr_point)
 add_scene(stanford_bunny_pbr_spot          scenes/bunny_pbr_spot.h           buildBunnyPbrSpotScene           stanford_bunny_pbr_spot)

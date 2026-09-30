@@ -17,6 +17,22 @@ static glm::dvec3 dvec3FromJson(json const& j) {
 }
 
 static void validateScene(Scene const& scene, std::string const& path) {
+    if (scene.sao && scene.gtao) {
+        throw std::runtime_error("scene cannot enable both sao and gtao: " + path);
+    }
+    if (scene.gtao) {
+        auto const& g = *scene.gtao;
+        bool invalidRadius = g.radius <= 0.0f;
+        bool invalidThickness = g.thicknessHeuristic < 0.0f || g.thicknessHeuristic > 1.0f;
+        bool invalidSampling = g.stepCount < 1 || g.directionCount < 1;
+        bool invalidResponse = g.power <= 0.0f || g.intensity < 0.0f;
+        bool invalidBlur = g.kernelRadius < 0 || g.depthThreshold <= 0.0f;
+        bool invalidSettings = invalidRadius || invalidThickness || invalidSampling ||
+                               invalidResponse || invalidBlur;
+        if (invalidSettings) {
+            throw std::runtime_error("invalid gtao settings: " + path);
+        }
+    }
     auto const& camera = scene.camera;
     if (camera.radius <= 0.0) {
         throw std::runtime_error("camera.radius must be > 0: " + path);
@@ -82,6 +98,33 @@ Scene loadScene(std::string const& path) {
     }
     if (j.contains("skybox")) {
         scene.skybox = j["skybox"].get<bool>();
+    }
+    if (j.contains("sao")) {
+        auto const& saoJson = j["sao"];
+        SaoConfig saoConfig;
+        saoConfig.radius = saoJson.value("radius", saoConfig.radius);
+        saoConfig.bias = saoJson.value("bias", saoConfig.bias);
+        saoConfig.power = saoJson.value("power", saoConfig.power);
+        saoConfig.intensity = saoJson.value("intensity", saoConfig.intensity);
+        saoConfig.sampleCount = saoJson.value("sampleCount", saoConfig.sampleCount);
+        saoConfig.spiralTurns = saoJson.value("spiralTurns", saoConfig.spiralTurns);
+        saoConfig.kernelRadius = saoJson.value("kernelRadius", saoConfig.kernelRadius);
+        saoConfig.depthThreshold = saoJson.value("depthThreshold", saoConfig.depthThreshold);
+        scene.sao = saoConfig;
+    }
+    if (j.contains("gtao")) {
+        auto const& gtaoJson = j["gtao"];
+        GtaoConfig gtaoConfig;
+        gtaoConfig.radius = gtaoJson.value("radius", gtaoConfig.radius);
+        gtaoConfig.thicknessHeuristic =
+                gtaoJson.value("thicknessHeuristic", gtaoConfig.thicknessHeuristic);
+        gtaoConfig.power = gtaoJson.value("power", gtaoConfig.power);
+        gtaoConfig.intensity = gtaoJson.value("intensity", gtaoConfig.intensity);
+        gtaoConfig.stepCount = gtaoJson.value("stepCount", gtaoConfig.stepCount);
+        gtaoConfig.directionCount = gtaoJson.value("directionCount", gtaoConfig.directionCount);
+        gtaoConfig.kernelRadius = gtaoJson.value("kernelRadius", gtaoConfig.kernelRadius);
+        gtaoConfig.depthThreshold = gtaoJson.value("depthThreshold", gtaoConfig.depthThreshold);
+        scene.gtao = gtaoConfig;
     }
 
 

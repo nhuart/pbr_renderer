@@ -65,11 +65,13 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
         std::vector<vk::RenderingAttachmentInfo> colorAttachments;
         for (auto imageHandle: pass.colorWrites) {
             auto& physicalImage = mImages[imageHandle.index];
+            bool isRead = mSubsequentlyRead.count(imageHandle.index) > 0;
             vk::RenderingAttachmentInfo colorAttachmentInfo{
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .storeOp =
+                        isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
                 .clearValue = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f },
             };
             if (pass.resolveTarget.isValid()) {
@@ -85,11 +87,13 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
         bool hasDepth = pass.depthWrite.isValid();
         if (hasDepth) {
             auto& physicalImage = mImages[pass.depthWrite.index];
+            bool isRead = mSubsequentlyRead.count(pass.depthWrite.index) > 0;
             depthAttachmentInfo = {
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .storeOp =
+                        isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
                 .clearValue = vk::ClearDepthStencilValue{ 1.0f, 0 },
             };
         }
@@ -116,6 +120,13 @@ vk::Extent2D RenderGraph::extent(RenderGraphImageHandle handle) const {
 }
 
 void RenderGraph::buildBarriers() {
+    mSubsequentlyRead.clear();
+    for (auto const& pass: mPasses) {
+        for (auto imageHandle: pass.reads) {
+            mSubsequentlyRead.insert(imageHandle.index);
+        }
+    }
+
     std::vector<vk::ImageLayout> layouts(mImages.size(), vk::ImageLayout::eUndefined);
     for (size_t i = 0; i < mImages.size(); ++i) {
         layouts[i] = mImages[i].currentLayout;
@@ -145,6 +156,7 @@ void RenderGraph::buildBarriers() {
                 .srcStage = srcStage,
                 .dstStage = dstStage,
                 .aspect = physicalImage.desc.aspect,
+                .mipLevel = physicalImage.desc.mipLevel,
             });
             layouts[imageHandle.index] = newLayout;
         };
@@ -214,7 +226,7 @@ void RenderGraph::insertBarriers(vk::raii::CommandBuffer const& commandBuffer,
             .image               = barrier.image,
             .subresourceRange    = {
                 .aspectMask     = barrier.aspect,
-                .baseMipLevel   = 0,
+                .baseMipLevel   = barrier.mipLevel,
                 .levelCount     = 1,
                 .baseArrayLayer = 0,
                 .layerCount     = 1,

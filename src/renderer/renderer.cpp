@@ -1,5 +1,6 @@
 #include "renderer/renderer.hpp"
 #include "core/resource_allocator.hpp"
+#include "renderer/ao_pipeline.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -96,10 +97,20 @@ void Renderer::initVulkan() {
         uint32_t shadowCasterCount = static_cast<uint32_t>(
                 std::count_if(mScene.meshInstances.begin(), mScene.meshInstances.end(),
                         [](MeshInstance const& inst) { return inst.castShadows; }));
-        mShadowMap.emplace(*mCtx, *mCmds, shadowCasterCount);
-        mShadowMap->shadowType = shadowCastingLight->shadowType;
-        mShadowMap->shadowBias = shadowCastingLight->shadowBias;
-        mShadowMap->updateLightSpaceMatrix(*shadowCastingLight);
+        mShadowPipeline.emplace(*mCtx, *mCmds, shadowCasterCount);
+        mShadowPipeline->shadowType = shadowCastingLight->shadowType;
+        mShadowPipeline->shadowBias = shadowCastingLight->shadowBias;
+        mShadowPipeline->updateLightSpaceMatrix(*shadowCastingLight);
+    }
+
+    if (mScene.sao) {
+        mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
+    } else if (mScene.gtao) {
+        mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.gtao);
+    }
+    if (mAoPipeline) {
+        mAoPipeline->allocateNormalsObjects(*mCtx,
+                static_cast<uint32_t>(mScene.meshInstances.size()));
     }
 
     resolveShaderVariants();
@@ -128,8 +139,9 @@ void Renderer::initVulkan() {
                 hasFeature(inst.shaderFeatures, ShaderFeatures::NormalMap) ? ro.normalMap : nullptr,
                 (hasFeature(inst.shaderFeatures, ShaderFeatures::HardShadow) ||
                         hasFeature(inst.shaderFeatures, ShaderFeatures::PcfShadow))
-                        ? &*mShadowMap
-                        : nullptr);
+                        ? &*mShadowPipeline
+                        : nullptr,
+                hasFeature(inst.shaderFeatures, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
     }
 
     if (mScene.particles) {
@@ -258,20 +270,39 @@ void Renderer::updateUniforms() {
         mSkyboxPipeline->updateUBO(mFrameIndex, skyboxUbo);
     }
 
-    if (mShadowMap) {
+    if (mShadowPipeline) {
         uint32_t shadowObjIdx = 0;
         for (size_t i = 0; i < mScene.meshInstances.size(); ++i) {
             if (mScene.meshInstances[i].castShadows) {
-                mShadowMap->updateObjectUBO(shadowObjIdx++, mFrameIndex,
+                mShadowPipeline->updateObjectUBO(shadowObjIdx++, mFrameIndex,
                         mGameObjects[i].getModelMatrix());
             }
         }
-        mShadowMap->updateFragmentUBO(mFrameIndex);
+        mShadowPipeline->updateFragmentUBO(mFrameIndex);
     }
 
     if (mScene.particles) {
         ComputeUBO cubo{ .deltaTime = deltaTime };
         memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
+    }
+
+    if (mAoPipeline) {
+        float fovYRad = static_cast<float>(glm::radians(mScene.camera.fovDegrees));
+        mAoPipeline->updateUBOs(mFrameIndex, view, proj, fovYRad,
+                static_cast<float>(mSwapchain->extent.height),
+                static_cast<float>(mCamera.nearPlane), static_cast<float>(mCamera.farPlane));
+
+        for (size_t i = 0; i < mRenderObjects.size(); ++i) {
+            auto const& obj = mGameObjects[mRenderObjects[i].gameObjectIndex];
+            glm::mat4 model = obj.getModelMatrix();
+            NormalsUBO nubo{
+                .model = model,
+                .view = view,
+                .proj = proj,
+                .normalMatrix = glm::transpose(glm::inverse(model)),
+            };
+            mAoPipeline->updateNormalsUBO(static_cast<uint32_t>(i), mFrameIndex, nubo);
+        }
     }
 }
 
@@ -361,8 +392,12 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     readbackMemory.unmapMemory();
     std::cout << "Screenshot saved: " << mScreenshotPath << "\n";
 
-    if (mShadowMap) {
+    if (mShadowPipeline) {
         captureShadowMapDebug();
+    }
+    if (mAoPipeline) {
+        captureAoTextureDebug();
+        captureNormalsTextureDebug();
     }
 }
 
@@ -405,11 +440,11 @@ static std::vector<uint8_t> depthFloatsToGrayscaleRgba(float const* depthPixels,
     return rgba;
 }
 
-void Renderer::captureShadowMapDebug() {
-    constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
-    constexpr uint32_t pixelCount = shadowMapSize * shadowMapSize;
-    // Depth image is R32 float (or D32/D24) — copy as 4 bytes per pixel
-    vk::DeviceSize readbackBufferSize = vk::DeviceSize(pixelCount) * sizeof(float);
+void Renderer::captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
+        vk::ImageAspectFlags aspect, uint32_t width, uint32_t height, uint32_t bytesPerPixel,
+        std::string const& outputPath, PixelTransform transform) {
+    uint32_t pixelCount = width * height;
+    vk::DeviceSize readbackBufferSize = vk::DeviceSize(pixelCount) * bytesPerPixel;
 
     auto [readbackBuffer, readbackMemory] = vkutil::createBuffer(*mCtx, readbackBufferSize,
             vk::BufferUsageFlagBits::eTransferDst,
@@ -426,31 +461,24 @@ void Renderer::captureShadowMapDebug() {
 
     cmd.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 
-    vkutil::transitionImageLayout(cmd, *mShadowMap->image, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits2::eShaderRead,
-            vk::AccessFlagBits2::eTransferRead, vk::PipelineStageFlagBits2::eFragmentShader,
-            vk::PipelineStageFlagBits2::eTransfer, vk::ImageAspectFlagBits::eDepth);
+    vkutil::transitionImageLayout(cmd, image, currentLayout, vk::ImageLayout::eTransferSrcOptimal,
+            vk::AccessFlagBits2::eShaderRead, vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eTransfer,
+            aspect);
 
     vk::BufferImageCopy copyRegion{
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+        .imageSubresource = { .aspectMask = aspect,
             .mipLevel = 0,
             .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .imageOffset = { 0, 0, 0 },
-        .imageExtent = { shadowMapSize, shadowMapSize, 1 },
+            .layerCount = 1 },
+        .imageExtent = { width, height, 1 },
     };
-    cmd.copyImageToBuffer(*mShadowMap->image, vk::ImageLayout::eTransferSrcOptimal, *readbackBuffer,
-            copyRegion);
+    cmd.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, *readbackBuffer, copyRegion);
 
-    vkutil::transitionImageLayout(cmd, *mShadowMap->image, vk::ImageLayout::eTransferSrcOptimal,
-            vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferRead,
-            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
-            vk::PipelineStageFlagBits2::eFragmentShader, vk::ImageAspectFlagBits::eDepth);
+    vkutil::transitionImageLayout(cmd, image, vk::ImageLayout::eTransferSrcOptimal, currentLayout,
+            vk::AccessFlagBits2::eTransferRead, vk::AccessFlagBits2::eShaderRead,
+            vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eFragmentShader,
+            aspect);
 
     cmd.end();
 
@@ -460,26 +488,71 @@ void Renderer::captureShadowMapDebug() {
             vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &cmdHandle }, *fence);
     if (mCtx->device.waitForFences(*fence, vk::True, std::numeric_limits<uint64_t>::max()) !=
             vk::Result::eSuccess) {
-        throw std::runtime_error("shadow map debug capture: fence wait failed");
+        throw std::runtime_error("captureImageToPng: fence wait failed");
     }
 
-    auto* depthPixels = static_cast<float*>(readbackMemory.mapMemory(0, readbackBufferSize));
+    void* mapped = readbackMemory.mapMemory(0, readbackBufferSize);
     mCtx->device.invalidateMappedMemoryRanges(vk::MappedMemoryRange{ .memory = *readbackMemory,
         .offset = 0,
         .size = readbackBufferSize });
 
-    std::vector<uint8_t> rgba = depthFloatsToGrayscaleRgba(depthPixels, pixelCount);
+    std::vector<uint8_t> rgba;
+    if (transform) {
+        rgba = transform(mapped, pixelCount);
+    } else {
+        rgba.assign(static_cast<uint8_t const*>(mapped),
+                static_cast<uint8_t const*>(mapped) + pixelCount * 4);
+    }
     readbackMemory.unmapMemory();
 
-    // Always write to shadow_depth.png in the same directory as the screenshot
-    std::string debugPath = mScreenshotPath;
-    auto slash = debugPath.rfind('/');
-    debugPath =
-            (slash != std::string::npos ? debugPath.substr(0, slash + 1) : "") + "shadow_depth.png";
+    stbi_write_png(outputPath.c_str(), static_cast<int>(width), static_cast<int>(height), 4,
+            rgba.data(), static_cast<int>(width) * 4);
+    std::cout << outputPath << " saved\n";
+}
 
-    stbi_write_png(debugPath.c_str(), static_cast<int>(shadowMapSize),
-            static_cast<int>(shadowMapSize), 4, rgba.data(), static_cast<int>(shadowMapSize) * 4);
-    std::cout << "Shadow depth map saved: " << debugPath << "\n";
+void Renderer::captureShadowMapDebug() {
+    constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
+    auto slash = mScreenshotPath.rfind('/');
+    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
+                       "shadow_depth.png";
+    captureImageToPng(*mShadowPipeline->image, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eDepth, shadowMapSize, shadowMapSize, sizeof(float), path,
+            [](void const* data, uint32_t pixelCount) {
+                return depthFloatsToGrayscaleRgba(static_cast<float const*>(data), pixelCount);
+            });
+}
+
+void Renderer::captureAoTextureDebug() {
+    uint32_t width = mSwapchain->extent.width;
+    uint32_t height = mSwapchain->extent.height;
+    auto slash = mScreenshotPath.rfind('/');
+    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
+                       (mScene.gtao ? "gtao_texture.png" : "ao_texture.png");
+    // Extract R (AO value) and expand to grayscale RGBA
+    captureImageToPng(*mAoPipeline->aoRawImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eColor, width, height, 4, path,
+            [](void const* data, uint32_t pixelCount) {
+                auto* src = static_cast<uint8_t const*>(data);
+                std::vector<uint8_t> rgba(pixelCount * 4);
+                for (uint32_t i = 0; i < pixelCount; ++i) {
+                    uint8_t ao = src[i * 4];
+                    rgba[i * 4 + 0] = ao;
+                    rgba[i * 4 + 1] = ao;
+                    rgba[i * 4 + 2] = ao;
+                    rgba[i * 4 + 3] = 255;
+                }
+                return rgba;
+            });
+}
+
+void Renderer::captureNormalsTextureDebug() {
+    uint32_t width = mSwapchain->extent.width;
+    uint32_t height = mSwapchain->extent.height;
+    auto slash = mScreenshotPath.rfind('/');
+    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
+                       "normals_texture.png";
+    captureImageToPng(*mAoPipeline->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eColor, width, height, 4, path);
 }
 
 void Renderer::resolveShaderVariants() {
@@ -490,8 +563,9 @@ void Renderer::resolveShaderVariants() {
         }
 
         bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
-        bool hasShadow = inst.receiveShadows && mShadowMap.has_value();
-        bool hasPcf = hasShadow && mShadowMap->shadowType == ShadowType::PCF;
+        bool hasShadow = inst.receiveShadows && mShadowPipeline.has_value();
+        bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
+        bool hasAo = mAoPipeline.has_value();
 
         ShaderFeatures features = ShaderFeatures::None;
         std::string frag = "pbr";
@@ -511,6 +585,11 @@ void Renderer::resolveShaderVariants() {
             features = features | ShaderFeatures::HardShadow;
             frag += "_shadow";
         }
+        if (hasAo) {
+            // The PBR AO sampler/variant is shared by SAO and GTAO.
+            features = features | ShaderFeatures::Ao;
+            frag += "_sao";
+        }
 
         inst.resolvedFragShader = frag;
         inst.shaderFeatures = features;
@@ -520,6 +599,11 @@ void Renderer::resolveShaderVariants() {
 void Renderer::buildRenderGraph() {
     mRenderGraph = RenderGraph{};
     mShadowMapImageHandle = {};
+    mNormalsImageHandle = {};
+    mDepthPrepassImageHandle = {};
+    mDepthMipImageHandles.clear();
+    mAoRawImageHandle = {};
+    mAoBlurImageHandle = {};
 
     vk::Extent2D swapchainExtent = mSwapchain->extent;
 
@@ -555,20 +639,20 @@ void Renderer::buildRenderGraph() {
                         .samples = mCtx->msaaSamples,
                     });
 
-    if (mShadowMap) {
+    if (mShadowPipeline) {
         vk::Extent2D shadowExtent{ SHADOW_MAP_SIZE, SHADOW_MAP_SIZE };
-        mShadowMapImageHandle =
-                mRenderGraph.importImage("shadowMap", *mShadowMap->image, *mShadowMap->imageView,
-                        RenderGraphImage{
-                            .format = vkutil::findDepthFormat(*mCtx),
-                            .extent = shadowExtent,
-                            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
-                                     vk::ImageUsageFlagBits::eSampled |
-                                     vk::ImageUsageFlagBits::eTransferSrc,
-                            .aspect = vk::ImageAspectFlagBits::eDepth,
-                            .samples = vk::SampleCountFlagBits::e1,
-                        },
-                        vk::ImageLayout::eShaderReadOnlyOptimal);
+        mShadowMapImageHandle = mRenderGraph.importImage("shadowMap", *mShadowPipeline->image,
+                *mShadowPipeline->imageView,
+                RenderGraphImage{
+                    .format = vkutil::findDepthFormat(*mCtx),
+                    .extent = shadowExtent,
+                    .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                             vk::ImageUsageFlagBits::eSampled |
+                             vk::ImageUsageFlagBits::eTransferSrc,
+                    .aspect = vk::ImageAspectFlagBits::eDepth,
+                    .samples = vk::SampleCountFlagBits::e1,
+                },
+                vk::ImageLayout::eShaderReadOnlyOptimal);
 
         mRenderGraph.addPass("ShadowPass")
                 .writesDepth(mShadowMapImageHandle)
@@ -583,7 +667,7 @@ void Renderer::buildRenderGraph() {
                                        });
                     cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 },
                                           .extent = { SHADOW_MAP_SIZE, SHADOW_MAP_SIZE } });
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mShadowMap->pipeline);
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mShadowPipeline->pipeline);
                     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
                     cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
                     uint32_t shadowObjIdx = 0;
@@ -593,12 +677,192 @@ void Renderer::buildRenderGraph() {
                             continue;
                         }
                         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                *mShadowMap->pipelineLayout, 0,
-                                *mShadowMap->objects[shadowObjIdx].descriptorSets[mFrameIndex], {});
+                                *mShadowPipeline->pipelineLayout, 0,
+                                *mShadowPipeline->objects[shadowObjIdx].descriptorSets[mFrameIndex],
+                                {});
                         cmd.drawIndexed(mRenderObjects[i].range.indexCount, 1,
                                 mRenderObjects[i].range.firstIndex, 0, 0);
                         ++shadowObjIdx;
                     }
+                });
+    }
+
+    if (mAoPipeline) {
+        vk::Format depthFmt = vkutil::findDepthFormat(*mCtx);
+
+        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass", *mAoPipeline->normalsImage,
+                *mAoPipeline->normalsView,
+                RenderGraphImage{
+                    .format = vk::Format::eR8G8B8A8Unorm,
+                    .extent = swapchainExtent,
+                    .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                             vk::ImageUsageFlagBits::eSampled,
+                    .aspect = vk::ImageAspectFlagBits::eColor,
+                    .samples = vk::SampleCountFlagBits::e1,
+                });
+
+        mDepthPrepassImageHandle = mRenderGraph.importImage("depthPrepass",
+                *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[0],
+                RenderGraphImage{
+                    .format = depthFmt,
+                    .extent = swapchainExtent,
+                    .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                             vk::ImageUsageFlagBits::eSampled,
+                    .aspect = vk::ImageAspectFlagBits::eDepth,
+                    .samples = vk::SampleCountFlagBits::e1,
+                });
+
+        mAoRawImageHandle =
+                mRenderGraph.importImage("aoRaw", *mAoPipeline->aoRawImage, *mAoPipeline->aoRawView,
+                        RenderGraphImage{
+                            .format = vk::Format::eR8Unorm,
+                            .extent = swapchainExtent,
+                            .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                                     vk::ImageUsageFlagBits::eSampled |
+                                     vk::ImageUsageFlagBits::eTransferSrc,
+                            .aspect = vk::ImageAspectFlagBits::eColor,
+                            .samples = vk::SampleCountFlagBits::e1,
+                        });
+
+        mAoBlurImageHandle = mRenderGraph.importImage("aoBlur", *mAoPipeline->aoBlurImage,
+                *mAoPipeline->aoBlurView,
+                RenderGraphImage{
+                    .format = vk::Format::eR8Unorm,
+                    .extent = swapchainExtent,
+                    .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                             vk::ImageUsageFlagBits::eSampled,
+                    .aspect = vk::ImageAspectFlagBits::eColor,
+                    .samples = vk::SampleCountFlagBits::e1,
+                });
+
+        mRenderGraph.addPass("NormalsPrepass")
+                .writesColor(mNormalsImageHandle)
+                .writesDepth(mDepthPrepassImageHandle)
+                .execute([this](vk::raii::CommandBuffer const& cmd) {
+                    vk::Extent2D ext = mSwapchain->extent;
+                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
+                                           .y = 0.0f,
+                                           .width = static_cast<float>(ext.width),
+                                           .height = static_cast<float>(ext.height),
+                                           .minDepth = 0.0f,
+                                           .maxDepth = 1.0f });
+                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                            *mAoPipeline->normalsPipeline);
+                    cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
+                    cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
+                    for (size_t i = 0; i < mRenderObjects.size(); ++i) {
+                        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                *mAoPipeline->normalsPipeLayout, 0,
+                                *mAoPipeline->normalsObjects[i].descriptorSets[mFrameIndex], {});
+                        cmd.drawIndexed(mRenderObjects[i].range.indexCount, 1,
+                                mRenderObjects[i].range.firstIndex, 0, 0);
+                    }
+                });
+
+        if (mScene.sao) {
+            mDepthMipImageHandles.push_back(mDepthPrepassImageHandle);
+            for (uint32_t level = 1; level < mAoPipeline->depthMipLevelCount; ++level) {
+                vk::Extent2D mipExtent{
+                    std::max(1u, swapchainExtent.width >> level),
+                    std::max(1u, swapchainExtent.height >> level),
+                };
+                auto mipHandle = mRenderGraph.importImage("depthMip" + std::to_string(level),
+                        *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[level],
+                        RenderGraphImage{
+                            .format = depthFmt,
+                            .extent = mipExtent,
+                            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                                     vk::ImageUsageFlagBits::eSampled,
+                            .aspect = vk::ImageAspectFlagBits::eDepth,
+                            .samples = vk::SampleCountFlagBits::e1,
+                            .mipLevel = level,
+                        });
+                mDepthMipImageHandles.push_back(mipHandle);
+                mRenderGraph.addPass("DepthMip" + std::to_string(level))
+                        .reads(mDepthMipImageHandles[level - 1])
+                        .writesDepth(mipHandle)
+                        .execute([this, level, mipExtent](vk::raii::CommandBuffer const& cmd) {
+                            cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
+                                                   .y = 0.0f,
+                                                   .width = static_cast<float>(mipExtent.width),
+                                                   .height = static_cast<float>(mipExtent.height),
+                                                   .minDepth = 0.0f,
+                                                   .maxDepth = 1.0f });
+                            cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = mipExtent });
+                            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                    *mAoPipeline->depthMipPipeline);
+                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                    *mAoPipeline->depthMipPipeLayout, 0,
+                                    *mAoPipeline->depthMipDescSets[level - 1], {});
+                            cmd.draw(3, 1, 0, 0);
+                        });
+            }
+        }
+
+        mRenderGraph.addPass(mScene.gtao ? "GtaoPass" : "SaoPass")
+                .writesColor(mAoRawImageHandle)
+                .reads(mDepthPrepassImageHandle)
+                .reads(mNormalsImageHandle)
+                .execute([this](vk::raii::CommandBuffer const& cmd) {
+                    vk::Extent2D ext = mSwapchain->extent;
+                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
+                                           .y = 0.0f,
+                                           .width = static_cast<float>(ext.width),
+                                           .height = static_cast<float>(ext.height),
+                                           .minDepth = 0.0f,
+                                           .maxDepth = 1.0f });
+                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->aoPipeline);
+                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                            *mAoPipeline->aoPipeLayout, 0, *mAoPipeline->aoDescSets[mFrameIndex],
+                            {});
+                    cmd.draw(3, 1, 0, 0);
+                });
+
+        // The SAO shader samples every mip through the full-range depth view.
+        if (mScene.sao) {
+            for (size_t level = 1; level < mDepthMipImageHandles.size(); ++level) {
+                mRenderGraph.reads(mDepthMipImageHandles[level]);
+            }
+        }
+
+        mRenderGraph.addPass("BlurH")
+                .writesColor(mAoBlurImageHandle)
+                .reads(mAoRawImageHandle)
+                .execute([this](vk::raii::CommandBuffer const& cmd) {
+                    vk::Extent2D ext = mSwapchain->extent;
+                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
+                                           .y = 0.0f,
+                                           .width = static_cast<float>(ext.width),
+                                           .height = static_cast<float>(ext.height),
+                                           .minDepth = 0.0f,
+                                           .maxDepth = 1.0f });
+                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
+                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                            *mAoPipeline->blurPipeLayout, 0,
+                            *mAoPipeline->blurDescSets[mFrameIndex][0], {});
+                    cmd.draw(3, 1, 0, 0);
+                });
+
+        mRenderGraph.addPass("BlurV")
+                .writesColor(mAoRawImageHandle)
+                .reads(mAoBlurImageHandle)
+                .execute([this](vk::raii::CommandBuffer const& cmd) {
+                    vk::Extent2D ext = mSwapchain->extent;
+                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
+                                           .y = 0.0f,
+                                           .width = static_cast<float>(ext.width),
+                                           .height = static_cast<float>(ext.height),
+                                           .minDepth = 0.0f,
+                                           .maxDepth = 1.0f });
+                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
+                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                            *mAoPipeline->blurPipeLayout, 0,
+                            *mAoPipeline->blurDescSets[mFrameIndex][1], {});
+                    cmd.draw(3, 1, 0, 0);
                 });
     }
 
@@ -608,6 +872,9 @@ void Renderer::buildRenderGraph() {
                                 .writesDepth(depthImage);
     if (mShadowMapImageHandle.isValid()) {
         forwardPass.reads(mShadowMapImageHandle);
+    }
+    if (mAoRawImageHandle.isValid()) {
+        forwardPass.reads(mAoRawImageHandle);
     }
     forwardPass.execute([this](vk::raii::CommandBuffer const& commandBuffer) {
         vk::Extent2D drawExtent = mSwapchain->extent;

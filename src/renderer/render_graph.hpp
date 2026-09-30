@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -20,6 +21,7 @@ struct RenderGraphImage {
     vk::ImageUsageFlags usage;
     vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor;
     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
+    uint32_t mipLevel = 0;
 };
 
 struct RenderGraphBarrier {
@@ -32,6 +34,7 @@ struct RenderGraphBarrier {
     vk::PipelineStageFlags2 srcStage{};
     vk::PipelineStageFlags2 dstStage{};
     vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor;
+    uint32_t mipLevel = 0;
 };
 
 struct RenderGraphPass {
@@ -77,6 +80,9 @@ public:
 private:
     std::vector<RenderGraphPhysicalImage> mImages;
     std::vector<RenderGraphPass> mPasses;
+    // image indices read by any pass after they are written
+    // use this set to determine which images the gpu needs to keep in memory between passes
+    std::unordered_set<uint32_t> mSubsequentlyRead;
 
     void buildBarriers();
 
