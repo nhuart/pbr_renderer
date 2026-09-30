@@ -110,9 +110,10 @@ src/
 - [ ] Add glTF `metallicRoughnessTexture` support: G=roughness, B=metallic, sampled in `pbr.frag` via a new `ShaderFeatures::MetallicRoughnessMap` flag, falling back to scalar `pbrParams` when absent.
 - [ ] Add glTF `emissiveTexture` + `emissiveFactor` support: bind under `ShaderFeatures::Emissive`, add `emissiveFactor * texture(emissiveSampler, uv).rgb` to final color before tone mapping.
 - [ ] Add glTF `occlusionTexture` support: R channel of the metallic-roughness image, multiply ambient/IBL term by the AO value in `pbr.frag`.
+- [ ] Add multi-bounce AO to `pbr.frag`: replace `ambient *= ao` with Filament's color-aware `gtaoMultiBounce` approximation for diffuse IBL, and handle specular IBL occlusion separately instead of applying the same AO factor to both.
+- [ ] Enable bent normals in GTAO: output the bent-normal direction alongside AO visibility and use it for specular ambient occlusion, as in Filament's `bentNormals` mode.
 - [ ] Switch SAO normals from the view-space normals prepass to depth-derived reconstruction (Yuwen Wu method, 8 samples like Filament's `computeViewSpaceNormalHighQ`). Blocker: requires reversed-Z depth (near=1, far=0) to avoid banding — flip depth compare op to `eGreater`, update `linearizeDepth`, set clear value to 0.0f.
 - [ ] Add transparency: alpha blending (src-alpha / one-minus-src-alpha, depth write off) when `alphaMode == BLEND`, sort transparent objects back-to-front, add `ShaderFeatures::Blend`.
 - [ ] Add screen-space refraction: mipmap opaque color buffer after the opaque pass, sample it in a second pass using a Snell's Law refracted UV offset, use roughness to select LOD.
 - [ ] Replace the skybox pass-through check in `sao_blur.frag` (`center.g * center.b >= 0.9999`) with Filament's implicit approach: store raw view-space Z in GB channels so skybox pixels are naturally rejected by the bilateral weight without a special-case branch.
 - [ ] Extend shadow mapping to spot lights (perspective projection, spot cone FOV) and point lights (cubemap: 6 depth passes, `vk::ImageViewType::eCube`, direction-vector sampling). Requires one `ShadowPipeline` per shadow-casting light and a shadow atlas or array binding.
-

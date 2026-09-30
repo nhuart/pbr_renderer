@@ -10,6 +10,7 @@ inline SceneDesc buildBunnyPbrIblGtaoScene() {
     sceneDesc.title = "Stanford Bunny - PBR IBL GTAO";
     sceneDesc.iblDir = "ibl/tree_lined_driveway_4k";
     sceneDesc.camera.eye = { 2.143304f, 1.750000f, 2.143304f };
+    sceneDesc.disableMultiBounceAO = true;
     sceneDesc.ambientOcclusion = filament::View::AmbientOcclusionOptions{
         .aoType = filament::View::AmbientOcclusionOptions::AmbientOcclusionType::GTAO,
         .radius = 1.0f,

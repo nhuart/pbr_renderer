@@ -21,6 +21,7 @@ struct SceneDesc {
     float ambientIntensity = 0.0f;
     filament::ShadowType shadowType = filament::ShadowType::PCF;
     std::optional<filament::View::AmbientOcclusionOptions> ambientOcclusion;
+    bool disableMultiBounceAO = false;
     std::vector<MeshEntry> meshes;
     bool showSkybox = true;
 };
