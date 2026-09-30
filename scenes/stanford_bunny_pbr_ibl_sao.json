@@ -5,11 +5,11 @@
     "sao": {
         "radius": 1.0,
         "bias": 0.004,
-        "power": 1.0,
+        "power": 0.75,
         "intensity": 1.0,
         "sampleCount": 16,
         "spiralTurns": 7,
-        "kernelRadius": 10,
+        "kernelRadius": 5,
         "depthThreshold": 0.05
     },
     "camera": {

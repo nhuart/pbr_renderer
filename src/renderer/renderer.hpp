@@ -64,6 +64,7 @@ private:
     RenderGraphImageHandle mAoRawImageHandle{};
     RenderGraphImageHandle mAoBlurImageHandle{};
     RenderGraphImageHandle mDepthPrepassImageHandle{};
+    std::vector<RenderGraphImageHandle> mDepthMipImageHandles;
     std::vector<GameObject> mGameObjects;
     std::vector<RenderObject> mRenderObjects;
 

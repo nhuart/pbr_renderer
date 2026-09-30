@@ -4,7 +4,9 @@
 #include "core/swapchain.hpp"
 #include "scene/types.hpp"
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -14,7 +16,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 
-static vk::raii::Sampler makeNearestSampler(VulkanContext const& ctx) {
+static vk::raii::Sampler makeNearestSampler(VulkanContext const& ctx, uint32_t mipLevels = 1) {
     return vk::raii::Sampler(ctx.device, vk::SamplerCreateInfo{
                                              .magFilter = vk::Filter::eNearest,
                                              .minFilter = vk::Filter::eNearest,
@@ -23,7 +25,7 @@ static vk::raii::Sampler makeNearestSampler(VulkanContext const& ctx) {
                                              .addressModeV = vk::SamplerAddressMode::eClampToEdge,
                                              .addressModeW = vk::SamplerAddressMode::eClampToEdge,
                                              .minLod = 0.0f,
-                                             .maxLod = 0.0f,
+                                             .maxLod = static_cast<float>(mipLevels - 1),
                                          });
 }
 
@@ -90,6 +92,9 @@ AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
         : config(std::move(cfg)) {
     createImages(ctx, swapchain.extent);
     createNormalsPass(ctx);
+    if (depthMipLevelCount > 1) {
+        createDepthMipPass(ctx);
+    }
     createAoPass(ctx);
     createBlurPass(ctx);
 }
@@ -113,14 +118,32 @@ void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
                                                vk::ImageUsageFlagBits::eSampled |
                                                vk::ImageUsageFlagBits::eTransferSrc;
 
-    // Single-sample depth (used for normals prepass depth write + AO depth read)
-    auto [di, dm] = createImage(depthFormat,
-            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
+    // Match Filament's min(8, maxLevelCount(width, height) - 5), with dimensions
+    // clamped to at least 32 pixels as in its structure pass.
+    if (std::holds_alternative<SaoConfig>(config)) {
+        uint32_t largestDimension = std::max({ 32u, extent.width, extent.height });
+        depthMipLevelCount = std::min(8, std::bit_width(largestDimension) - 5);
+    }
+
+    auto [di, dm] = vkutil::createImage(ctx, extent.width, extent.height, depthMipLevelCount,
+            vk::SampleCountFlagBits::e1, depthFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
     depthImage = std::move(di);
     depthMemory = std::move(dm);
-    depthView =
-            vkutil::createImageView(ctx, *depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
-    depthSampler = makeNearestSampler(ctx);
+    depthView = vkutil::createImageView(ctx, *depthImage, depthFormat,
+            vk::ImageAspectFlagBits::eDepth, depthMipLevelCount);
+    depthMipViews.reserve(depthMipLevelCount);
+    for (uint32_t level = 0; level < depthMipLevelCount; ++level) {
+        depthMipViews.emplace_back(ctx.device,
+                vk::ImageViewCreateInfo{
+                    .image = *depthImage,
+                    .viewType = vk::ImageViewType::e2D,
+                    .format = depthFormat,
+                    .subresourceRange = { vk::ImageAspectFlagBits::eDepth, level, 1, 0, 1 },
+                });
+    }
+    depthSampler = makeNearestSampler(ctx, depthMipLevelCount);
 
     auto [ni, nm] = createImage(normalsFormat, colorUsage);
     normalsImage = std::move(ni);
@@ -252,6 +275,97 @@ void AoPipeline::createNormalsPass(VulkanContext const& ctx) {
     normalsPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
     std::cout << "AO normals prepass pipeline: created\n";
+}
+
+void AoPipeline::createDepthMipPass(VulkanContext const& ctx) {
+    vk::DescriptorSetLayoutBinding binding{ 0, vk::DescriptorType::eCombinedImageSampler, 1,
+        vk::ShaderStageFlagBits::eFragment };
+    depthMipDescLayout = vk::raii::DescriptorSetLayout(ctx.device,
+            vk::DescriptorSetLayoutCreateInfo{ .bindingCount = 1, .pBindings = &binding });
+
+    uint32_t mipPassCount = depthMipLevelCount - 1;
+    vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler, mipPassCount };
+    depthMipDescPool = vk::raii::DescriptorPool(ctx.device,
+            vk::DescriptorPoolCreateInfo{
+                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                .maxSets = mipPassCount,
+                .poolSizeCount = 1,
+                .pPoolSizes = &poolSize,
+            });
+
+    std::vector<vk::DescriptorSetLayout> layouts(mipPassCount, *depthMipDescLayout);
+    auto sets = vk::raii::DescriptorSets(ctx.device, vk::DescriptorSetAllocateInfo{
+                                                         .descriptorPool = *depthMipDescPool,
+                                                         .descriptorSetCount = mipPassCount,
+                                                         .pSetLayouts = layouts.data(),
+                                                     });
+    for (uint32_t level = 1; level < depthMipLevelCount; ++level) {
+        vk::DescriptorImageInfo previousMip{
+            .sampler = *depthSampler,
+            .imageView = *depthMipViews[level - 1],
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+        ctx.device.updateDescriptorSets(
+                vk::WriteDescriptorSet{
+                    .dstSet = *sets[level - 1],
+                    .dstBinding = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                    .pImageInfo = &previousMip,
+                },
+                {});
+        depthMipDescSets.push_back(std::move(sets[level - 1]));
+    }
+
+    vk::DescriptorSetLayout layout = *depthMipDescLayout;
+    depthMipPipeLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
+                                                                  .setLayoutCount = 1,
+                                                                  .pSetLayouts = &layout,
+                                                              });
+
+    auto vertMod = vkutil::createShaderModule(ctx,
+            vkutil::readSpirv("shaders/compiled/fullscreen.vert.spv"));
+    auto fragMod = vkutil::createShaderModule(ctx,
+            vkutil::readSpirv("shaders/compiled/sao_depth_mip.frag.spv"));
+    std::array stages = {
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex,
+            .module = *vertMod,
+            .pName = "main",
+        },
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = *fragMod,
+            .pName = "main",
+        },
+    };
+    auto ps = makeFullscreenPipelineState();
+    ps.cbInfo.attachmentCount = 0;
+    ps.cbInfo.pAttachments = nullptr;
+    vk::PipelineDepthStencilStateCreateInfo depthState{
+        .depthTestEnable = vk::True,
+        .depthWriteEnable = vk::True,
+        .depthCompareOp = vk::CompareOp::eAlways,
+    };
+    vk::Format depthFormat = vkutil::findDepthFormat(ctx);
+    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+        {
+            .stageCount = static_cast<uint32_t>(stages.size()),
+            .pStages = stages.data(),
+            .pVertexInputState = &ps.vertexInputInfo,
+            .pInputAssemblyState = &ps.iaInfo,
+            .pViewportState = &ps.vpInfo,
+            .pRasterizationState = &ps.rsInfo,
+            .pMultisampleState = &ps.msInfo,
+            .pDepthStencilState = &depthState,
+            .pColorBlendState = &ps.cbInfo,
+            .pDynamicState = &ps.dynInfo,
+            .layout = *depthMipPipeLayout,
+        },
+        { .depthAttachmentFormat = depthFormat },
+    };
+    depthMipPipeline =
+            vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 void AoPipeline::createAoPass(VulkanContext const& ctx) {
@@ -386,6 +500,7 @@ void AoPipeline::createBlurPass(VulkanContext const& ctx) {
     constexpr uint32_t frameCount = MAX_FRAMES_IN_FLIGHT;
     constexpr uint32_t passesPerFrame = 2; // H + V
     int kernelRadius = std::visit([](auto const& cfg) { return cfg.kernelRadius; }, config);
+    int sampleStride = std::holds_alternative<SaoConfig>(config) ? 2 : 1;
 
     // bindings: 0=BlurUBO, 1=aoSampler (depth packed in GB channels, no separate depth sampler)
     std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
@@ -432,6 +547,7 @@ void AoPipeline::createBlurPass(VulkanContext const& ctx) {
                 .passIndex = static_cast<int>(pi),
                 .farPlaneOverEdgeDistance = 0.0f, // updated each frame via updateUBOs
                 .kernelRadius = kernelRadius,
+                .sampleStride = sampleStride,
             };
             memcpy(blurUboMapped[fi][pi], &blurUbo, sizeof(blurUbo));
         }
@@ -610,6 +726,7 @@ void AoPipeline::updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::mat
             .spiralTurns = sao.spiralTurns,
             .nearPlane = nearPlane,
             .farPlane = farPlane,
+            .maxLevel = static_cast<int>(depthMipLevelCount - 1),
         };
         memcpy(aoUboMapped[frameIndex], &ubo, sizeof(ubo));
     }
@@ -617,12 +734,14 @@ void AoPipeline::updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::mat
     // farPlaneOverEdgeDistance = -far / bilateralThreshold (matching Filament's convention)
     float depthThreshold = std::visit([](auto const& cfg) { return cfg.depthThreshold; }, config);
     int kernelRadius = std::visit([](auto const& cfg) { return cfg.kernelRadius; }, config);
+    int sampleStride = std::holds_alternative<SaoConfig>(config) ? 2 : 1;
     float farPlaneOverEdge = -farPlane / depthThreshold;
     for (uint32_t pi = 0; pi < 2; pi++) {
         BlurUBO blurUbo{
             .passIndex = static_cast<int>(pi),
             .farPlaneOverEdgeDistance = farPlaneOverEdge,
             .kernelRadius = kernelRadius,
+            .sampleStride = sampleStride,
         };
         memcpy(blurUboMapped[frameIndex][pi], &blurUbo, sizeof(blurUbo));
     }

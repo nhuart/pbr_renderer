@@ -109,7 +109,7 @@ struct SaoConfig {
     float intensity = 1.0f;
     int sampleCount = 16;
     int spiralTurns = 7;
-    int kernelRadius = 4;
+    int kernelRadius = 5;
     float depthThreshold = 0.001f;
 };
 

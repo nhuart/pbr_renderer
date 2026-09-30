@@ -50,6 +50,7 @@ set(SHADER_SOURCES
     shaders/fullscreen.vert
     shaders/view_space_normals.frag
     shaders/sao.frag
+    shaders/sao_depth_mip.frag
     shaders/gtao.frag
     shaders/sao_blur.frag
 )

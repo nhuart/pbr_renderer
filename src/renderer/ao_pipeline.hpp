@@ -22,7 +22,8 @@ struct SaoUBO {
     int spiralTurns;
     float nearPlane;
     float farPlane;
-    float pad[2];
+    int maxLevel;
+    float pad;
 };
 
 // Shares the descriptor layout with SaoUBO, but uses horizon-search parameters.
@@ -46,7 +47,7 @@ struct BlurUBO {
     int passIndex;
     float farPlaneOverEdgeDistance; // -far / bilateralThreshold
     int kernelRadius;
-    float pad;
+    int sampleStride;
 };
 
 // NormalsUBO mirrors UniformBufferObject so view_space_normals.frag works with standard.vert
@@ -62,10 +63,20 @@ struct NormalsUBO {
 
 struct AoPipeline {
     // Single-sample depth image shared by normals prepass and AO pass
+    uint32_t depthMipLevelCount = 1;
     vk::raii::Image depthImage{ nullptr };
     vk::raii::DeviceMemory depthMemory{ nullptr };
+    // Full-range view for AO sampling; per-mip views for the prepass and downsampling.
     vk::raii::ImageView depthView{ nullptr };
+    std::vector<vk::raii::ImageView> depthMipViews; // individual mips for rendering
     vk::raii::Sampler depthSampler{ nullptr };
+
+    // SAO depth pyramid: rotated-grid sub-sampling of the preceding mip.
+    vk::raii::DescriptorSetLayout depthMipDescLayout{ nullptr };
+    vk::raii::PipelineLayout depthMipPipeLayout{ nullptr };
+    vk::raii::DescriptorPool depthMipDescPool{ nullptr };
+    vk::raii::Pipeline depthMipPipeline{ nullptr };
+    std::vector<vk::raii::DescriptorSet> depthMipDescSets;
 
     // Normals prepass (writes view-space normals)
     vk::raii::Image normalsImage{ nullptr };
@@ -138,6 +149,7 @@ private:
             std::variant<SaoConfig, GtaoConfig> cfg);
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
     void createNormalsPass(VulkanContext const& ctx);
+    void createDepthMipPass(VulkanContext const& ctx);
     void createAoPass(VulkanContext const& ctx);
     void createBlurPass(VulkanContext const& ctx);
 };

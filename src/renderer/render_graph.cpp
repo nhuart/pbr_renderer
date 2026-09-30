@@ -156,6 +156,7 @@ void RenderGraph::buildBarriers() {
                 .srcStage = srcStage,
                 .dstStage = dstStage,
                 .aspect = physicalImage.desc.aspect,
+                .mipLevel = physicalImage.desc.mipLevel,
             });
             layouts[imageHandle.index] = newLayout;
         };
@@ -225,7 +226,7 @@ void RenderGraph::insertBarriers(vk::raii::CommandBuffer const& commandBuffer,
             .image               = barrier.image,
             .subresourceRange    = {
                 .aspectMask     = barrier.aspect,
-                .baseMipLevel   = 0,
+                .baseMipLevel   = barrier.mipLevel,
                 .levelCount     = 1,
                 .baseArrayLayer = 0,
                 .layerCount     = 1,

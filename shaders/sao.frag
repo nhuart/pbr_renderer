@@ -13,7 +13,8 @@ layout(binding = 0) uniform SaoUBO {
     int   spiralTurns;
     float nearPlane;
     float farPlane;
-    float pad[2];
+    int   maxLevel;
+    float pad;
 } ubo;
 
 layout(binding = 1) uniform sampler2D depthSampler;
@@ -30,8 +31,8 @@ vec3 reconstructViewPosition(vec2 screenUV, float deviceDepth) {
     return viewPosition.xyz / viewPosition.w;
 }
 
-float readDeviceDepth(vec2 screenUV) {
-    return texture(depthSampler, screenUV).r;
+float readDeviceDepth(vec2 screenUV, float mipLevel) {
+    return textureLod(depthSampler, screenUV, mipLevel).r;
 }
 
 // Normalize linear view depth to [0, 1] for depth-aware blurring.
@@ -62,7 +63,7 @@ void main() {
     vec2 depthTextureSize = vec2(textureSize(depthSampler, 0));
     vec2 pixelCoord = inUV * depthTextureSize;
 
-    float centerDeviceDepth = readDeviceDepth(inUV);
+    float centerDeviceDepth = readDeviceDepth(inUV, 0.0);
     float centerLinearDepth = normalizedLinearDepth(centerDeviceDepth);
     vec2 packedDepth = packLinearDepth(centerLinearDepth);
 
@@ -96,11 +97,12 @@ void main() {
     float weightedOcclusionSum = 0.0;
     for (int sampleIndex = 0; sampleIndex < ubo.sampleCount; sampleIndex++) {
         float sampleFraction = (float(sampleIndex) + sampleJitter + 0.5) * inverseSampleCount;
-        float spiralAngle = sampleFraction * float(ubo.spiralTurns) * 2.0 * PI +
+        // Filament jitters the radius, but advances the angle by a fixed amount per tap.
+        float spiralAngle = float(sampleIndex) * inverseSampleCount * float(ubo.spiralTurns) * 2.0 * PI +
                             spiralRotation;
 
         vec2 sampleDirection = vec2(cos(spiralAngle), sin(spiralAngle));
-        float sampleDistancePixels = sampleFraction * sampleFraction * screenRadiusPixels;
+        float sampleDistancePixels = max(1.0, sampleFraction * sampleFraction * screenRadiusPixels);
         vec2 sampleUV = inUV + sampleDistancePixels * sampleDirection / depthTextureSize;
 
         if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
@@ -108,7 +110,10 @@ void main() {
             continue;
         }
 
-        float sampleDeviceDepth = readDeviceDepth(sampleUV);
+        // Distant taps read coarser depth, matching Filament's structure pass.
+        float mipLevel = clamp(floor(log2(sampleDistancePixels)) - 3.0, 0.0,
+                               float(ubo.maxLevel));
+        float sampleDeviceDepth = readDeviceDepth(sampleUV, mipLevel);
         vec3 samplePosition = reconstructViewPosition(sampleUV, sampleDeviceDepth);
 
         vec3 toSample = samplePosition - centerPosition;

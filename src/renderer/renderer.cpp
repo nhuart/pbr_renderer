@@ -601,6 +601,7 @@ void Renderer::buildRenderGraph() {
     mShadowMapImageHandle = {};
     mNormalsImageHandle = {};
     mDepthPrepassImageHandle = {};
+    mDepthMipImageHandles.clear();
     mAoRawImageHandle = {};
     mAoBlurImageHandle = {};
 
@@ -701,7 +702,7 @@ void Renderer::buildRenderGraph() {
                 });
 
         mDepthPrepassImageHandle = mRenderGraph.importImage("depthPrepass",
-                *mAoPipeline->depthImage, *mAoPipeline->depthView,
+                *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[0],
                 RenderGraphImage{
                     .format = depthFmt,
                     .extent = swapchainExtent,
@@ -759,6 +760,46 @@ void Renderer::buildRenderGraph() {
                     }
                 });
 
+        if (mScene.sao) {
+            mDepthMipImageHandles.push_back(mDepthPrepassImageHandle);
+            for (uint32_t level = 1; level < mAoPipeline->depthMipLevelCount; ++level) {
+                vk::Extent2D mipExtent{
+                    std::max(1u, swapchainExtent.width >> level),
+                    std::max(1u, swapchainExtent.height >> level),
+                };
+                auto mipHandle = mRenderGraph.importImage("depthMip" + std::to_string(level),
+                        *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[level],
+                        RenderGraphImage{
+                            .format = depthFmt,
+                            .extent = mipExtent,
+                            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                                     vk::ImageUsageFlagBits::eSampled,
+                            .aspect = vk::ImageAspectFlagBits::eDepth,
+                            .samples = vk::SampleCountFlagBits::e1,
+                            .mipLevel = level,
+                        });
+                mDepthMipImageHandles.push_back(mipHandle);
+                mRenderGraph.addPass("DepthMip" + std::to_string(level))
+                        .reads(mDepthMipImageHandles[level - 1])
+                        .writesDepth(mipHandle)
+                        .execute([this, level, mipExtent](vk::raii::CommandBuffer const& cmd) {
+                            cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
+                                                   .y = 0.0f,
+                                                   .width = static_cast<float>(mipExtent.width),
+                                                   .height = static_cast<float>(mipExtent.height),
+                                                   .minDepth = 0.0f,
+                                                   .maxDepth = 1.0f });
+                            cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = mipExtent });
+                            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                    *mAoPipeline->depthMipPipeline);
+                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                    *mAoPipeline->depthMipPipeLayout, 0,
+                                    *mAoPipeline->depthMipDescSets[level - 1], {});
+                            cmd.draw(3, 1, 0, 0);
+                        });
+            }
+        }
+
         mRenderGraph.addPass(mScene.gtao ? "GtaoPass" : "SaoPass")
                 .writesColor(mAoRawImageHandle)
                 .reads(mDepthPrepassImageHandle)
@@ -778,6 +819,13 @@ void Renderer::buildRenderGraph() {
                             {});
                     cmd.draw(3, 1, 0, 0);
                 });
+
+        // The SAO shader samples every mip through the full-range depth view.
+        if (mScene.sao) {
+            for (size_t level = 1; level < mDepthMipImageHandles.size(); ++level) {
+                mRenderGraph.reads(mDepthMipImageHandles[level]);
+            }
+        }
 
         mRenderGraph.addPass("BlurH")
                 .writesColor(mAoBlurImageHandle)

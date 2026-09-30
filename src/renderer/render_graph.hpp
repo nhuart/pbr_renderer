@@ -21,6 +21,7 @@ struct RenderGraphImage {
     vk::ImageUsageFlags usage;
     vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor;
     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
+    uint32_t mipLevel = 0;
 };
 
 struct RenderGraphBarrier {
@@ -33,6 +34,7 @@ struct RenderGraphBarrier {
     vk::PipelineStageFlags2 srcStage{};
     vk::PipelineStageFlags2 dstStage{};
     vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor;
+    uint32_t mipLevel = 0;
 };
 
 struct RenderGraphPass {

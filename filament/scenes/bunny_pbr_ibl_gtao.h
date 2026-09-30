@@ -19,9 +19,7 @@ inline SceneDesc buildBunnyPbrIblGtaoScene() {
         .quality = filament::View::QualityLevel::HIGH,
         .lowPassFilter = filament::View::QualityLevel::HIGH,
         .enabled = true,
-        // .bias = 0.004f,
     };
-    sceneDesc.showSkybox = false;
 
     sceneDesc.meshes = {
         MeshEntry{

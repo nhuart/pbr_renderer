@@ -1,14 +1,14 @@
 #version 450
 
-// Bilateral separable blur for the SAO AO buffer.
+// Bilateral separable blur shared by SAO and GTAO.
 // Run twice: horizontal (passIndex=0) then vertical (passIndex=1).
 // Depth is packed in the GB channels of the AO texture (no separate depth sampler).
 
 layout(binding = 0) uniform BlurUBO {
     int   passIndex;
     float farPlaneOverEdgeDistance; // -far / bilateralThreshold
-    int   kernelRadius;
-    float pad;
+    int   kernelRadius; // number of taps on each side, in units of sampleStride
+    int   sampleStride; // SAO medium blur: 2 pixels/tap; GTAO high blur: 1
 } ubo;
 
 layout(binding = 1) uniform sampler2D aoSampler; // R=AO, GB=packed linearized depth
@@ -27,9 +27,9 @@ float unpackDepth(vec2 gb) {
     return (gb.x * (256.0 / 257.0) + gb.y * (1.0 / 257.0));
 }
 
-// Gaussian weight, sigma=6 matching Filament HIGH quality
+// Gaussian weight with sigma=6 in screen pixels.
 float gaussianWeight(int i) {
-    float x = float(i);
+    float x = float(i * ubo.sampleStride);
     return exp(-(x * x) / 72.0); // 2 * sigma^2 = 2 * 36 = 72
 }
 
@@ -59,7 +59,7 @@ void main() {
 
     for (int i = 1; i <= ubo.kernelRadius; i++) {
         float gw = gaussianWeight(i);
-        vec2 offset = float(i) * axis;
+        vec2 offset = float(i * ubo.sampleStride) * axis;
 
         vec3 neighborFwd = texture(aoSampler, clamp(inUV + offset, vec2(0.0), vec2(1.0))).rgb;
         vec3 neighborBwd = texture(aoSampler, clamp(inUV - offset, vec2(0.0), vec2(1.0))).rgb;
