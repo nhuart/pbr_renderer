@@ -1,38 +1,18 @@
-.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint \
-	screenshot-all \
-	screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian \
-	screenshot-stanford-bunny-pbr-ibl \
-	screenshot-stanford-bunny-pbr-normal-map screenshot-stanford-bunny-pbr-no-normal-map \
-	screenshot-stanford-bunny-pbr-directional-shadow screenshot-stanford-bunny-pbr-directional-shadow-pcf \
-	screenshot-stanford-bunny-pbr-ibl-sao screenshot-stanford-bunny-pbr-ibl-gtao \
-	screenshot-viking-room screenshot-viking-room-particles
+.DEFAULT_GOAL := help
+
+.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint lint-fix
 
 help:
 	@echo "Available commands:"
-	@echo "  make build-debug      - Build with validation layers (debug)"
-	@echo "  make build-release    - Build optimized without validation layers"
-	@echo "  make run-debug SCENE=<path>   - Run debug (e.g. SCENE=scenes/scene_a.json)"
-	@echo "  make run-release SCENE=<path> - Run release"
-	@echo "  make format           - Format all source files with clang-format"
-	@echo "  make lint             - Run clang-tidy static analysis"
-	@echo "  make lint-fix         - Run clang-tidy and apply fixes automatically"
-	@echo "  make screenshot-all   - Capture screenshots for all scenes"
-	@echo "  make screenshot-stanford-bunny-pbr-directional - Stanford bunny PBR (directional light)"
-	@echo "  make screenshot-stanford-bunny-pbr-spot   - Stanford bunny PBR (spot light)"
-	@echo "  make screenshot-stanford-bunny-pbr-point  - Stanford bunny PBR (point light)"
-	@echo "  make screenshot-stanford-bunny-phong      - Stanford bunny Phong"
-	@echo "  make screenshot-stanford-bunny-blinn-phong - Stanford bunny Blinn-Phong"
-	@echo "  make screenshot-stanford-bunny-lambertian  - Stanford bunny Lambertian"
-	@echo "  make screenshot-stanford-bunny-pbr-normal-map     - Stanford bunny PBR with normal map"
-	@echo "  make screenshot-stanford-bunny-pbr-no-normal-map  - Stanford bunny PBR without normal map"
-	@echo "  make screenshot-stanford-bunny-pbr-directional-shadow     - Stanford bunny PBR hard shadow"
-	@echo "  make screenshot-stanford-bunny-pbr-directional-shadow-pcf - Stanford bunny PBR PCF shadow"
-	@echo "  make screenshot-stanford-bunny-pbr-ibl-sao - Stanford bunny PBR IBL + SAO"
-	@echo "  make screenshot-stanford-bunny-pbr-ibl-gtao - Stanford bunny PBR IBL + GTAO"
-	@echo "  make screenshot-viking-room               - Viking room (single)"
-	@echo "  make screenshot-viking-room-particles     - Three viking rooms with particles"
-
-.DEFAULT_GOAL := help
+	@echo "  make configure-debug           - Configure the debug build"
+	@echo "  make configure-release         - Configure the release build"
+	@echo "  make build-debug               - Build with validation layers (debug)"
+	@echo "  make build-release             - Build optimized without validation layers"
+	@echo "  make run-debug SCENE=<path>    - Run debug (e.g. SCENE=scenes/scene_a.json)"
+	@echo "  make run-release SCENE=<path>  - Run release"
+	@echo "  make format                    - Format all source files with clang-format"
+	@echo "  make lint                      - Run clang-tidy static analysis"
+	@echo "  make lint-fix                  - Run clang-tidy and apply fixes automatically"
 
 configure-debug:
 	cmake -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
@@ -60,53 +40,3 @@ lint:
 
 lint-fix:
 	run-clang-tidy -p build/debug -quiet -fix -j$(shell nproc) "^$(CURDIR)/src/.*\.cpp$$"
-
-screenshot-stanford-bunny-pbr-directional:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_directional.json ARGS='--screenshot results/standford_bunny/pbr_directional.png'
-
-screenshot-stanford-bunny-pbr-spot:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_spot.json ARGS='--screenshot results/standford_bunny/pbr_spot.png'
-
-screenshot-stanford-bunny-pbr-point:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_point.json ARGS='--screenshot results/standford_bunny/pbr_point.png'
-
-screenshot-stanford-bunny-phong:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_phong.json ARGS='--screenshot results/standford_bunny/phong.png'
-
-screenshot-stanford-bunny-blinn-phong:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_blinn_phong.json ARGS='--screenshot results/standford_bunny/blinn_phong.png'
-
-screenshot-stanford-bunny-lambertian:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_lambertian.json ARGS='--screenshot results/standford_bunny/lambertian.png'
-
-screenshot-stanford-bunny-pbr-ibl:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl.json ARGS='--screenshot results/standford_bunny/pbr_ibl.png'
-
-screenshot-stanford-bunny-pbr-ibl-m0-r05:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl_m0_r05.json ARGS='--screenshot results/standford_bunny/pbr_ibl_m0_r05.png'
-
-screenshot-stanford-bunny-pbr-normal-map:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_normal_map.json ARGS='--screenshot results/standford_bunny/pbr_normal_map.png'
-
-screenshot-stanford-bunny-pbr-no-normal-map:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_no_normal_map.json ARGS='--screenshot results/standford_bunny/pbr_no_normal_map.png'
-
-screenshot-stanford-bunny-pbr-directional-shadow:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_shadow_hard.json ARGS='--screenshot results/standford_bunny/pbr_shadow_hard.png'
-
-screenshot-stanford-bunny-pbr-directional-shadow-pcf:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_shadow_pcf.json ARGS='--screenshot results/standford_bunny/pbr_shadow_pcf.png'
-
-screenshot-stanford-bunny-pbr-ibl-sao:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl_sao.json ARGS='--screenshot results/standford_bunny/pbr_ibl_sao.png'
-
-screenshot-stanford-bunny-pbr-ibl-gtao:
-	$(MAKE) run-debug SCENE=scenes/stanford_bunny_pbr_ibl_gtao.json ARGS='--screenshot results/standford_bunny/pbr_ibl_gtao.png'
-
-screenshot-viking-room:
-	$(MAKE) run-debug SCENE=scenes/viking_room.json ARGS='--screenshot results/viking_room/single.png'
-
-screenshot-viking-room-particles:
-	$(MAKE) run-debug SCENE=scenes/three_viking_rooms_particles.json ARGS='--screenshot results/viking_room/three_rooms.png'
-
-screenshot-all: screenshot-stanford-bunny-pbr-directional screenshot-stanford-bunny-pbr-spot screenshot-stanford-bunny-pbr-point screenshot-stanford-bunny-phong screenshot-stanford-bunny-blinn-phong screenshot-stanford-bunny-lambertian screenshot-stanford-bunny-pbr-ibl screenshot-stanford-bunny-pbr-normal-map screenshot-stanford-bunny-pbr-no-normal-map screenshot-stanford-bunny-pbr-directional-shadow screenshot-stanford-bunny-pbr-directional-shadow-pcf screenshot-stanford-bunny-pbr-ibl-sao screenshot-stanford-bunny-pbr-ibl-gtao screenshot-viking-room screenshot-viking-room-particles
