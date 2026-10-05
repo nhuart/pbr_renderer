@@ -44,6 +44,12 @@ To capture a screenshot on the first rendered frame, pass `--screenshot` via `AR
 make run-release SCENE=scenes/viking_room.json ARGS="--screenshot <output_path.png>"
 ```
 
+Vulkan initialization and pipeline logs are disabled by default. Validation-layer warnings and errors remain visible in debug builds. Enable the informational logs when needed:
+
+```bash
+make run-debug SCENE=scenes/stanford_bunny_pbr_ibl_sao.json ARGS="--vulkan-logs"
+```
+
 ### Code quality
 
 ```bash

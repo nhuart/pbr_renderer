@@ -2,6 +2,7 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "core/vulkan_logging.hpp"
 #include "renderer/vertex.hpp"
 
 #include <algorithm>
@@ -274,7 +275,9 @@ void AoPipeline::createNormalsPass(VulkanContext const& ctx) {
     };
     normalsPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "AO normals prepass pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "AO normals prepass pipeline: created\n";
+    }
 }
 
 void AoPipeline::createDepthMipPass(VulkanContext const& ctx) {
@@ -492,7 +495,9 @@ void AoPipeline::createAoPass(VulkanContext const& ctx) {
     };
     aoPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << (gtao ? "GTAO" : "SAO") << " occlusion pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << (gtao ? "GTAO" : "SAO") << " occlusion pipeline: created\n";
+    }
 }
 
 
@@ -636,7 +641,9 @@ void AoPipeline::createBlurPass(VulkanContext const& ctx) {
     };
     blurPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "AO blur pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "AO blur pipeline: created\n";
+    }
 }
 
 

@@ -1,11 +1,48 @@
 #include "core/swapchain.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "core/vulkan_logging.hpp"
 
 #include <algorithm>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+
+namespace {
+
+void logSwapchainSupport(vk::SurfaceCapabilitiesKHR const& capabilities,
+        std::vector<vk::SurfaceFormatKHR> const& availableFormats,
+        std::vector<vk::PresentModeKHR> const& availablePresentModes) {
+    std::cout << "Swap chain support:\n";
+    std::cout << "  image count: min=" << capabilities.minImageCount << " max="
+              << (capabilities.maxImageCount == 0 ? std::string("unlimited")
+                                                  : std::to_string(capabilities.maxImageCount))
+              << "\n";
+    std::cout << "  min extent: " << capabilities.minImageExtent.width << "x"
+              << capabilities.minImageExtent.height << "\n";
+    std::cout << "  max extent: " << capabilities.maxImageExtent.width << "x"
+              << capabilities.maxImageExtent.height << "\n";
+    std::cout << "  current extent: " << capabilities.currentExtent.width << "x"
+              << capabilities.currentExtent.height << "\n";
+    std::cout << "  supported transforms: " << vk::to_string(capabilities.supportedTransforms)
+              << "\n";
+    std::cout << "  current transform: " << vk::to_string(capabilities.currentTransform) << "\n";
+    std::cout << "  supported composite alpha: "
+              << vk::to_string(capabilities.supportedCompositeAlpha) << "\n";
+    std::cout << "  supported usage flags: " << vk::to_string(capabilities.supportedUsageFlags)
+              << "\n";
+    std::cout << "  surface formats (" << availableFormats.size() << "):\n";
+    for (auto const& format: availableFormats) {
+        std::cout << "    " << vk::to_string(format.format) << " / "
+                  << vk::to_string(format.colorSpace) << "\n";
+    }
+    std::cout << "  present modes (" << availablePresentModes.size() << "):\n";
+    for (auto const& mode: availablePresentModes) {
+        std::cout << "    " << vk::to_string(mode) << "\n";
+    }
+}
+
+} // namespace
 
 Swapchain::Swapchain(VulkanContext const& ctx, GLFWwindow* window) {
     create(ctx, window);
@@ -44,32 +81,8 @@ void Swapchain::create(VulkanContext const& ctx, GLFWwindow* window) {
     auto availableFormats = ctx.physicalDevice.getSurfaceFormatsKHR(*ctx.surface);
     auto availablePresentModes = ctx.physicalDevice.getSurfacePresentModesKHR(*ctx.surface);
 
-    std::cout << "Swap chain support:\n";
-    std::cout << "  image count: min=" << capabilities.minImageCount << " max="
-              << (capabilities.maxImageCount == 0 ? std::string("unlimited")
-                                                  : std::to_string(capabilities.maxImageCount))
-              << "\n";
-    std::cout << "  min extent: " << capabilities.minImageExtent.width << "x"
-              << capabilities.minImageExtent.height << "\n";
-    std::cout << "  max extent: " << capabilities.maxImageExtent.width << "x"
-              << capabilities.maxImageExtent.height << "\n";
-    std::cout << "  current extent: " << capabilities.currentExtent.width << "x"
-              << capabilities.currentExtent.height << "\n";
-    std::cout << "  supported transforms: " << vk::to_string(capabilities.supportedTransforms)
-              << "\n";
-    std::cout << "  current transform: " << vk::to_string(capabilities.currentTransform) << "\n";
-    std::cout << "  supported composite alpha: "
-              << vk::to_string(capabilities.supportedCompositeAlpha) << "\n";
-    std::cout << "  supported usage flags: " << vk::to_string(capabilities.supportedUsageFlags)
-              << "\n";
-    std::cout << "  surface formats (" << availableFormats.size() << "):\n";
-    for (auto const& fmt: availableFormats) {
-        std::cout << "    " << vk::to_string(fmt.format) << " / " << vk::to_string(fmt.colorSpace)
-                  << "\n";
-    }
-    std::cout << "  present modes (" << availablePresentModes.size() << "):\n";
-    for (auto const& mode: availablePresentModes) {
-        std::cout << "    " << vk::to_string(mode) << "\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        logSwapchainSupport(capabilities, availableFormats, availablePresentModes);
     }
 
     extent = chooseExtent(capabilities, window);
@@ -106,84 +119,36 @@ void Swapchain::create(VulkanContext const& ctx, GLFWwindow* window) {
                 }));
     }
 
-    std::cout << "Swap chain:\n";
-    std::cout << "  images: " << images.size() << " (requested min " << imageCount << ")\n";
-    std::cout << "  format: " << vk::to_string(surfaceFormat.format) << " / "
-              << vk::to_string(surfaceFormat.colorSpace) << "\n";
-    std::cout << "  extent: " << extent.width << "x" << extent.height << "\n";
-    std::cout << "  present mode: " << vk::to_string(presentMode) << "\n";
-    std::cout << "Image views: " << imageViews.size() << " created\n";
-}
-
-static std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImageLocal(VulkanContext const& ctx,
-        uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits samples,
-        vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-        vk::MemoryPropertyFlags properties) {
-    vk::raii::Image image(ctx.device, vk::ImageCreateInfo{
-                                          .imageType = vk::ImageType::e2D,
-                                          .format = format,
-                                          .extent = { width, height, 1 },
-                                          .mipLevels = mipLevels,
-                                          .arrayLayers = 1,
-                                          .samples = samples,
-                                          .tiling = tiling,
-                                          .usage = usage,
-                                          .sharingMode = vk::SharingMode::eExclusive,
-                                          .initialLayout = vk::ImageLayout::eUndefined,
-                                      });
-    vk::MemoryRequirements memReq = image.getMemoryRequirements();
-    vk::raii::DeviceMemory memory(ctx.device,
-            vk::MemoryAllocateInfo{
-                .allocationSize = memReq.size,
-                .memoryTypeIndex = vkutil::findMemoryType(ctx, memReq.memoryTypeBits, properties),
-            });
-    image.bindMemory(*memory, 0);
-    return { std::move(image), std::move(memory) };
-}
-
-static vk::raii::ImageView createImageViewLocal(VulkanContext const& ctx, vk::Image image,
-        vk::Format format, vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor,
-        uint32_t mipLevels = 1) {
-    return vk::raii::ImageView(ctx.device,
-            vk::ImageViewCreateInfo{
-                .image = image,
-                .viewType = vk::ImageViewType::e2D,
-                .format = format,
-                .subresourceRange = { aspectFlags, 0, mipLevels, 0, 1 },
-            });
-}
-
-static vk::Format findDepthFormatLocal(VulkanContext const& ctx) {
-    for (vk::Format format:
-            { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }) {
-        vk::FormatProperties props = ctx.physicalDevice.getFormatProperties(format);
-        if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment) ==
-                vk::FormatFeatureFlagBits::eDepthStencilAttachment) {
-            return format;
-        }
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Swap chain:\n";
+        std::cout << "  images: " << images.size() << " (requested min " << imageCount << ")\n";
+        std::cout << "  format: " << vk::to_string(surfaceFormat.format) << " / "
+                  << vk::to_string(surfaceFormat.colorSpace) << "\n";
+        std::cout << "  extent: " << extent.width << "x" << extent.height << "\n";
+        std::cout << "  present mode: " << vk::to_string(presentMode) << "\n";
+        std::cout << "Image views: " << imageViews.size() << " created\n";
     }
-    throw std::runtime_error("failed to find supported depth format!");
 }
 
 void Swapchain::createColorResources(VulkanContext const& ctx) {
-    auto [img, mem] = createImageLocal(ctx, extent.width, extent.height, 1, ctx.msaaSamples,
+    auto [image, memory] = vkutil::createImage(ctx, extent.width, extent.height, 1, ctx.msaaSamples,
             surfaceFormat.format, vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-    colorImage = std::move(img);
-    colorImageMemory = std::move(mem);
-    colorImageView = createImageViewLocal(ctx, *colorImage, surfaceFormat.format);
+    colorImage = std::move(image);
+    colorImageMemory = std::move(memory);
+    colorImageView = vkutil::createImageView(ctx, *colorImage, surfaceFormat.format);
 }
 
 void Swapchain::createDepthResources(VulkanContext const& ctx) {
-    vk::Format depthFormat = findDepthFormatLocal(ctx);
-    auto [img, mem] = createImageLocal(ctx, extent.width, extent.height, 1, ctx.msaaSamples,
+    vk::Format depthFormat = vkutil::findDepthFormat(ctx);
+    auto [image, memory] = vkutil::createImage(ctx, extent.width, extent.height, 1, ctx.msaaSamples,
             depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-    depthImage = std::move(img);
-    depthImageMemory = std::move(mem);
+    depthImage = std::move(image);
+    depthImageMemory = std::move(memory);
     depthImageView =
-            createImageViewLocal(ctx, *depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
+            vkutil::createImageView(ctx, *depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
 }
 
 vk::SurfaceFormatKHR Swapchain::chooseFormat(

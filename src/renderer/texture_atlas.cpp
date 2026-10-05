@@ -2,6 +2,7 @@
 #include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "core/vulkan_logging.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -117,10 +118,12 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
                 .unnormalizedCoordinates = vk::False,
             });
 
-    std::cout << "Texture image: " << texWidth << "x" << texHeight << " (" << mipLevels
-              << " mip levels, format " << vk::to_string(format) << ") loaded\n";
-    std::cout << "Texture sampler: created (max anisotropy: "
-              << properties.limits.maxSamplerAnisotropy << ")\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Texture image: " << texWidth << "x" << texHeight << " (" << mipLevels
+                  << " mip levels, format " << vk::to_string(format) << ") loaded\n";
+        std::cout << "Texture sampler: created (max anisotropy: "
+                  << properties.limits.maxSamplerAnisotropy << ")\n";
+    }
 }
 
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
@@ -182,8 +185,10 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
                 .borderColor = vk::BorderColor::eIntOpaqueBlack,
             });
 
-    std::cout << (linear ? "Normal map" : "Embedded texture") << ": " << width << "x" << height
-              << " (raw pixels, " << vk::to_string(format) << ") loaded\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << (linear ? "Normal map" : "Embedded texture") << ": " << width << "x" << height
+                  << " (raw pixels, " << vk::to_string(format) << ") loaded\n";
+    }
 }
 
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t r,

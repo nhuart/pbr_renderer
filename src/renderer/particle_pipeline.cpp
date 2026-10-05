@@ -4,6 +4,7 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "core/vulkan_logging.hpp"
 #include "renderer/gpu_types.hpp"
 #include "renderer/vertex.hpp"
 
@@ -67,8 +68,10 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
         computeUniformBuffersMemory.push_back(std::move(uboMemory));
     }
 
-    std::cout << "Shader storage buffers: " << particleCount << " particles, "
-              << MAX_FRAMES_IN_FLIGHT << " SSBO pairs\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Shader storage buffers: " << particleCount << " particles, "
+                  << MAX_FRAMES_IN_FLIGHT << " SSBO pairs\n";
+    }
 
     // --- Compute descriptor layout ---
     std::array<vk::DescriptorSetLayoutBinding, 3> computeBindings{ {
@@ -115,7 +118,9 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
                 .stage = compStageInfo,
                 .layout = *computePipelineLayout,
             });
-    std::cout << "Compute pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Compute pipeline: created\n";
+    }
 
     // --- Compute descriptor pool + sets ---
     std::array poolSizes = {
@@ -299,5 +304,7 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
 
     particlePipeline = vk::raii::Pipeline(ctx.device, nullptr,
             pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "Particle pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Particle pipeline: created\n";
+    }
 }

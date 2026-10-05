@@ -3,6 +3,7 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "core/vulkan_logging.hpp"
 #include "renderer/ao_pipeline.hpp"
 #include "renderer/ibl_environment.hpp"
 #include "renderer/shadow_pipeline.hpp"
@@ -207,7 +208,9 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
 
     pipeline = vk::raii::Pipeline(ctx.device, nullptr,
             pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "Graphics pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Graphics pipeline: created\n";
+    }
 }
 
 MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
