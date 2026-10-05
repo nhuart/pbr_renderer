@@ -2,7 +2,7 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
-#include "scene/types.hpp"
+#include "renderer/vertex.hpp"
 
 #include <algorithm>
 #include <array>

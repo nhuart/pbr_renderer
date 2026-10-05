@@ -1,8 +1,11 @@
 #include "renderer/particle_pipeline.hpp"
 #include "core/command_service.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "renderer/gpu_types.hpp"
+#include "renderer/vertex.hpp"
 
 #include <array>
 #include <bit>

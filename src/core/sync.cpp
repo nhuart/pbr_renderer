@@ -1,6 +1,6 @@
 #include "core/sync.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
-#include "scene/types.hpp"
 
 SyncObjects::SyncObjects(VulkanContext const& ctx, uint32_t swapImageCount, bool hasParticles) {
     for (uint32_t i = 0; i < swapImageCount; i++) {

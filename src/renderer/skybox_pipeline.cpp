@@ -3,7 +3,7 @@
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
 #include "renderer/ibl_environment.hpp"
-#include "scene/types.hpp"
+#include "core/config.hpp"
 
 #include <bit>
 #include <cstring>

@@ -5,6 +5,7 @@
 #include <variant>
 #include <vulkan/vulkan_raii.hpp>
 
+#include "core/config.hpp"
 #include "scene/types.hpp"
 
 struct VulkanContext;

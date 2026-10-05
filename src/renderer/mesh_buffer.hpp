@@ -11,6 +11,7 @@
 import vulkan_hpp;
 #endif
 
+#include "renderer/vertex.hpp"
 #include "scene/types.hpp"
 
 namespace tinygltf {

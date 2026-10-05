@@ -2,7 +2,8 @@
 #include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
-#include "scene/types.hpp"
+#include "renderer/gpu_types.hpp"
+#include "renderer/vertex.hpp"
 
 #include <iostream>
 

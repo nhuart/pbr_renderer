@@ -9,12 +9,15 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "core/camera.hpp"
 #include "core/command_service.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
 #include "core/swapchain.hpp"
 #include "core/sync.hpp"
 #include "renderer/ao_pipeline.hpp"
-#include "renderer/camera.hpp"
+#include "renderer/game_object.hpp"
+#include "renderer/gpu_types.hpp"
 #include "renderer/ibl_environment.hpp"
 #include "renderer/light_buffer.hpp"
 #include "renderer/mesh_buffer.hpp"

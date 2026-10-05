@@ -1,4 +1,5 @@
 #include "renderer/material.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
@@ -6,6 +7,7 @@
 #include "renderer/ibl_environment.hpp"
 #include "renderer/shadow_pipeline.hpp"
 #include "renderer/texture_atlas.hpp"
+#include "renderer/vertex.hpp"
 
 #include <array>
 #include <bit>
