@@ -75,11 +75,22 @@ private:
 
     void initWindow();
     void initVulkan();
+    void createSceneObjects();
+    void createEnvironment();
+    void createShadowPipeline();
+    void createAoPipeline();
+    void createMaterials();
+    void createRenderObjects();
     void resolveShaderVariants();
     void mainLoop();
     void cleanup();
     void drawFrame();
     void updateUniforms();
+    void updateLights(float exposure);
+    void updateMaterialUniforms(glm::mat4 const& view, glm::mat4 const& projection,
+            glm::vec3 const& cameraPosition, float exposure);
+    void updateShadowUniforms();
+    void updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projection);
     void recreateSwapchain();
     void buildRenderGraph();
     void recordCommandBuffer(uint32_t imageIndex);
@@ -88,6 +99,7 @@ private:
     void captureShadowMapDebug();
     void captureAoTextureDebug();
     void captureNormalsTextureDebug();
+    [[nodiscard]] std::string screenshotOutputPath(std::string const& filename) const;
     using PixelTransform = std::function<std::vector<uint8_t>(void const*, uint32_t pixelCount)>;
     void captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
             vk::ImageAspectFlags aspect, uint32_t width, uint32_t height, uint32_t bytesPerPixel,

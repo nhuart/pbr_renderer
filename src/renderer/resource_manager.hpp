@@ -20,23 +20,21 @@ struct ResourceManager {
         if (it != mTextures.end()) {
             return *it->second;
         }
-        std::unique_ptr<TextureAtlas> tex;
+        std::unique_ptr<TextureAtlas> texture;
         if (!path.empty()) {
-            tex = std::make_unique<TextureAtlas>(ctx, cmds, path);
+            texture = std::make_unique<TextureAtlas>(ctx, cmds, path);
         } else if (meshBuffer) {
             auto albedoIt = meshBuffer->albedoMaps.find(gltfPath);
             if (albedoIt != meshBuffer->albedoMaps.end()) {
                 auto const& albedo = albedoIt->second;
-                tex = std::make_unique<TextureAtlas>(ctx, cmds, albedo.pixels.data(), albedo.width,
-                        albedo.height, /*linear=*/false);
-            } else {
-                tex = std::make_unique<TextureAtlas>(ctx, cmds, 255, 255, 255);
+                texture = std::make_unique<TextureAtlas>(ctx, cmds, albedo.pixels.data(),
+                        albedo.width, albedo.height, /*linear=*/false);
             }
-        } else {
-            tex = std::make_unique<TextureAtlas>(ctx, cmds, 255, 255, 255);
         }
-        auto [inserted, ok] = mTextures.emplace(key, std::move(tex));
-        return *inserted->second;
+        if (!texture) {
+            texture = std::make_unique<TextureAtlas>(ctx, cmds, 255, 255, 255);
+        }
+        return cacheTexture(key, std::move(texture));
     }
 
     // Returns a 1x1 flat normal (128,128,255) when no normal map data is available.
@@ -47,21 +45,26 @@ struct ResourceManager {
         if (it != mTextures.end()) {
             return *it->second;
         }
-        std::unique_ptr<TextureAtlas> tex;
+        std::unique_ptr<TextureAtlas> texture;
         auto normalMapIt = meshBuffer.normalMaps.find(gltfPath);
         if (normalMapIt != meshBuffer.normalMaps.end()) {
             auto const& normalMap = normalMapIt->second;
-            tex = std::make_unique<TextureAtlas>(ctx, cmds, normalMap.pixels.data(),
+            texture = std::make_unique<TextureAtlas>(ctx, cmds, normalMap.pixels.data(),
                     normalMap.width, normalMap.height,
                     /*linear=*/true);
         } else {
             // Flat normal map: (128, 128, 255, 255) → (0,0,1) in tangent space
-            tex = std::make_unique<TextureAtlas>(ctx, cmds, 128, 128, 255);
+            texture = std::make_unique<TextureAtlas>(ctx, cmds, 128, 128, 255);
         }
-        auto [inserted, ok] = mTextures.emplace(key, std::move(tex));
-        return *inserted->second;
+        return cacheTexture(key, std::move(texture));
     }
 
 private:
+    TextureAtlas const& cacheTexture(std::string const& key,
+            std::unique_ptr<TextureAtlas> texture) {
+        auto entry = mTextures.emplace(key, std::move(texture));
+        return *entry.first->second;
+    }
+
     std::unordered_map<std::string, std::unique_ptr<TextureAtlas>> mTextures;
 };

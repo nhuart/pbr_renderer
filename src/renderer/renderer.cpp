@@ -26,6 +26,33 @@ static AmbientLight const* ambientLightFromLights(std::vector<Light> const& ligh
     return nullptr;
 }
 
+static std::string materialKey(MeshInstance const& instance, bool doubleSided) {
+    return instance.vertexShader + "+" + instance.resolvedFragShader + (doubleSided ? "+ds" : "");
+}
+
+static float diffuseIblLuminance(std::vector<Light> const& lights, float exposure) {
+    auto const* ambientLight = ambientLightFromLights(lights);
+    if (!ambientLight) {
+        return 0.0f;
+    }
+    // Matches Filament: sh0 = intensity/sqrt(4π), Fd = sh0 * iblLuminance.
+    // diffuseBRDF=1 because irradiance() coefficients are not pre-divided by π.
+    constexpr float InvSqrt4Pi = 1.0f / 3.54490770181f;
+    return ambientLight->intensity * InvSqrt4Pi * ambientLight->iblIntensity * exposure;
+}
+
+static void setViewportAndScissor(vk::raii::CommandBuffer const& cmd, vk::Extent2D extent) {
+    cmd.setViewport(0, vk::Viewport{
+                           .x = 0.0f,
+                           .y = 0.0f,
+                           .width = static_cast<float>(extent.width),
+                           .height = static_cast<float>(extent.height),
+                           .minDepth = 0.0f,
+                           .maxDepth = 1.0f,
+                       });
+    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = extent });
+}
+
 Renderer::Renderer(std::string scenePath, std::string screenshotPath, bool exitAfterScreenshot)
         : mScenePath(std::move(scenePath)),
           mScreenshotPath(std::move(screenshotPath)),
@@ -58,24 +85,45 @@ void Renderer::initVulkan() {
     mCmds.emplace(*mCtx);
     mCmds->allocateCommandBuffers(*mCtx);
 
-    for (uint32_t i = 0; i < mScene.meshInstances.size(); ++i) {
-        auto const& inst = mScene.meshInstances[i];
-        GameObject obj;
-        obj.position = inst.position;
-        obj.rotation = glm::radians(inst.rotation);
-        obj.scale = inst.scale;
-        mGameObjects.push_back(std::move(obj));
-
-        RenderObject ro;
-        ro.gameObjectIndex = i;
-        mRenderObjects.push_back(std::move(ro));
-    }
-    std::cout << "Game objects: " << mGameObjects.size() << " created\n";
-
+    createSceneObjects();
     mResources.emplace();
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
     mLightBuffer.emplace(*mCtx, LightUBO{});
+    createEnvironment();
+    createShadowPipeline();
+    createAoPipeline();
+    resolveShaderVariants();
+    createMaterials();
+    createRenderObjects();
 
+    if (mScene.particles) {
+        mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
+        mCmds->allocateComputeCommandBuffers(*mCtx);
+    }
+
+    mSync.emplace(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()),
+            mScene.particles.has_value());
+
+    buildRenderGraph();
+}
+
+void Renderer::createSceneObjects() {
+    for (uint32_t i = 0; i < mScene.meshInstances.size(); ++i) {
+        auto const& instance = mScene.meshInstances[i];
+        GameObject object;
+        object.position = instance.position;
+        object.rotation = glm::radians(instance.rotation);
+        object.scale = instance.scale;
+        mGameObjects.push_back(std::move(object));
+
+        RenderObject renderObject;
+        renderObject.gameObjectIndex = i;
+        mRenderObjects.push_back(std::move(renderObject));
+    }
+    std::cout << "Game objects: " << mGameObjects.size() << " created\n";
+}
+
+void Renderer::createEnvironment() {
     if (mScene.iblPath) {
         auto iblName = std::filesystem::path(*mScene.iblPath).filename().string();
         mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "/" + iblName + "_ibl.ktx",
@@ -84,13 +132,15 @@ void Renderer::initVulkan() {
             mSkyboxPipeline.emplace(*mCtx, *mSwapchain, *mIblEnvironment);
         }
     }
+}
 
-    // Determine if any directional light casts a shadow
+void Renderer::createShadowPipeline() {
     DirectionalLight const* shadowCastingLight = nullptr;
     for (auto const& light: mScene.lights) {
-        if (auto const* dl = std::get_if<DirectionalLight>(&light)) {
-            if (dl->castShadow && !shadowCastingLight) {
-                shadowCastingLight = dl;
+        if (auto const* directional = std::get_if<DirectionalLight>(&light)) {
+            if (directional->castShadow) {
+                shadowCastingLight = directional;
+                break;
             }
         }
     }
@@ -103,7 +153,9 @@ void Renderer::initVulkan() {
         mShadowPipeline->shadowBias = shadowCastingLight->shadowBias;
         mShadowPipeline->updateLightSpaceMatrix(*shadowCastingLight);
     }
+}
 
+void Renderer::createAoPipeline() {
     if (mScene.sao) {
         mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
     } else if (mScene.gtao) {
@@ -113,47 +165,43 @@ void Renderer::initVulkan() {
         mAoPipeline->allocateNormalsObjects(*mCtx,
                 static_cast<uint32_t>(mScene.meshInstances.size()));
     }
+}
 
-    resolveShaderVariants();
-
-    for (auto const& inst: mScene.meshInstances) {
-        bool doubleSided = mMeshBuffer->meshRanges.at(inst.gltfPath).doubleSided;
-        auto key = inst.vertexShader + "+" + inst.resolvedFragShader + (doubleSided ? "+ds" : "");
+void Renderer::createMaterials() {
+    for (auto const& instance: mScene.meshInstances) {
+        bool doubleSided = mMeshBuffer->meshRanges.at(instance.gltfPath).doubleSided;
+        auto key = materialKey(instance, doubleSided);
         if (!mMaterials.contains(key)) {
             mMaterials.emplace(key,
-                    Material(*mCtx, *mSwapchain, inst.vertexShader, inst.resolvedFragShader,
-                            inst.shaderFeatures, doubleSided));
+                    Material(*mCtx, *mSwapchain, instance.vertexShader, instance.resolvedFragShader,
+                            instance.shaderFeatures, doubleSided));
         }
     }
+}
 
-    for (auto& ro: mRenderObjects) {
-        auto const& inst = mScene.meshInstances[ro.gameObjectIndex];
-        ro.range = mMeshBuffer->meshRanges.at(inst.gltfPath);
-        ro.texture = &mResources->getTexture(*mCtx, *mCmds, inst.texturePath, inst.gltfPath,
-                &*mMeshBuffer);
-        ro.normalMap = &mResources->getNormalMap(*mCtx, *mCmds, inst.gltfPath, *mMeshBuffer);
-        bool doubleSided = ro.range.doubleSided;
-        auto key = inst.vertexShader + "+" + inst.resolvedFragShader + (doubleSided ? "+ds" : "");
-        ro.material = &mMaterials.at(key);
-        ro.materialInstance = ro.material->createInstance(*mCtx, *ro.texture, mLightBuffer->buffer,
-                hasFeature(inst.shaderFeatures, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
-                hasFeature(inst.shaderFeatures, ShaderFeatures::NormalMap) ? ro.normalMap : nullptr,
-                (hasFeature(inst.shaderFeatures, ShaderFeatures::HardShadow) ||
-                        hasFeature(inst.shaderFeatures, ShaderFeatures::PcfShadow))
+void Renderer::createRenderObjects() {
+    for (auto& renderObject: mRenderObjects) {
+        auto const& instance = mScene.meshInstances[renderObject.gameObjectIndex];
+        renderObject.range = mMeshBuffer->meshRanges.at(instance.gltfPath);
+        renderObject.texture = &mResources->getTexture(*mCtx, *mCmds, instance.texturePath,
+                instance.gltfPath, &*mMeshBuffer);
+        renderObject.normalMap =
+                &mResources->getNormalMap(*mCtx, *mCmds, instance.gltfPath, *mMeshBuffer);
+        auto key = materialKey(instance, renderObject.range.doubleSided);
+        renderObject.material = &mMaterials.at(key);
+        renderObject.materialInstance = renderObject.material->createInstance(*mCtx,
+                *renderObject.texture, mLightBuffer->buffer,
+                hasFeature(instance.shaderFeatures, ShaderFeatures::Ibl) ? &*mIblEnvironment
+                                                                         : nullptr,
+                hasFeature(instance.shaderFeatures, ShaderFeatures::NormalMap)
+                        ? renderObject.normalMap
+                        : nullptr,
+                (hasFeature(instance.shaderFeatures, ShaderFeatures::HardShadow) ||
+                        hasFeature(instance.shaderFeatures, ShaderFeatures::PcfShadow))
                         ? &*mShadowPipeline
                         : nullptr,
-                hasFeature(inst.shaderFeatures, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
+                hasFeature(instance.shaderFeatures, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
     }
-
-    if (mScene.particles) {
-        mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
-        mCmds->allocateComputeCommandBuffers(*mCtx);
-    }
-
-    mSync.emplace(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()),
-            mScene.particles.has_value());
-
-    buildRenderGraph();
 }
 
 void Renderer::mainLoop() {
@@ -207,9 +255,7 @@ void Renderer::updateUniforms() {
     float aspect = static_cast<float>(mSwapchain->extent.width) /
                    static_cast<float>(mSwapchain->extent.height);
     glm::mat4 view = mCamera.viewMatrix();
-    glm::mat4 proj = mCamera.projMatrix(aspect);
-
-    glm::vec3 camPos = mCamera.position();
+    glm::mat4 projection = mCamera.projMatrix(aspect);
 
     // Lights are static but the UBO is re-uploaded every frame for simplicity.
     // exposure = 1 / (1.2 × aperture² / shutter × 100 / ISO)  (matches Filament's Exposure.cpp)
@@ -218,6 +264,28 @@ void Renderer::updateUniforms() {
                                               mScene.camera.shutterSpeed * 100.0 /
                                               mScene.camera.sensitivity));
 
+    updateLights(exposure);
+    updateMaterialUniforms(view, projection, mCamera.position(), exposure);
+
+    if (mSkyboxPipeline) {
+        SkyboxUBO skyboxUbo{
+            .invProj = glm::inverse(projection),
+            .invView = glm::inverse(view),
+        };
+        mSkyboxPipeline->updateUBO(mFrameIndex, skyboxUbo);
+    }
+
+    updateShadowUniforms();
+
+    if (mScene.particles) {
+        ComputeUBO cubo{ .deltaTime = deltaTime };
+        memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
+    }
+
+    updateAoUniforms(view, projection);
+}
+
+void Renderer::updateLights(float exposure) {
     LightUBO lightUbo{};
     uint32_t lightCount = 0;
     for (auto const& light: mScene.lights) {
@@ -234,43 +302,30 @@ void Renderer::updateUniforms() {
     }
     lightUbo.counts = glm::uvec4(lightCount, 0, 0, 0);
     memcpy(mLightBuffer->mapped, &lightUbo, sizeof(lightUbo));
+}
 
-    for (auto& ro: mRenderObjects) {
-        auto const& obj = mGameObjects[ro.gameObjectIndex];
-        glm::mat4 model = obj.getModelMatrix();
-        auto const& meshInst = mScene.meshInstances[ro.gameObjectIndex];
+void Renderer::updateMaterialUniforms(glm::mat4 const& view, glm::mat4 const& projection,
+        glm::vec3 const& cameraPosition, float exposure) {
+    float iblLuminance = diffuseIblLuminance(mScene.lights, exposure);
+    for (auto& renderObject: mRenderObjects) {
+        auto const& object = mGameObjects[renderObject.gameObjectIndex];
+        glm::mat4 model = object.getModelMatrix();
+        auto const& instance = mScene.meshInstances[renderObject.gameObjectIndex];
 
         UniformBufferObject ubo{
             .model = model,
             .view = view,
-            .proj = proj,
+            .proj = projection,
             .normalMatrix = glm::transpose(glm::inverse(model)),
-            .baseColor = meshInst.baseColor,
-            .cameraPos = glm::vec4(camPos, 0.0f),
-            .pbrParams = glm::vec4(
-                    meshInst.metallic, meshInst.roughness,
-                    [&] {
-                        // Matches Filament: sh0 = intensity/sqrt(4π), Fd = sh0 * iblLuminance
-                        // (diffuseBRDF=1 since irradiance() coefficients are not pre-divided by π)
-                        constexpr float InvSqrt4Pi = 1.0f / 3.54490770181f; // 1/sqrt(4π)
-                        auto const* ambientLight = ambientLightFromLights(mScene.lights);
-                        return ambientLight ? ambientLight->intensity * InvSqrt4Pi *
-                                                      ambientLight->iblIntensity * exposure
-                                            : 0.0f;
-                    }(),
-                    0.0f),
+            .baseColor = instance.baseColor,
+            .cameraPos = glm::vec4(cameraPosition, 0.0f),
+            .pbrParams = glm::vec4(instance.metallic, instance.roughness, iblLuminance, 0.0f),
         };
-        ro.materialInstance.updateUBO(mFrameIndex, ubo);
+        renderObject.materialInstance.updateUBO(mFrameIndex, ubo);
     }
+}
 
-    if (mSkyboxPipeline) {
-        SkyboxUBO skyboxUbo{
-            .invProj = glm::inverse(proj),
-            .invView = glm::inverse(view),
-        };
-        mSkyboxPipeline->updateUBO(mFrameIndex, skyboxUbo);
-    }
-
+void Renderer::updateShadowUniforms() {
     if (mShadowPipeline) {
         uint32_t shadowObjIdx = 0;
         for (size_t i = 0; i < mScene.meshInstances.size(); ++i) {
@@ -281,15 +336,12 @@ void Renderer::updateUniforms() {
         }
         mShadowPipeline->updateFragmentUBO(mFrameIndex);
     }
+}
 
-    if (mScene.particles) {
-        ComputeUBO cubo{ .deltaTime = deltaTime };
-        memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
-    }
-
+void Renderer::updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projection) {
     if (mAoPipeline) {
         float fovYRad = static_cast<float>(glm::radians(mScene.camera.fovDegrees));
-        mAoPipeline->updateUBOs(mFrameIndex, view, proj, fovYRad,
+        mAoPipeline->updateUBOs(mFrameIndex, view, projection, fovYRad,
                 static_cast<float>(mSwapchain->extent.height),
                 static_cast<float>(mCamera.nearPlane), static_cast<float>(mCamera.farPlane));
 
@@ -299,7 +351,7 @@ void Renderer::updateUniforms() {
             NormalsUBO nubo{
                 .model = model,
                 .view = view,
-                .proj = proj,
+                .proj = projection,
                 .normalMatrix = glm::transpose(glm::inverse(model)),
             };
             mAoPipeline->updateNormalsUBO(static_cast<uint32_t>(i), mFrameIndex, nubo);
@@ -516,9 +568,7 @@ void Renderer::captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
 
 void Renderer::captureShadowMapDebug() {
     constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
-    auto slash = mScreenshotPath.rfind('/');
-    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
-                       "shadow_depth.png";
+    std::string path = screenshotOutputPath("shadow_depth.png");
     captureImageToPng(*mShadowPipeline->image, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eDepth, shadowMapSize, shadowMapSize, sizeof(float), path,
             [](void const* data, uint32_t pixelCount) {
@@ -529,9 +579,7 @@ void Renderer::captureShadowMapDebug() {
 void Renderer::captureAoTextureDebug() {
     uint32_t width = mSwapchain->extent.width;
     uint32_t height = mSwapchain->extent.height;
-    auto slash = mScreenshotPath.rfind('/');
-    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
-                       (mScene.gtao ? "gtao_texture.png" : "ao_texture.png");
+    std::string path = screenshotOutputPath(mScene.gtao ? "gtao_texture.png" : "ao_texture.png");
     // Extract R (AO value) and expand to grayscale RGBA
     captureImageToPng(*mAoPipeline->aoRawImage, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eColor, width, height, 4, path,
@@ -552,11 +600,14 @@ void Renderer::captureAoTextureDebug() {
 void Renderer::captureNormalsTextureDebug() {
     uint32_t width = mSwapchain->extent.width;
     uint32_t height = mSwapchain->extent.height;
-    auto slash = mScreenshotPath.rfind('/');
-    std::string path = (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") +
-                       "normals_texture.png";
+    std::string path = screenshotOutputPath("normals_texture.png");
     captureImageToPng(*mAoPipeline->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eColor, width, height, 4, path);
+}
+
+std::string Renderer::screenshotOutputPath(std::string const& filename) const {
+    auto slash = mScreenshotPath.rfind('/');
+    return (slash != std::string::npos ? mScreenshotPath.substr(0, slash + 1) : "") + filename;
 }
 
 void Renderer::resolveShaderVariants() {
@@ -661,16 +712,7 @@ void Renderer::buildRenderGraph() {
         mRenderGraph.addPass("ShadowPass")
                 .writesDepth(mShadowMapImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    cmd.setViewport(0, vk::Viewport{
-                                           .x = 0.0f,
-                                           .y = 0.0f,
-                                           .width = static_cast<float>(SHADOW_MAP_SIZE),
-                                           .height = static_cast<float>(SHADOW_MAP_SIZE),
-                                           .minDepth = 0.0f,
-                                           .maxDepth = 1.0f,
-                                       });
-                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 },
-                                          .extent = { SHADOW_MAP_SIZE, SHADOW_MAP_SIZE } });
+                    setViewportAndScissor(cmd, { SHADOW_MAP_SIZE, SHADOW_MAP_SIZE });
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mShadowPipeline->pipeline);
                     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
                     cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
@@ -743,14 +785,7 @@ void Renderer::buildRenderGraph() {
                 .writesColor(mNormalsImageHandle)
                 .writesDepth(mDepthPrepassImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    vk::Extent2D ext = mSwapchain->extent;
-                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
-                                           .y = 0.0f,
-                                           .width = static_cast<float>(ext.width),
-                                           .height = static_cast<float>(ext.height),
-                                           .minDepth = 0.0f,
-                                           .maxDepth = 1.0f });
-                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    setViewportAndScissor(cmd, mSwapchain->extent);
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
                             *mAoPipeline->normalsPipeline);
                     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
@@ -787,13 +822,7 @@ void Renderer::buildRenderGraph() {
                         .reads(mDepthMipImageHandles[level - 1])
                         .writesDepth(mipHandle)
                         .execute([this, level, mipExtent](vk::raii::CommandBuffer const& cmd) {
-                            cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
-                                                   .y = 0.0f,
-                                                   .width = static_cast<float>(mipExtent.width),
-                                                   .height = static_cast<float>(mipExtent.height),
-                                                   .minDepth = 0.0f,
-                                                   .maxDepth = 1.0f });
-                            cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = mipExtent });
+                            setViewportAndScissor(cmd, mipExtent);
                             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                     *mAoPipeline->depthMipPipeline);
                             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
@@ -809,14 +838,7 @@ void Renderer::buildRenderGraph() {
                 .reads(mDepthPrepassImageHandle)
                 .reads(mNormalsImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    vk::Extent2D ext = mSwapchain->extent;
-                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
-                                           .y = 0.0f,
-                                           .width = static_cast<float>(ext.width),
-                                           .height = static_cast<float>(ext.height),
-                                           .minDepth = 0.0f,
-                                           .maxDepth = 1.0f });
-                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    setViewportAndScissor(cmd, mSwapchain->extent);
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->aoPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *mAoPipeline->aoPipeLayout, 0, *mAoPipeline->aoDescSets[mFrameIndex],
@@ -835,14 +857,7 @@ void Renderer::buildRenderGraph() {
                 .writesColor(mAoBlurImageHandle)
                 .reads(mAoRawImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    vk::Extent2D ext = mSwapchain->extent;
-                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
-                                           .y = 0.0f,
-                                           .width = static_cast<float>(ext.width),
-                                           .height = static_cast<float>(ext.height),
-                                           .minDepth = 0.0f,
-                                           .maxDepth = 1.0f });
-                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    setViewportAndScissor(cmd, mSwapchain->extent);
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *mAoPipeline->blurPipeLayout, 0,
@@ -854,14 +869,7 @@ void Renderer::buildRenderGraph() {
                 .writesColor(mAoRawImageHandle)
                 .reads(mAoBlurImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    vk::Extent2D ext = mSwapchain->extent;
-                    cmd.setViewport(0, vk::Viewport{ .x = 0.0f,
-                                           .y = 0.0f,
-                                           .width = static_cast<float>(ext.width),
-                                           .height = static_cast<float>(ext.height),
-                                           .minDepth = 0.0f,
-                                           .maxDepth = 1.0f });
-                    cmd.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = ext });
+                    setViewportAndScissor(cmd, mSwapchain->extent);
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *mAoPipeline->blurPipeLayout, 0,
@@ -881,18 +889,9 @@ void Renderer::buildRenderGraph() {
         forwardPass.reads(mAoRawImageHandle);
     }
     forwardPass.execute([this](vk::raii::CommandBuffer const& commandBuffer) {
-        vk::Extent2D drawExtent = mSwapchain->extent;
         commandBuffer.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
         commandBuffer.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
-        commandBuffer.setViewport(0, vk::Viewport{
-                                         .x = 0.0f,
-                                         .y = 0.0f,
-                                         .width = static_cast<float>(drawExtent.width),
-                                         .height = static_cast<float>(drawExtent.height),
-                                         .minDepth = 0.0f,
-                                         .maxDepth = 1.0f,
-                                     });
-        commandBuffer.setScissor(0, vk::Rect2D{ .offset = { 0, 0 }, .extent = drawExtent });
+        setViewportAndScissor(commandBuffer, mSwapchain->extent);
 
         for (auto const& renderObject: mRenderObjects) {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
