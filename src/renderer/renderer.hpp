@@ -30,12 +30,14 @@
 
 class Renderer {
 public:
-    explicit Renderer(std::string scenePath, std::string screenshotPath = {});
+    explicit Renderer(std::string scenePath, std::string screenshotPath = {},
+            bool exitAfterScreenshot = false);
     void run();
 
 private:
     std::string mScenePath;
     std::string mScreenshotPath;
+    bool mExitAfterScreenshot = false;
     Scene mScene;
     Camera mCamera;
     OrbitControls mOrbitControls;

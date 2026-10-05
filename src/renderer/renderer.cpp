@@ -26,9 +26,10 @@ static AmbientLight const* ambientLightFromLights(std::vector<Light> const& ligh
     return nullptr;
 }
 
-Renderer::Renderer(std::string scenePath, std::string screenshotPath)
+Renderer::Renderer(std::string scenePath, std::string screenshotPath, bool exitAfterScreenshot)
         : mScenePath(std::move(scenePath)),
-          mScreenshotPath(std::move(screenshotPath)) {}
+          mScreenshotPath(std::move(screenshotPath)),
+          mExitAfterScreenshot(exitAfterScreenshot) {}
 
 void Renderer::run() {
     mScene = loadScene(mScenePath);
@@ -398,6 +399,9 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     if (mAoPipeline) {
         captureAoTextureDebug();
         captureNormalsTextureDebug();
+    }
+    if (mExitAfterScreenshot) {
+        glfwSetWindowShouldClose(mWindow, GLFW_TRUE);
     }
 }
 

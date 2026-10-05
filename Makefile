@@ -1,6 +1,9 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release format lint lint-fix
+BUNNY_SCENES := $(wildcard scenes/stanford_bunny_*.json)
+BUNNY_SCREENSHOT_DIR := results/standford_bunny
+
+.PHONY: help configure-debug configure-release build-debug build-release run-debug run-release screenshots-bunny format lint lint-fix
 
 help:
 	@echo "Available commands:"
@@ -10,6 +13,7 @@ help:
 	@echo "  make build-release             - Build optimized without validation layers"
 	@echo "  make run-debug SCENE=<path>    - Run debug (e.g. SCENE=scenes/scene_a.json)"
 	@echo "  make run-release SCENE=<path>  - Run release"
+	@echo "  make screenshots-bunny         - Capture all Stanford bunny scenes (debug)"
 	@echo "  make format                    - Format all source files with clang-format"
 	@echo "  make lint                      - Run clang-tidy static analysis"
 	@echo "  make lint-fix                  - Run clang-tidy and apply fixes automatically"
@@ -31,6 +35,14 @@ run-debug:
 
 run-release:
 	./build/release/pbr_renderer $(SCENE) $(ARGS)
+
+screenshots-bunny: build-debug
+	@mkdir -p "$(BUNNY_SCREENSHOT_DIR)"
+	@set -e; for scene in $(BUNNY_SCENES); do \
+		name=$${scene#scenes/stanford_bunny_}; \
+		name=$${name%.json}; \
+		./build/debug/pbr_renderer "$$scene" --screenshot "$(BUNNY_SCREENSHOT_DIR)/$$name.png" --exit-after-screenshot; \
+	done
 
 format:
 	find . -path ./build -prune -o \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print | xargs clang-format -i
