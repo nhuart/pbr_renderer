@@ -1,9 +1,9 @@
 #include "renderer/skybox_pipeline.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
 #include "renderer/ibl_environment.hpp"
-#include "core/config.hpp"
 
 #include <bit>
 #include <cstring>
@@ -13,6 +13,12 @@
 
 SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
         IblEnvironment const& ibl) {
+    createDescriptorResources(ctx);
+    createDescriptorSets(ctx, ibl);
+    createGraphicsPipeline(ctx, swapchain);
+}
+
+void SkyboxPipeline::createDescriptorResources(VulkanContext const& ctx) {
     constexpr uint32_t frameCount = MAX_FRAMES_IN_FLIGHT;
 
     std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
@@ -57,8 +63,10 @@ SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapch
         uniformBuffers.push_back(std::move(buf));
         uniformBuffersMemory.push_back(std::move(mem));
     }
+}
 
-    // Allocate descriptor sets
+void SkyboxPipeline::createDescriptorSets(VulkanContext const& ctx, IblEnvironment const& ibl) {
+    constexpr uint32_t frameCount = MAX_FRAMES_IN_FLIGHT;
     std::vector<vk::DescriptorSetLayout> layouts(frameCount, *descriptorSetLayout);
     auto sets = vk::raii::DescriptorSets(ctx.device, vk::DescriptorSetAllocateInfo{
                                                          .descriptorPool = *descriptorPool,
@@ -99,8 +107,9 @@ SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapch
         } };
         ctx.device.updateDescriptorSets(writes, {});
     }
+}
 
-    // Pipeline
+void SkyboxPipeline::createGraphicsPipeline(VulkanContext const& ctx, Swapchain const& swapchain) {
     auto vertCode = vkutil::readSpirv("shaders/compiled/skybox.vert.spv");
     auto fragCode = vkutil::readSpirv("shaders/compiled/skybox.frag.spv");
     vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);

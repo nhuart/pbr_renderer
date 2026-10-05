@@ -26,4 +26,9 @@ struct SkyboxPipeline {
     SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapchain, IblEnvironment const& ibl);
 
     void updateUBO(uint32_t frameIndex, SkyboxUBO const& ubo);
+
+private:
+    void createDescriptorResources(VulkanContext const& ctx);
+    void createDescriptorSets(VulkanContext const& ctx, IblEnvironment const& ibl);
+    void createGraphicsPipeline(VulkanContext const& ctx, Swapchain const& swapchain);
 };

@@ -130,6 +130,8 @@ add_executable(pbr_renderer
     src/core/resource_allocator.cpp
     src/core/sync.cpp
     src/renderer/renderer.cpp
+    src/renderer/renderer_capture.cpp
+    src/renderer/renderer_graph.cpp
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
@@ -137,8 +139,11 @@ add_executable(pbr_renderer
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
     src/renderer/material.cpp
+    src/renderer/material_instance.cpp
     src/renderer/shadow_pipeline.cpp
     src/renderer/ao_pipeline.cpp
+    src/renderer/ao_pipeline_prepass.cpp
+    src/renderer/ao_pipeline_effects.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )

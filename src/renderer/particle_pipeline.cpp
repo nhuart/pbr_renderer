@@ -20,9 +20,14 @@
 
 ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
         CommandService const& cmds, ParticleSystem const& particleSystem) {
-    uint32_t particleCount = particleSystem.count;
+    createParticleBuffers(ctx, cmds, particleSystem.count);
+    createComputePipeline(ctx);
+    createComputeDescriptors(ctx, particleSystem.count);
+    createGraphicsPipeline(ctx, swapchain);
+}
 
-    // --- SSBO ---
+void ParticlePipeline::createParticleBuffers(VulkanContext const& ctx, CommandService const& cmds,
+        uint32_t particleCount) {
     std::default_random_engine rndEngine(static_cast<unsigned>(time(nullptr)));
     std::uniform_real_distribution<float> rndDist(0.0f, 1.0f);
 
@@ -72,8 +77,9 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
         std::cout << "Shader storage buffers: " << particleCount << " particles, "
                   << MAX_FRAMES_IN_FLIGHT << " SSBO pairs\n";
     }
+}
 
-    // --- Compute descriptor layout ---
+void ParticlePipeline::createComputePipeline(VulkanContext const& ctx) {
     std::array<vk::DescriptorSetLayoutBinding, 3> computeBindings{ {
         {
             .binding = 0,
@@ -121,8 +127,9 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
     if (vkutil::vulkanLoggingEnabled) {
         std::cout << "Compute pipeline: created\n";
     }
+}
 
-    // --- Compute descriptor pool + sets ---
+void ParticlePipeline::createComputeDescriptors(VulkanContext const& ctx, uint32_t particleCount) {
     std::array poolSizes = {
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eUniformBuffer,
@@ -194,8 +201,10 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
         } };
         ctx.device.updateDescriptorSets(writes, {});
     }
+}
 
-    // --- Particle graphics pipeline ---
+void ParticlePipeline::createGraphicsPipeline(VulkanContext const& ctx,
+        Swapchain const& swapchain) {
     auto vertCode = vkutil::readSpirv("shaders/compiled/particle.vert.spv");
     auto fragCode = vkutil::readSpirv("shaders/compiled/particle.frag.spv");
     vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
