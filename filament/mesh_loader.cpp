@@ -1,10 +1,28 @@
 #include "mesh_loader.h"
 
 #include <iostream>
+#include <memory>
 #include <vector>
 
 using namespace filament;
 using namespace filament::gltfio;
+
+static void loadExternalResources(MeshLoaderContext const& loaderContext, MeshEntry& entry) {
+    size_t resourceCount = entry.asset->getResourceUriCount();
+    for (size_t index = 0; index < resourceCount; ++index) {
+        const char* resourceUri = entry.asset->getResourceUris()[index];
+        utils::Path resourcePath = entry.path.getParent() + resourceUri;
+        auto resourceData = loaderContext.appLoader->load(resourcePath);
+        if (resourceData.empty()) {
+            continue;
+        }
+
+        auto ownedBuffer = std::make_shared<std::vector<uint8_t>>(std::move(resourceData));
+        auto bufferDescriptor = ResourceLoader::BufferDescriptor::make(ownedBuffer->data(),
+                ownedBuffer->size(), [ownedBuffer](void*, size_t) {});
+        entry.resourceLoader->addResourceData(resourceUri, std::move(bufferDescriptor));
+    }
+}
 
 void loadMesh(MeshLoaderContext const& loaderContext, MeshEntry& entry) {
     std::vector<uint8_t> fileData = loaderContext.appLoader->load(entry.path);
@@ -27,24 +45,21 @@ void loadMesh(MeshLoaderContext const& loaderContext, MeshEntry& entry) {
     entry.textureProvider = createStbProvider(loaderContext.engine);
     entry.resourceLoader->addTextureProvider("image/png", entry.textureProvider);
 
-    size_t resourceCount = entry.asset->getResourceUriCount();
-    for (size_t index = 0; index < resourceCount; ++index) {
-        const char* resourceUri = entry.asset->getResourceUris()[index];
-        utils::Path resourcePath = entry.path.getParent() + resourceUri;
-        auto resourceData = loaderContext.appLoader->load(resourcePath);
-        if (!resourceData.empty()) {
-            auto ownedBuffer = std::make_shared<std::vector<uint8_t>>(std::move(resourceData));
-            auto bufferDescriptor = ResourceLoader::BufferDescriptor::make(ownedBuffer->data(),
-                    ownedBuffer->size(), [ownedBuffer](void*, size_t) {});
-            entry.resourceLoader->addResourceData(resourceUri, std::move(bufferDescriptor));
-        }
-    }
-
+    loadExternalResources(loaderContext, entry);
     entry.resourceLoader->asyncBeginLoad(entry.asset);
 
     auto& transformManager = loaderContext.engine->getTransformManager();
     auto transformInstance = transformManager.getInstance(entry.asset->getRoot());
     transformManager.setTransform(transformInstance, entry.transform);
+}
+
+static void configureMaterialInstance(MaterialInstance& material, MeshEntry const& entry) {
+    material.setParameter("baseColorFactor", entry.baseColor);
+    material.setParameter("metallicFactor", entry.metallic);
+    material.setParameter("roughnessFactor", entry.roughness);
+    if (!entry.useNormalMap) {
+        material.setParameter("normalScale", 0.0f);
+    }
 }
 
 void applyMaterial(Engine& engine, MeshEntry const& entry) {
@@ -66,12 +81,7 @@ void applyMaterial(Engine& engine, MeshEntry const& entry) {
             if (!materialInstance) {
                 continue;
             }
-            materialInstance->setParameter("baseColorFactor", entry.baseColor);
-            materialInstance->setParameter("metallicFactor", entry.metallic);
-            materialInstance->setParameter("roughnessFactor", entry.roughness);
-            if (!entry.useNormalMap) {
-                materialInstance->setParameter("normalScale", 0.0f);
-            }
+            configureMaterialInstance(*materialInstance, entry);
         }
     }
 }
