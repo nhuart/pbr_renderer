@@ -28,6 +28,7 @@
 
 #include <materials/uberarchive.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -56,10 +57,8 @@ struct App {
     std::string screenshotFile;
 };
 
-static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
-    app.engine = engine;
-    app.names = new NameComponentManager(EntityManager::get());
-    if (app.scene.disableMultiBounceAO) {
+static MaterialProvider* createMaterialProvider(Engine& engine, bool disableMultiBounceAO) {
+    if (disableMultiBounceAO) {
         auto archivePath =
                 std::filesystem::path(utils::Path::getCurrentExecutable().getParent().c_str()) /
                 "ao_no_multibounce.uberz";
@@ -69,38 +68,49 @@ static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
         }
         std::vector<uint8_t> archive((std::istreambuf_iterator<char>(archiveFile)),
                 std::istreambuf_iterator<char>());
-        app.materials = createUbershaderProvider(engine, archive.data(), archive.size());
+        auto* provider = createUbershaderProvider(&engine, archive.data(), archive.size());
         std::cout << "Using AO material archive: " << archivePath << std::endl;
-    } else {
-        app.materials = createUbershaderProvider(engine, UBERARCHIVE_DEFAULT_DATA,
-                UBERARCHIVE_DEFAULT_SIZE);
+        return provider;
     }
-    app.gltfLoader = gltfio::AssetLoader::create({ engine, app.materials, app.names });
+    return createUbershaderProvider(&engine, UBERARCHIVE_DEFAULT_DATA, UBERARCHIVE_DEFAULT_SIZE);
+}
 
+static void configureView(App& app, Engine& engine, View& view) {
     ReinhardToneMapper reinhard;
-    app.colorGrading = ColorGrading::Builder().toneMapper(&reinhard).build(*engine);
-    view->setColorGrading(app.colorGrading);
+    app.colorGrading = ColorGrading::Builder().toneMapper(&reinhard).build(engine);
+    view.setColorGrading(app.colorGrading);
 
-    view->setAntiAliasing(View::AntiAliasing::NONE);
-    view->setDithering(View::Dithering::NONE);
-    view->setShadowType(app.scene.shadowType);
+    view.setAntiAliasing(View::AntiAliasing::NONE);
+    view.setDithering(View::Dithering::NONE);
+    view.setShadowType(app.scene.shadowType);
 
     if (app.scene.ambientOcclusion) {
-        view->setAmbientOcclusionOptions(*app.scene.ambientOcclusion);
+        view.setAmbientOcclusionOptions(*app.scene.ambientOcclusion);
     }
 
     double aspect = double(app.scene.width) / double(app.scene.height);
-    applyCamera(view->getCamera(), app.scene.camera, aspect);
+    applyCamera(view.getCamera(), app.scene.camera, aspect);
+}
 
-    createLights(*engine, *scene, app.scene.lights, app.lightEntities);
-
+static void configureAmbientLight(App& app, Engine& engine, Scene& scene) {
     if (app.scene.iblDir.empty() && app.scene.ambientIntensity > 0.0f) {
         float sh0 = app.scene.ambientIntensity / float(std::sqrt(4.0 * M_PI));
         math::float3 sh[1] = { { sh0, sh0, sh0 } };
         app.ambientIndirectLight =
-                IndirectLight::Builder().irradiance(1, sh).intensity(30000.0f).build(*engine);
-        scene->setIndirectLight(app.ambientIndirectLight);
+                IndirectLight::Builder().irradiance(1, sh).intensity(30000.0f).build(engine);
+        scene.setIndirectLight(app.ambientIndirectLight);
     }
+}
+
+static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
+    app.engine = engine;
+    app.names = new NameComponentManager(EntityManager::get());
+    app.materials = createMaterialProvider(*engine, app.scene.disableMultiBounceAO);
+    app.gltfLoader = gltfio::AssetLoader::create({ engine, app.materials, app.names });
+
+    configureView(app, *engine, *view);
+    createLights(*engine, *scene, app.scene.lights, app.lightEntities);
+    configureAmbientLight(app, *engine, *scene);
 
     if (!app.scene.showSkybox) {
         scene->setSkybox(nullptr);
@@ -149,6 +159,24 @@ static void animateApp(App& app, View* view) {
     }
 }
 
+static void captureWhenReady(App& app, Renderer& renderer, View& view) {
+    if (app.screenshotCaptured) {
+        return;
+    }
+    bool allLoaded = std::all_of(app.scene.meshes.begin(), app.scene.meshes.end(),
+            [](MeshEntry const& entry) { return entry.loaded; });
+    if (!allLoaded) {
+        return;
+    }
+
+    // Wait for two frames after load so the GPU has uploaded all mesh data.
+    static constexpr int kWarmupFramesAfterLoad = 2;
+    if (++app.warmupFramesAfterLoad >= kWarmupFramesAfterLoad) {
+        app.screenshotCaptured = true;
+        captureScreenshot(renderer, view, app.screenshotFile);
+    }
+}
+
 void runScene(SceneDesc scene, const char* screenshotName) {
     auto app = std::make_shared<App>();
     app->scene = std::move(scene);
@@ -180,20 +208,7 @@ void runScene(SceneDesc scene, const char* screenshotName) {
 
         // Re-apply camera every frame to prevent the manipulator from overriding it.
         applyCamera(view->getCamera(), app->scene.camera, aspect);
-
-        if (app->screenshotCaptured) {
-            return;
-        }
-        bool allLoaded = std::all_of(app->scene.meshes.begin(), app->scene.meshes.end(),
-                [](MeshEntry const& entry) { return entry.loaded; });
-        if (allLoaded) {
-            // Wait for 2 frames after load so the GPU has fully uploaded all mesh data.
-            static constexpr int kWarmupFramesAfterLoad = 2;
-            if (++app->warmupFramesAfterLoad >= kWarmupFramesAfterLoad) {
-                app->screenshotCaptured = true;
-                captureScreenshot(*renderer, *view, app->screenshotFile);
-            }
-        }
+        captureWhenReady(*app, *renderer, *view);
     };
 
     auto sdlDM =
