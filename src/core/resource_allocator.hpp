@@ -49,13 +49,6 @@ void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image,
         vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eColor, uint32_t mipLevels = 1,
         uint32_t arrayLayers = 1);
 
-void copyBufferToImage(vk::raii::CommandBuffer const& cmd, vk::raii::Buffer const& buffer,
-        vk::raii::Image const& image, uint32_t w, uint32_t h);
-
-void generateMipmaps(VulkanContext const& ctx, vk::raii::CommandBuffer const& cmd,
-        vk::raii::Image const& image, vk::Format format, int32_t texWidth, int32_t texHeight,
-        uint32_t mipLevels);
-
 [[nodiscard]] std::vector<char> readSpirv(std::string const& path);
 
 [[nodiscard]] vk::raii::ShaderModule createShaderModule(VulkanContext const& ctx,

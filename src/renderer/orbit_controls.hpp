@@ -1,7 +1,7 @@
 #pragma once
 
 #define GLFW_INCLUDE_VULKAN
-#include "renderer/camera.hpp"
+#include "core/camera.hpp"
 #include <GLFW/glfw3.h>
 
 struct OrbitControls {

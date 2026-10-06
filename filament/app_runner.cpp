@@ -72,8 +72,8 @@ static void setupApp(App& app, Engine* engine, View* view, Scene* scene) {
         app.materials = createUbershaderProvider(engine, archive.data(), archive.size());
         std::cout << "Using AO material archive: " << archivePath << std::endl;
     } else {
-        app.materials =
-                createUbershaderProvider(engine, UBERARCHIVE_DEFAULT_DATA, UBERARCHIVE_DEFAULT_SIZE);
+        app.materials = createUbershaderProvider(engine, UBERARCHIVE_DEFAULT_DATA,
+                UBERARCHIVE_DEFAULT_SIZE);
     }
     app.gltfLoader = gltfio::AssetLoader::create({ engine, app.materials, app.names });
 

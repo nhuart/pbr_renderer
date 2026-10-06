@@ -8,7 +8,7 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     vec3 color = textureLod(prefilterMap, fragDir, 0.0).rgb;
-    
+
     // Reinhard tone mapping; no manual gamma — sRGB swapchain handles it
     color = color / (color + vec3(1.0));
 

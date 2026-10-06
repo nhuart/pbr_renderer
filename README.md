@@ -1,5 +1,11 @@
 # pbr_renderer
-PBR renderer in c++ with vulkan
+This project is a forward PBR renderer in C++ with Vulkan. It does not yet use clustered forward rendering.
+
+The primary goal of this project was to learn Vulkan. After working through this Vulkan [tutorial](https://docs.vulkan.org/tutorial/latest/00_Introduction.html), my aim was not to reinvent the wheel in computer graphics, but to integrate graphics features into this Vulkan architecture and expand my Vulkan knowledge. Therefore, the (surface) rendering features were heavily inspired by, and validated against, [Google Filament](https://github.com/google/filament).
+
+See the [side-by-side comparisons with Filament](results/comparison/filament_validations.html) for the rendering results.
+
+This project is still in progress and the end goal is to render a visually appealing scene that also includes volumetric effects, such as light beams, and particle effects, such as fire.
 
 ## Development
 
@@ -14,8 +20,8 @@ PBR renderer in c++ with vulkan
 ### First-time setup
 
 ```bash
-make configure-debug    # generate build/debug with compile_commands.json
-make configure-release  # generate build/release
+make configure-debug
+make configure-release
 ```
 
 ### Build
@@ -28,92 +34,135 @@ make build-release  # optimized build
 ### Run
 
 ```bash
-make run-debug   SCENE=scenes/viking_room.json
-make run-release SCENE=scenes/viking_room.json
+make run-debug   SCENE=<scene>
+make run-release SCENE=<scene>
 ```
 
 To capture a screenshot on the first rendered frame, pass `--screenshot` via `ARGS`:
 
 ```bash
-make run-release SCENE=scenes/viking_room.json ARGS="--screenshot output.png"
+make run-release SCENE=scenes/viking_room.json ARGS="--screenshot <output_path.png>"
+```
+
+Vulkan initialization and pipeline logs are disabled by default. Validation-layer warnings and errors remain visible in debug builds. Enable the informational logs when needed:
+
+```bash
+make run-debug SCENE=scenes/stanford_bunny_pbr_ibl_sao.json ARGS="--vulkan-logs"
 ```
 
 ### Code quality
 
 ```bash
-make format     # clang-format all .cpp/.hpp/.h in-place
-make lint       # clang-tidy static analysis (read-only)
-make lint-fix   # clang-tidy with auto-fix
+make format
+make lint
+make lint-fix
 ```
 
 ## Scene format
 
-Scenes are defined in JSON. The binary must be run from the repository root so that asset paths resolve correctly.
+Each scene is defined in a JSON file under `scenes/`. Keeping scene settings separate from the renderer makes it easy to change models, materials, lighting, and rendering effects without rebuilding the application.
+
+A scene specifies a `camera` and a `meshInstances` array. Each mesh instance identifies a glTF model, the shaders used to render it, and optional material and transform settings. See [Rendering](#rendering) for the available lighting and shading features.
+
+For example, a simplified PBR bunny scene could be written as:
 
 ```json
 {
-    "meshInstances": [
+    "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "azimuth": 45.0,
+        "elevation": 30.0,
+        "radius": 3.5,
+        "fov": 45.0,
+        "near": 0.1,
+        "far": 100.0
+    },
+    "lights": [
         {
-            "gltf": "models/viking_room.glb",
-            "texture": "textures/viking_room.ktx2",
-            "position": [0.0, 0.0, 0.0],
-            "rotation": [0.0, 0.0, 45.0],
-            "scale": [0.75, 0.75, 0.75]
+            "type": "directional",
+            "direction": [1.0, 2.0, 1.0],
+            "color": [1.0, 1.0, 1.0],
+            "intensity": 10000.0
         }
     ],
-    "particles": {
-        "count": 8192
-    }
+    "meshInstances": [
+        {
+            "gltf": "models/stanford_bunny.glb",
+            "vertexShader": "standard",
+            "fragmentShader": "pbr",
+            "baseColor": [0.8, 0.7, 0.6, 1.0],
+            "metallic": 0.0,
+            "roughness": 0.4,
+            "position": [0.03, -1.19, -0.28],
+            "rotation": [-90.0, 0.0, 45.0],
+            "scale": [10.0, 10.0, 10.0]
+        }
+    ]
 }
 ```
 
-**`meshInstances`** (required) — array of mesh objects to render.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `gltf` | string | — | Path to a `.glb` / `.gltf` model |
-| `texture` | string | — | Path to a `.ktx2` texture |
-| `position` | `[x, y, z]` | `[0,0,0]` | World-space position |
-| `rotation` | `[x, y, z]` | `[0,0,0]` | Euler angles in degrees, applied X→Y→Z |
-| `scale` | `[x, y, z]` | `[1,1,1]` | Per-axis scale |
+Multiple instances can reference the same `gltf` path. The mesh data, however, is uploaded to the GPU only once.
 
-Multiple instances can reference the same `gltf` path — mesh data is uploaded to the GPU only once.
+## Rendering
 
-**`particles`** (optional) — when present, enables the GPU particle system.
+- Lambertian, Phong, and Blinn–Phong surface shading
+- Metallic-roughness PBR with a Cook–Torrance microfacet specular BRDF (GGX)
+- Base-color textures and glTF normal mapping
+- Ambient, directional, point, and spot lights
+- Physically based camera
+- Image-based lighting and skybox
+- Directional-light shadows with hard or percentage-closer filtered (PCF) shadow maps
+- Screen-space ambient occlusion with Scalable ambient obscurance (SAO) and ground-truth ambient occlusion (GTAO)
+- Reinhard tone mapping
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `count` | integer | `8192` | Number of particles |
-
-Omitting the `particles` key disables all compute and particle rendering infrastructure entirely.
+The [Stanford bunny scenes](scenes/) demonstrate these features with different materials, lights, and effects.
 
 ## Code structure
 
-```
+```text
+main.cpp        Application entry point and command-line arguments
 src/
-  core/      Raw Vulkan — device, swapchain, memory, sync primitives
-  renderer/  GPU resources — camera, materials, meshes, textures, particles
-  scene/     CPU data — scene graph, JSON loading, UBO types
+  core/         Vulkan context, swapchain, commands, memory, synchronization, and camera
+  renderer/     Renderer orchestration, render graph, materials, GPU resources, and effect pipelines
+  scene/        JSON scene loader and scene, light, and mesh data types
+shaders/        GLSL shaders
+scenes/         JSON scene configurations
+models/         glTF models
+ibl/            Image-based lighting assets
+textures/       Texture assets
+filament/       Filament-based reference renderer and matching scenes for comparison
+results/        Rendered results and Filament comparisons
 ```
 
-## TODO
+## TODOs
 
-- [ ] Replace per-resource `allocateMemory` with [VulkanMemoryAllocator (VMA)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) — `maxMemoryAllocationCount` can be as low as 4096, one allocation per buffer doesn't scale.
-- [ ] Pack vertex + index buffers into a single `vk::raii::Buffer` with offsets. Improves cache locality and enables memory aliasing between frames.
-- [ ] Precompute mipmaps offline with `toktx` and store as `.ktx2` instead of generating at runtime with `vkCmdBlitImage`. Enables higher-quality filters and BC7 compressed formats.
-- [ ] Add Vulkan 1.3 fallbacks: use traditional render passes instead of dynamic rendering, gate at startup with a version check.
-- [ ] Add topological sorting to `RenderGraph::buildBarriers()` so passes can be registered in any order. Currently passes must be declared in dependency order.
-- [ ] Add frustum culling: cull `RenderObject`s whose bounding sphere is outside the 6 frustum planes before recording draw calls.
-- [ ] Use Vulkan [profiles](https://github.com/KhronosGroup/Vulkan-Profiles) (`VP_KHR_roadmap_2022`) to declare feature requirements at initialization and test fallback paths via the simulation layer.
-- [ ] Replace dependency on Filament's `cmgen` with a self-contained IBL baking tool: equirectangular EXR → `*_irradiance.ktx2` (SH9), `*_prefilter.ktx2` (GGX importance sampling), `brdf_lut.ktx2` (512×512 RG32F).
-- [ ] Upgrade PCF shadow rotation to Filament's stochastic approach: Poisson disk generated on CPU each frame, rotated per-pixel with a frame-counter seed. Current static hash produces the same grain every frame.
-- [ ] Add glTF `metallicRoughnessTexture` support: G=roughness, B=metallic, sampled in `pbr.frag` via a new `ShaderFeatures::MetallicRoughnessMap` flag, falling back to scalar `pbrParams` when absent.
-- [ ] Add glTF `emissiveTexture` + `emissiveFactor` support: bind under `ShaderFeatures::Emissive`, add `emissiveFactor * texture(emissiveSampler, uv).rgb` to final color before tone mapping.
-- [ ] Add glTF `occlusionTexture` support: R channel of the metallic-roughness image, multiply ambient/IBL term by the AO value in `pbr.frag`.
-- [ ] Add multi-bounce AO to `pbr.frag`: replace `ambient *= ao` with Filament's color-aware `gtaoMultiBounce` approximation for diffuse IBL, and handle specular IBL occlusion separately instead of applying the same AO factor to both.
-- [ ] Enable bent normals in GTAO: output the bent-normal direction alongside AO visibility and use it for specular ambient occlusion, as in Filament's `bentNormals` mode.
-- [ ] Switch SAO normals from the view-space normals prepass to depth-derived reconstruction (Yuwen Wu method, 8 samples like Filament's `computeViewSpaceNormalHighQ`). Blocker: requires reversed-Z depth (near=1, far=0) to avoid banding — flip depth compare op to `eGreater`, update `linearizeDepth`, set clear value to 0.0f.
-- [ ] Add transparency: alpha blending (src-alpha / one-minus-src-alpha, depth write off) when `alphaMode == BLEND`, sort transparent objects back-to-front, add `ShaderFeatures::Blend`.
-- [ ] Add screen-space refraction: mipmap opaque color buffer after the opaque pass, sample it in a second pass using a Snell's Law refracted UV offset, use roughness to select LOD.
-- [ ] Replace the skybox pass-through check in `sao_blur.frag` (`center.g * center.b >= 0.9999`) with Filament's implicit approach: store raw view-space Z in GB channels so skybox pixels are naturally rejected by the bilateral weight without a special-case branch.
-- [ ] Extend shadow mapping to spot lights (perspective projection, spot cone FOV) and point lights (cubemap: 6 depth passes, `vk::ImageViewType::eCube`, direction-vector sampling). Requires one `ShadowPipeline` per shadow-casting light and a shadow atlas or array binding.
+This section lists improvements I identified during development but deferred for later. It does not cover broader rendering features planned for the future, such as volumetric rendering and cascaded shadows.
+
+### Vulkan and performance
+
+- Suballocate buffer and image memory, for example with [Vulkan Memory Allocator (VMA)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator).
+- Fix swapchain presentation in `RenderGraph`: the present-layout barrier is currently added to the final pass's *pre*-barriers, before that pass resolves to the swapchain image. It needs to execute after rendering.
+- Add topological sorting to `RenderGraph::buildBarriers()` so passes can be registered in any order. Currently passes must be declared in dependency order.
+- Add frustum culling.
+
+### Assets and image-based lighting
+
+- Add mipmaps for embedded glTF albedo and normal textures, which are currently uploaded with only one level. The `.ktx2` loader already accepts precomputed mip levels.
+- Replace dependency on Filament's `cmgen` with a self-contained IBL baking tool: equirectangular EXR → `*_irradiance.ktx2` (SH9), `*_prefilter.ktx2` (GGX importance sampling), `brdf_lut.ktx2` (512×512 RG32F).
+
+### Materials and surface rendering
+
+- Support glTF `metallicRoughnessTexture`.
+- Support glTF `emissiveTexture` and `emissiveFactor`.
+- Support glTF `occlusionTexture`.
+
+### Ambient occlusion
+
+- Add multi-bounce AO
+- Evaluate bent normals for GTAO-based specular occlusion.
+- Evaluate reconstructing SAO normals from depth instead of writing a normals attachment in the depth prepass.
+
+### Shadows
+
+- Consider a wider or rotated Poisson-disk PCF filter for softer directional shadows.

@@ -9,7 +9,7 @@
 import vulkan_hpp;
 #endif
 
-#include "scene/types.hpp"
+#include "renderer/gpu_types.hpp"
 
 struct VulkanContext;
 struct Swapchain;

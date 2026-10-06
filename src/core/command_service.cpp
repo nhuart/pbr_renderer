@@ -1,6 +1,6 @@
 #include "core/command_service.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
-#include "scene/types.hpp"
 
 CommandService::CommandService(VulkanContext const& ctx)
         : mCtx(&ctx) {

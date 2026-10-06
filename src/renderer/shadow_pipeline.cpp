@@ -2,7 +2,9 @@
 #include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
-#include "scene/types.hpp"
+#include "core/vulkan_logging.hpp"
+#include "renderer/gpu_types.hpp"
+#include "renderer/vertex.hpp"
 
 #include <iostream>
 
@@ -204,7 +206,9 @@ void ShadowPipeline::createPipeline(VulkanContext const& ctx, uint32_t objectCou
 
     pipeline = vk::raii::Pipeline(ctx.device, nullptr,
             pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "Shadow pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Shadow pipeline: created\n";
+    }
 }
 
 void ShadowPipeline::allocateObjectData(VulkanContext const& ctx, uint32_t objectCount) {

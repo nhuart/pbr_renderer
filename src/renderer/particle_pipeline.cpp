@@ -1,8 +1,12 @@
 #include "renderer/particle_pipeline.hpp"
 #include "core/command_service.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "core/vulkan_logging.hpp"
+#include "renderer/gpu_types.hpp"
+#include "renderer/vertex.hpp"
 
 #include <array>
 #include <bit>
@@ -16,9 +20,14 @@
 
 ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
         CommandService const& cmds, ParticleSystem const& particleSystem) {
-    uint32_t particleCount = particleSystem.count;
+    createParticleBuffers(ctx, cmds, particleSystem.count);
+    createComputePipeline(ctx);
+    createComputeDescriptors(ctx, particleSystem.count);
+    createGraphicsPipeline(ctx, swapchain);
+}
 
-    // --- SSBO ---
+void ParticlePipeline::createParticleBuffers(VulkanContext const& ctx, CommandService const& cmds,
+        uint32_t particleCount) {
     std::default_random_engine rndEngine(static_cast<unsigned>(time(nullptr)));
     std::uniform_real_distribution<float> rndDist(0.0f, 1.0f);
 
@@ -64,10 +73,13 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
         computeUniformBuffersMemory.push_back(std::move(uboMemory));
     }
 
-    std::cout << "Shader storage buffers: " << particleCount << " particles, "
-              << MAX_FRAMES_IN_FLIGHT << " SSBO pairs\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Shader storage buffers: " << particleCount << " particles, "
+                  << MAX_FRAMES_IN_FLIGHT << " SSBO pairs\n";
+    }
+}
 
-    // --- Compute descriptor layout ---
+void ParticlePipeline::createComputePipeline(VulkanContext const& ctx) {
     std::array<vk::DescriptorSetLayoutBinding, 3> computeBindings{ {
         {
             .binding = 0,
@@ -112,9 +124,12 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
                 .stage = compStageInfo,
                 .layout = *computePipelineLayout,
             });
-    std::cout << "Compute pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Compute pipeline: created\n";
+    }
+}
 
-    // --- Compute descriptor pool + sets ---
+void ParticlePipeline::createComputeDescriptors(VulkanContext const& ctx, uint32_t particleCount) {
     std::array poolSizes = {
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eUniformBuffer,
@@ -186,8 +201,10 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
         } };
         ctx.device.updateDescriptorSets(writes, {});
     }
+}
 
-    // --- Particle graphics pipeline ---
+void ParticlePipeline::createGraphicsPipeline(VulkanContext const& ctx,
+        Swapchain const& swapchain) {
     auto vertCode = vkutil::readSpirv("shaders/compiled/particle.vert.spv");
     auto fragCode = vkutil::readSpirv("shaders/compiled/particle.frag.spv");
     vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
@@ -296,5 +313,7 @@ ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& sw
 
     particlePipeline = vk::raii::Pipeline(ctx.device, nullptr,
             pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-    std::cout << "Particle pipeline: created\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Particle pipeline: created\n";
+    }
 }

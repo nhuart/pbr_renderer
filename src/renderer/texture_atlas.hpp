@@ -26,4 +26,8 @@ struct TextureAtlas {
     // linear=true uses eR8G8B8A8Unorm (normal maps); false uses eR8G8B8A8Srgb (albedo).
     TextureAtlas(VulkanContext const& ctx, CommandService const& cmds, uint8_t const* pixels,
             uint32_t width, uint32_t height, bool linear = false);
+
+private:
+    void uploadPixels(VulkanContext const& ctx, CommandService const& cmds, void const* pixels,
+            uint32_t width, uint32_t height);
 };

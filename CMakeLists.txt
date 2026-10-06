@@ -35,12 +35,24 @@ FetchContent_MakeAvailable(json)
 
 find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 
+function(add_shader_output shader_source output_name)
+    set(output_path "${CMAKE_BINARY_DIR}/shaders/${output_name}.spv")
+    add_custom_command(
+        OUTPUT "${output_path}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+        COMMAND "${GLSLC}" "${CMAKE_SOURCE_DIR}/${shader_source}" ${ARGN} -o "${output_path}"
+        DEPENDS "${CMAKE_SOURCE_DIR}/${shader_source}"
+        COMMENT "Compiling shader ${output_name}"
+        VERBATIM
+    )
+    set(SHADER_SPIRV_OUTPUTS ${SHADER_SPIRV_OUTPUTS} "${output_path}" PARENT_SCOPE)
+endfunction()
+
 set(SHADER_SOURCES
     shaders/standard.vert
     shaders/lambertian.frag
     shaders/phong.frag
     shaders/blinn_phong.frag
-    shaders/pbr.frag
     shaders/shadow.vert
     shaders/skybox.vert
     shaders/skybox.frag
@@ -55,62 +67,48 @@ set(SHADER_SOURCES
     shaders/sao_blur.frag
 )
 
-set(SHADER_SPIRV_OUTPUTS "")
-foreach(SHADER ${SHADER_SOURCES})
-    get_filename_component(SHADER_NAME ${SHADER} NAME)
-    set(SPIRV_OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
-    add_custom_command(
-        OUTPUT ${SPIRV_OUTPUT}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-        COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/${SHADER}" -o ${SPIRV_OUTPUT}
-        DEPENDS "${CMAKE_SOURCE_DIR}/${SHADER}"
-        COMMENT "Compiling shader ${SHADER_NAME}"
-    )
-    list(APPEND SHADER_SPIRV_OUTPUTS ${SPIRV_OUTPUT})
+set(SHADER_SPIRV_OUTPUTS)
+foreach(shader IN LISTS SHADER_SOURCES)
+    get_filename_component(shader_name "${shader}" NAME)
+    add_shader_output("${shader}" "${shader_name}")
 endforeach()
 
-# pbr.frag variants: each entry is "output_suffix|DEFINE1 DEFINE2 ..."
-set(PBR_VARIANTS
-    "pbr_ibl|USE_IBL"
-    "pbr_normal|USE_NORMAL_MAP"
-    "pbr_ibl_normal|USE_IBL USE_NORMAL_MAP"
-    "pbr_shadow|USE_SHADOW"
-    "pbr_normal_shadow|USE_NORMAL_MAP USE_SHADOW"
-    "pbr_ibl_shadow|USE_IBL USE_SHADOW"
-    "pbr_ibl_normal_shadow|USE_IBL USE_NORMAL_MAP USE_SHADOW"
-    "pbr_pcf|USE_SHADOW USE_PCF"
-    "pbr_normal_pcf|USE_NORMAL_MAP USE_SHADOW USE_PCF"
-    "pbr_ibl_pcf|USE_IBL USE_SHADOW USE_PCF"
-    "pbr_ibl_normal_pcf|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_PCF"
-    "pbr_sao|USE_SAO"
-    "pbr_ibl_sao|USE_IBL USE_SAO"
-    "pbr_normal_sao|USE_NORMAL_MAP USE_SAO"
-    "pbr_ibl_normal_sao|USE_IBL USE_NORMAL_MAP USE_SAO"
-    "pbr_shadow_sao|USE_SHADOW USE_SAO"
-    "pbr_ibl_shadow_sao|USE_IBL USE_SHADOW USE_SAO"
-    "pbr_ibl_normal_shadow_sao|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_SAO"
-    "pbr_pcf_sao|USE_SHADOW USE_PCF USE_SAO"
-    "pbr_ibl_pcf_sao|USE_IBL USE_SHADOW USE_PCF USE_SAO"
-    "pbr_ibl_normal_pcf_sao|USE_IBL USE_NORMAL_MAP USE_SHADOW USE_PCF USE_SAO"
-)
-foreach(VARIANT ${PBR_VARIANTS})
-    string(REPLACE "|" ";" VARIANT_PARTS "${VARIANT}")
-    list(GET VARIANT_PARTS 0 SUFFIX)
-    list(GET VARIANT_PARTS 1 DEFINES_STR)
-    string(REPLACE " " ";" DEFINES_LIST "${DEFINES_STR}")
-    set(SPIRV_OUT "${CMAKE_BINARY_DIR}/shaders/${SUFFIX}.frag.spv")
-    set(DEFINE_FLAGS "")
-    foreach(DEF ${DEFINES_LIST})
-        list(APPEND DEFINE_FLAGS "-D${DEF}")
+# Keep suffix order in sync with Renderer::resolveShaderVariants().
+function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
+    set(variant_name pbr)
+    set(define_flags)
+    if(has_ibl)
+        string(APPEND variant_name _ibl)
+        list(APPEND define_flags -DUSE_IBL)
+    endif()
+    if(has_normal_map)
+        string(APPEND variant_name _normal)
+        list(APPEND define_flags -DUSE_NORMAL_MAP)
+    endif()
+    if(NOT shadow_mode STREQUAL "none")
+        string(APPEND variant_name "_${shadow_mode}")
+        list(APPEND define_flags -DUSE_SHADOW)
+        if(shadow_mode STREQUAL "pcf")
+            list(APPEND define_flags -DUSE_PCF)
+        endif()
+    endif()
+    if(has_ao)
+        string(APPEND variant_name _sao)
+        list(APPEND define_flags -DUSE_SAO)
+    endif()
+
+    add_shader_output("shaders/pbr.frag" "${variant_name}.frag" ${define_flags})
+    set(SHADER_SPIRV_OUTPUTS "${SHADER_SPIRV_OUTPUTS}" PARENT_SCOPE)
+endfunction()
+
+foreach(ibl IN ITEMS OFF ON)
+    foreach(normal_map IN ITEMS OFF ON)
+        foreach(shadow IN ITEMS none shadow pcf)
+            foreach(ao IN ITEMS OFF ON)
+                add_pbr_shader(${ibl} ${normal_map} ${shadow} ${ao})
+            endforeach()
+        endforeach()
     endforeach()
-    add_custom_command(
-        OUTPUT ${SPIRV_OUT}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-        COMMAND ${GLSLC} "${CMAKE_SOURCE_DIR}/shaders/pbr.frag" ${DEFINE_FLAGS} -o ${SPIRV_OUT}
-        DEPENDS "${CMAKE_SOURCE_DIR}/shaders/pbr.frag"
-        COMMENT "Compiling shader ${SUFFIX}.frag"
-    )
-    list(APPEND SHADER_SPIRV_OUTPUTS ${SPIRV_OUT})
 endforeach()
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_OUTPUTS})
@@ -130,6 +128,8 @@ add_executable(pbr_renderer
     src/core/resource_allocator.cpp
     src/core/sync.cpp
     src/renderer/renderer.cpp
+    src/renderer/renderer_capture.cpp
+    src/renderer/renderer_graph.cpp
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
@@ -137,8 +137,11 @@ add_executable(pbr_renderer
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
     src/renderer/material.cpp
+    src/renderer/material_instance.cpp
     src/renderer/shadow_pipeline.cpp
     src/renderer/ao_pipeline.cpp
+    src/renderer/ao_pipeline_prepass.cpp
+    src/renderer/ao_pipeline_effects.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )
@@ -167,23 +170,11 @@ target_include_directories(pbr_renderer PRIVATE
 )
 target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm ktx nlohmann_json::nlohmann_json)
 
-# Copy textures next to the binary so the app can find them at runtime
-add_custom_command(TARGET pbr_renderer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/textures"
-        "$<TARGET_FILE_DIR:pbr_renderer>/textures"
-)
-
-# Copy models next to the binary so the app can find them at runtime
-add_custom_command(TARGET pbr_renderer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/models"
-        "$<TARGET_FILE_DIR:pbr_renderer>/models"
-)
-
-# Copy scene definitions next to the binary
-add_custom_command(TARGET pbr_renderer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/scenes"
-        "$<TARGET_FILE_DIR:pbr_renderer>/scenes"
-)
+foreach(asset_dir IN ITEMS textures models scenes)
+    add_custom_command(TARGET pbr_renderer POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${CMAKE_SOURCE_DIR}/${asset_dir}"
+            "$<TARGET_FILE_DIR:pbr_renderer>/${asset_dir}"
+        VERBATIM
+    )
+endforeach()

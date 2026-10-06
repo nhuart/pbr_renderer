@@ -9,12 +9,15 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "core/camera.hpp"
 #include "core/command_service.hpp"
+#include "core/config.hpp"
 #include "core/context.hpp"
 #include "core/swapchain.hpp"
 #include "core/sync.hpp"
 #include "renderer/ao_pipeline.hpp"
-#include "renderer/camera.hpp"
+#include "renderer/game_object.hpp"
+#include "renderer/gpu_types.hpp"
 #include "renderer/ibl_environment.hpp"
 #include "renderer/light_buffer.hpp"
 #include "renderer/mesh_buffer.hpp"
@@ -30,12 +33,14 @@
 
 class Renderer {
 public:
-    explicit Renderer(std::string scenePath, std::string screenshotPath = {});
+    explicit Renderer(std::string scenePath, std::string screenshotPath = {},
+            bool exitAfterScreenshot = false);
     void run();
 
 private:
     std::string mScenePath;
     std::string mScreenshotPath;
+    bool mExitAfterScreenshot = false;
     Scene mScene;
     Camera mCamera;
     OrbitControls mOrbitControls;
@@ -70,11 +75,22 @@ private:
 
     void initWindow();
     void initVulkan();
+    void createSceneObjects();
+    void createEnvironment();
+    void createShadowPipeline();
+    void createAoPipeline();
+    void createMaterials();
+    void createRenderObjects();
     void resolveShaderVariants();
     void mainLoop();
     void cleanup();
     void drawFrame();
     void updateUniforms();
+    void updateLights(float exposure);
+    void updateMaterialUniforms(glm::mat4 const& view, glm::mat4 const& projection,
+            glm::vec3 const& cameraPosition, float exposure);
+    void updateShadowUniforms();
+    void updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projection);
     void recreateSwapchain();
     void buildRenderGraph();
     void recordCommandBuffer(uint32_t imageIndex);
@@ -83,6 +99,7 @@ private:
     void captureShadowMapDebug();
     void captureAoTextureDebug();
     void captureNormalsTextureDebug();
+    [[nodiscard]] std::string screenshotOutputPath(std::string const& filename) const;
     using PixelTransform = std::function<std::vector<uint8_t>(void const*, uint32_t pixelCount)>;
     void captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
             vk::ImageAspectFlags aspect, uint32_t width, uint32_t height, uint32_t bytesPerPixel,

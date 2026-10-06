@@ -2,6 +2,7 @@
 #include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "core/vulkan_logging.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -163,6 +164,9 @@ CubemapAtlas::CubemapAtlas(VulkanContext const& ctx, CommandService const& cmds,
                                               .borderColor = vk::BorderColor::eIntOpaqueBlack,
                                           });
 
-    std::cout << "Cubemap: " << texWidth << "x" << texHeight << " (" << mipLevels << " mip levels, "
-              << numFaces << " faces, format " << vk::to_string(format) << ") loaded\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Cubemap: " << texWidth << "x" << texHeight << " (" << mipLevels
+                  << " mip levels, " << numFaces << " faces, format " << vk::to_string(format)
+                  << ") loaded\n";
+    }
 }

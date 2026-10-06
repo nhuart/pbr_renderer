@@ -1,8 +1,8 @@
 #pragma once
 
 #include "renderer/cubemap_atlas.hpp"
+#include "renderer/gpu_types.hpp"
 #include "renderer/texture_atlas.hpp"
-#include "scene/types.hpp"
 
 #include <fstream>
 #include <stdexcept>

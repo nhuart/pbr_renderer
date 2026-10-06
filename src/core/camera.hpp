@@ -19,10 +19,11 @@ struct Camera {
     double sensitivity = 100.0; // ISO
 
     [[nodiscard]] glm::dvec3 position() const {
-        double az = glm::radians(azimuth);
-        double el = glm::radians(elevation);
-        return target + radius * glm::dvec3(std::cos(el) * std::cos(az), std::sin(el),
-                                         std::cos(el) * std::sin(az));
+        double azimuthRadians = glm::radians(azimuth);
+        double elevationRadians = glm::radians(elevation);
+        return target + radius * glm::dvec3(std::cos(elevationRadians) * std::cos(azimuthRadians),
+                                         std::sin(elevationRadians),
+                                         std::cos(elevationRadians) * std::sin(azimuthRadians));
     }
 
     [[nodiscard]] glm::mat4 viewMatrix() const {
@@ -30,10 +31,10 @@ struct Camera {
     }
 
     [[nodiscard]] glm::mat4 projMatrix(float aspect) const {
-        glm::mat4 proj = glm::perspective(static_cast<float>(glm::radians(fovDegrees)), aspect,
-                static_cast<float>(nearPlane), static_cast<float>(farPlane));
-        proj[1][1] *= -1;
-        return proj;
+        glm::mat4 projection = glm::perspective(static_cast<float>(glm::radians(fovDegrees)),
+                aspect, static_cast<float>(nearPlane), static_cast<float>(farPlane));
+        projection[1][1] *= -1;
+        return projection;
     }
 
     void orbit(double dAzimuth, double dElevation) {
@@ -42,11 +43,11 @@ struct Camera {
     }
 
     void pan(double mouseDeltaX, double mouseDeltaY) {
-        glm::dvec3 cameraPos = position();
-        glm::dvec3 forwardDir = glm::normalize(target - cameraPos);
-        glm::dvec3 rightDir = glm::normalize(glm::cross(forwardDir, up));
-        glm::dvec3 viewPlaneUp = glm::normalize(glm::cross(rightDir, forwardDir));
-        target += (-mouseDeltaX * rightDir + mouseDeltaY * viewPlaneUp) * radius * panScale;
+        glm::dvec3 cameraPosition = position();
+        glm::dvec3 forwardDirection = glm::normalize(target - cameraPosition);
+        glm::dvec3 rightDirection = glm::normalize(glm::cross(forwardDirection, up));
+        glm::dvec3 viewPlaneUp = glm::normalize(glm::cross(rightDirection, forwardDirection));
+        target += (-mouseDeltaX * rightDirection + mouseDeltaY * viewPlaneUp) * radius * panScale;
     }
 
     void zoom(double delta) { radius = std::max(0.1, radius - delta * radius * zoomScale); }

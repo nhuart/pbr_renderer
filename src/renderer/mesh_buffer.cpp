@@ -11,6 +11,28 @@
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
+
+namespace {
+
+std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> uploadDeviceBuffer(VulkanContext const& ctx,
+        CommandService const& cmds, void const* source, vk::DeviceSize size,
+        vk::BufferUsageFlagBits usage) {
+    auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, size,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    void* mapped = stagingMemory.mapMemory(0, size);
+    memcpy(mapped, source, static_cast<size_t>(size));
+    stagingMemory.unmapMemory();
+
+    auto [deviceBuffer, deviceMemory] =
+            vkutil::createBuffer(ctx, size, usage | vk::BufferUsageFlagBits::eTransferDst,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal);
+    vkutil::copyBuffer(ctx, cmds.commandPool, stagingBuffer, deviceBuffer, size);
+    return { std::move(deviceBuffer), std::move(deviceMemory) };
+}
+
+} // namespace
 
 MeshBuffer::MeshBuffer(VulkanContext const& ctx, CommandService const& cmds, Scene const& scene) {
     loadMeshes(scene);
@@ -191,40 +213,13 @@ void MeshBuffer::loadMeshes(Scene const& scene) {
 }
 
 void MeshBuffer::uploadBuffers(VulkanContext const& ctx, CommandService const& cmds) {
-    // Vertex buffer
-    {
-        vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-        auto [stagingBuffer, stagingMemory] =
-                vkutil::createBuffer(ctx, bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-                        vk::MemoryPropertyFlagBits::eHostVisible |
-                                vk::MemoryPropertyFlagBits::eHostCoherent);
-        void* data = stagingMemory.mapMemory(0, bufferSize);
-        memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
-        stagingMemory.unmapMemory();
+    auto [uploadedVertices, vertexMemory] = uploadDeviceBuffer(ctx, cmds, vertices.data(),
+            sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer);
+    vertexBuffer = std::move(uploadedVertices);
+    vertexBufferMemory = std::move(vertexMemory);
 
-        auto [vbuf, vmem] = vkutil::createBuffer(ctx, bufferSize,
-                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                vk::MemoryPropertyFlagBits::eDeviceLocal);
-        vertexBuffer = std::move(vbuf);
-        vertexBufferMemory = std::move(vmem);
-        vkutil::copyBuffer(ctx, cmds.commandPool, stagingBuffer, vertexBuffer, bufferSize);
-    }
-    // Index buffer
-    {
-        vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-        auto [stagingBuffer, stagingMemory] =
-                vkutil::createBuffer(ctx, bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-                        vk::MemoryPropertyFlagBits::eHostVisible |
-                                vk::MemoryPropertyFlagBits::eHostCoherent);
-        void* data = stagingMemory.mapMemory(0, bufferSize);
-        memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
-        stagingMemory.unmapMemory();
-
-        auto [ibuf, imem] = vkutil::createBuffer(ctx, bufferSize,
-                vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                vk::MemoryPropertyFlagBits::eDeviceLocal);
-        indexBuffer = std::move(ibuf);
-        indexBufferMemory = std::move(imem);
-        vkutil::copyBuffer(ctx, cmds.commandPool, stagingBuffer, indexBuffer, bufferSize);
-    }
+    auto [uploadedIndices, indexMemory] = uploadDeviceBuffer(ctx, cmds, indices.data(),
+            sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
+    indexBuffer = std::move(uploadedIndices);
+    indexBufferMemory = std::move(indexMemory);
 }

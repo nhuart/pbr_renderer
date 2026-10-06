@@ -22,15 +22,15 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
+    Particle particle = particlesIn[index];
+    particle.position += particle.velocity * ubo.deltaTime;
 
-    particlesOut[index].position = particlesIn[index].position + particlesIn[index].velocity * ubo.deltaTime;
-    particlesOut[index].velocity = particlesIn[index].velocity;
-    particlesOut[index].color    = particlesIn[index].color;
+    if (particle.position.x <= -1.0 || particle.position.x >= 1.0) {
+        particle.velocity.x = -particle.velocity.x;
+    }
+    if (particle.position.y <= -1.0 || particle.position.y >= 1.0) {
+        particle.velocity.y = -particle.velocity.y;
+    }
 
-    if ((particlesOut[index].position.x <= -1.0) || (particlesOut[index].position.x >= 1.0)) {
-        particlesOut[index].velocity.x = -particlesOut[index].velocity.x;
-    }
-    if ((particlesOut[index].position.y <= -1.0) || (particlesOut[index].position.y >= 1.0)) {
-        particlesOut[index].velocity.y = -particlesOut[index].velocity.y;
-    }
+    particlesOut[index] = particle;
 }

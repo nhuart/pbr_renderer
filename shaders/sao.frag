@@ -58,80 +58,97 @@ float interleavedGradientNoise(vec2 pixelCoord) {
     return fract(magic.z * fract(dot(pixelCoord, magic.xy)));
 }
 
+struct SaoContext {
+    vec2 centerUV;
+    vec2 depthTextureSize;
+    vec3 centerPosition;
+    vec3 viewNormal;
+    float screenRadiusPixels;
+    float inverseRadiusSquared;
+    float softeningRadiusSquared;
+};
+
+struct SpiralPattern {
+    float jitter;
+    float rotation;
+    float inverseSampleCount;
+};
+
+float sampleObscurance(vec2 sampleUV, float mipLevel, SaoContext context) {
+    float sampleDeviceDepth = readDeviceDepth(sampleUV, mipLevel);
+    vec3 samplePosition = reconstructViewPosition(sampleUV, sampleDeviceDepth);
+    vec3 toSample = samplePosition - context.centerPosition;
+    float distanceSquared = dot(toSample, toSample);
+    float normalComponent = dot(toSample, context.viewNormal);
+
+    // Distant samples contribute less; the bias suppresses self-occlusion.
+    float distanceWeight = max(0.0, 1.0 - distanceSquared * context.inverseRadiusSquared);
+    distanceWeight *= distanceWeight;
+    float sampleContribution = max(0.0, normalComponent + context.centerPosition.z * ubo.bias) /
+                               (distanceSquared + context.softeningRadiusSquared);
+    return distanceWeight * sampleContribution;
+}
+
+float spiralSampleObscurance(int sampleIndex, SpiralPattern spiral, SaoContext context) {
+    // Quadratic spacing puts more taps near the center; only the radius is jittered.
+    float sampleFraction = (float(sampleIndex) + spiral.jitter + 0.5) * spiral.inverseSampleCount;
+    float spiralAngle = float(sampleIndex) * spiral.inverseSampleCount * float(ubo.spiralTurns) *
+                        2.0 * PI + spiral.rotation;
+
+    vec2 sampleDirection = vec2(cos(spiralAngle), sin(spiralAngle));
+    float sampleDistancePixels = max(1.0, sampleFraction * sampleFraction * context.screenRadiusPixels);
+    vec2 sampleUV = context.centerUV + sampleDistancePixels * sampleDirection / context.depthTextureSize;
+
+    if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
+        sampleUV.y < 0.0 || sampleUV.y > 1.0) {
+        return 0.0;
+    }
+
+    // Distant taps read coarser depth, matching Filament's structure pass.
+    float mipLevel = clamp(floor(log2(sampleDistancePixels)) - 3.0, 0.0,
+                           float(ubo.maxLevel));
+    return sampleObscurance(sampleUV, mipLevel, context);
+}
+
+float accumulateObscurance(SaoContext context) {
+    float jitter = interleavedGradientNoise(context.centerUV * context.depthTextureSize);
+    SpiralPattern spiral = SpiralPattern(jitter, (2.0 * PI * 2.4) * jitter,
+            1.0 / (float(ubo.sampleCount) - 0.5));
+    float weightedOcclusionSum = 0.0;
+    for (int sampleIndex = 0; sampleIndex < ubo.sampleCount; ++sampleIndex) {
+        weightedOcclusionSum += spiralSampleObscurance(sampleIndex, spiral, context);
+    }
+    return weightedOcclusionSum;
+}
+
+float obscuranceToVisibility(float weightedOcclusionSum) {
+    float softeningRadius = 0.1 * ubo.radius;
+    float occlusionScale = (2.0 * PI * softeningRadius) * ubo.intensity /
+                           float(ubo.sampleCount);
+    float obscurance = sqrt(weightedOcclusionSum * occlusionScale);
+    float aoVisibility = clamp(1.0 - obscurance, 0.0, 1.0);
+    return pow(aoVisibility, ubo.power * 2.0);
+}
+
 void main() {
-    // Reconstruct the visible surface and preserve depth for the bilateral blur.
     vec2 depthTextureSize = vec2(textureSize(depthSampler, 0));
-    vec2 pixelCoord = inUV * depthTextureSize;
-
     float centerDeviceDepth = readDeviceDepth(inUV, 0.0);
-    float centerLinearDepth = normalizedLinearDepth(centerDeviceDepth);
-    vec2 packedDepth = packLinearDepth(centerLinearDepth);
-
+    vec2 packedDepth = packLinearDepth(normalizedLinearDepth(centerDeviceDepth));
     if (centerDeviceDepth >= 0.9999) {
-        outAO = vec4(1.0, 1.0, 1.0, 1.0);
+        outAO = vec4(1.0);
         return;
     }
 
     vec3 centerPosition = reconstructViewPosition(inUV, centerDeviceDepth);
-    vec3 viewNormal = texture(normalSampler, inUV).rgb * 2.0 - 1.0;
-    viewNormal = normalize(viewNormal);
-
-    // Convert the view-space AO radius to pixels at this surface's depth.
+    vec3 viewNormal = normalize(texture(normalSampler, inUV).rgb * 2.0 - 1.0);
     float screenRadiusPixels = ubo.projScale * ubo.radius / -centerPosition.z;
     if (screenRadiusPixels < 1.0) {
         outAO = vec4(1.0, packedDepth, 1.0);
         return;
     }
 
-    float sampleJitter = interleavedGradientNoise(pixelCoord);
-    float spiralRotation = (2.0 * PI * 2.4) * sampleJitter;
-    float inverseSampleCount = 1.0 / (float(ubo.sampleCount) - 0.5);
-
-    float inverseRadiusSquared = 1.0 / (ubo.radius * ubo.radius);
     float softeningRadius = 0.1 * ubo.radius;
-    float softeningRadiusSquared = softeningRadius * softeningRadius;
-    float occlusionScale = (2.0 * PI * softeningRadius) * ubo.intensity /
-                           float(ubo.sampleCount);
-
-    // Sample a spiral with quadratic spacing: more taps near the center pixel.
-    float weightedOcclusionSum = 0.0;
-    for (int sampleIndex = 0; sampleIndex < ubo.sampleCount; sampleIndex++) {
-        float sampleFraction = (float(sampleIndex) + sampleJitter + 0.5) * inverseSampleCount;
-        // Filament jitters the radius, but advances the angle by a fixed amount per tap.
-        float spiralAngle = float(sampleIndex) * inverseSampleCount * float(ubo.spiralTurns) * 2.0 * PI +
-                            spiralRotation;
-
-        vec2 sampleDirection = vec2(cos(spiralAngle), sin(spiralAngle));
-        float sampleDistancePixels = max(1.0, sampleFraction * sampleFraction * screenRadiusPixels);
-        vec2 sampleUV = inUV + sampleDistancePixels * sampleDirection / depthTextureSize;
-
-        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
-            sampleUV.y < 0.0 || sampleUV.y > 1.0) {
-            continue;
-        }
-
-        // Distant taps read coarser depth, matching Filament's structure pass.
-        float mipLevel = clamp(floor(log2(sampleDistancePixels)) - 3.0, 0.0,
-                               float(ubo.maxLevel));
-        float sampleDeviceDepth = readDeviceDepth(sampleUV, mipLevel);
-        vec3 samplePosition = reconstructViewPosition(sampleUV, sampleDeviceDepth);
-
-        vec3 toSample = samplePosition - centerPosition;
-        float distanceSquared = dot(toSample, toSample);
-        float normalComponent = dot(toSample, viewNormal);
-
-        // Distant samples contribute less; the bias suppresses self-occlusion.
-        float distanceWeight = max(0.0, 1.0 - distanceSquared * inverseRadiusSquared);
-        distanceWeight = distanceWeight * distanceWeight;
-
-        float sampleContribution = max(0.0, normalComponent + centerPosition.z * ubo.bias) /
-                                   (distanceSquared + softeningRadiusSquared);
-        weightedOcclusionSum += distanceWeight * sampleContribution;
-    }
-
-    // Convert accumulated obscurance to visibility (1 = unoccluded).
-    float obscurance = sqrt(weightedOcclusionSum * occlusionScale);
-    float aoVisibility = clamp(1.0 - obscurance, 0.0, 1.0);
-    aoVisibility = pow(aoVisibility, ubo.power * 2.0);
-    outAO = vec4(aoVisibility, packedDepth, 1.0);
+    SaoContext context = SaoContext(inUV, depthTextureSize, centerPosition, viewNormal,
+            screenRadiusPixels, 1.0 / (ubo.radius * ubo.radius), softeningRadius * softeningRadius);
+    outAO = vec4(obscuranceToVisibility(accumulateObscurance(context)), packedDepth, 1.0);
 }

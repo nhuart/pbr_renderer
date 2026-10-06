@@ -1,4 +1,5 @@
 #include "core/context.hpp"
+#include "core/vulkan_logging.hpp"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -7,6 +8,38 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+
+namespace {
+
+void validateLayers(std::vector<char const*> const& requiredLayers,
+        std::vector<vk::LayerProperties> const& layerProperties) {
+    auto unsupportedLayer =
+            std::ranges::find_if(requiredLayers, [&layerProperties](char const* requiredLayer) {
+                return std::ranges::none_of(layerProperties, [requiredLayer](auto const& property) {
+                    return strcmp(property.layerName, requiredLayer) == 0;
+                });
+            });
+    if (unsupportedLayer != requiredLayers.end()) {
+        throw std::runtime_error("Required layer not supported: " + std::string(*unsupportedLayer));
+    }
+}
+
+void validateExtensions(std::vector<char const*> const& requiredExtensions,
+        std::vector<vk::ExtensionProperties> const& extensionProperties) {
+    auto unsupportedExtension = std::ranges::find_if(requiredExtensions,
+            [&extensionProperties](char const* requiredExtension) {
+                return std::ranges::none_of(extensionProperties,
+                        [requiredExtension](auto const& property) {
+                            return strcmp(property.extensionName, requiredExtension) == 0;
+                        });
+            });
+    if (unsupportedExtension != requiredExtensions.end()) {
+        throw std::runtime_error(
+                "Required extension not supported: " + std::string(*unsupportedExtension));
+    }
+}
+
+} // namespace
 
 VulkanContext::VulkanContext(GLFWwindow* window) {
     createInstance();
@@ -30,41 +63,21 @@ void VulkanContext::createInstance() {
         requiredLayers.assign(VALIDATION_LAYERS.begin(), VALIDATION_LAYERS.end());
     }
 
-    auto layerProperties = context.enumerateInstanceLayerProperties();
-    auto unsupportedLayerIt =
-            std::ranges::find_if(requiredLayers, [&layerProperties](auto const& requiredLayer) {
-                return std::ranges::none_of(layerProperties,
-                        [requiredLayer](auto const& layerProperty) {
-                            return strcmp(layerProperty.layerName, requiredLayer) == 0;
-                        });
-            });
-    if (unsupportedLayerIt != requiredLayers.end()) {
-        throw std::runtime_error(
-                "Required layer not supported: " + std::string(*unsupportedLayerIt));
-    }
+    validateLayers(requiredLayers, context.enumerateInstanceLayerProperties());
 
     auto requiredExtensions = getRequiredInstanceExtensions();
 
-    auto extensionProperties = context.enumerateInstanceExtensionProperties();
-    auto unsupportedPropertyIt = std::ranges::find_if(requiredExtensions,
-            [&extensionProperties](auto const& requiredExtension) {
-                return std::ranges::none_of(extensionProperties,
-                        [requiredExtension](auto const& extensionProperty) {
-                            return strcmp(extensionProperty.extensionName, requiredExtension) == 0;
-                        });
-            });
-    if (unsupportedPropertyIt != requiredExtensions.end()) {
-        throw std::runtime_error(
-                "Required extension not supported: " + std::string(*unsupportedPropertyIt));
-    }
+    validateExtensions(requiredExtensions, context.enumerateInstanceExtensionProperties());
 
-    std::cout << "Enabled layers:\n";
-    for (auto const& layer: requiredLayers) {
-        std::cout << "  " << layer << "\n";
-    }
-    std::cout << "Enabled extensions:\n";
-    for (auto const& ext: requiredExtensions) {
-        std::cout << "  " << ext << "\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Enabled layers:\n";
+        for (auto const& layer: requiredLayers) {
+            std::cout << "  " << layer << "\n";
+        }
+        std::cout << "Enabled extensions:\n";
+        for (auto const& ext: requiredExtensions) {
+            std::cout << "  " << ext << "\n";
+        }
     }
 
     vk::InstanceCreateInfo createInfo{
@@ -159,23 +172,27 @@ bool VulkanContext::isDeviceSuitable(vk::raii::PhysicalDevice const& dev) const 
 void VulkanContext::pickPhysicalDevice() {
     std::vector<vk::raii::PhysicalDevice> physicalDevices = instance.enumeratePhysicalDevices();
 
-    std::cout << "Available GPUs:\n";
-    for (auto const& gpu: physicalDevices) {
-        auto const& props = gpu.getProperties();
-        bool suitable = isDeviceSuitable(gpu);
-        std::cout << "  " << props.deviceName << " [" << vk::to_string(props.deviceType) << "]"
-                  << (suitable ? " (suitable)" : " (not suitable)") << "\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Available GPUs:\n";
+        for (auto const& gpu: physicalDevices) {
+            auto const& props = gpu.getProperties();
+            bool suitable = isDeviceSuitable(gpu);
+            std::cout << "  " << props.deviceName << " [" << vk::to_string(props.deviceType) << "]"
+                      << (suitable ? " (suitable)" : " (not suitable)") << "\n";
+        }
     }
 
-    auto const DEVICE_ITER = std::ranges::find_if(physicalDevices,
+    auto deviceIt = std::ranges::find_if(physicalDevices,
             [&](auto const& gpu) { return isDeviceSuitable(gpu); });
-    if (DEVICE_ITER == physicalDevices.end()) {
+    if (deviceIt == physicalDevices.end()) {
         throw std::runtime_error("failed to find a suitable GPU!");
     }
-    physicalDevice = *DEVICE_ITER;
+    physicalDevice = *deviceIt;
     msaaSamples = getMaxUsableSampleCount();
-    std::cout << "Selected GPU: " << physicalDevice.getProperties().deviceName << "\n";
-    std::cout << "MSAA samples: " << vk::to_string(msaaSamples) << "\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Selected GPU: " << physicalDevice.getProperties().deviceName << "\n";
+        std::cout << "MSAA samples: " << vk::to_string(msaaSamples) << "\n";
+    }
 }
 
 vk::SampleCountFlagBits VulkanContext::getMaxUsableSampleCount() const {
@@ -237,6 +254,8 @@ void VulkanContext::createLogicalDevice() {
     computeQueue = vk::raii::Queue(device, graphicsIndex, 0);
     graphicsQueueFamilyIndex = graphicsIndex;
 
-    std::cout << "Queues:\n";
-    std::cout << "  graphics + present + compute (family " << graphicsIndex << ")\n";
+    if (vkutil::vulkanLoggingEnabled) {
+        std::cout << "Queues:\n";
+        std::cout << "  graphics + present + compute (family " << graphicsIndex << ")\n";
+    }
 }

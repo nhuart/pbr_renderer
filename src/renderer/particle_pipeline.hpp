@@ -31,4 +31,11 @@ struct ParticlePipeline {
 
     ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
             CommandService const& cmds, ParticleSystem const& particleSystem);
+
+private:
+    void createParticleBuffers(VulkanContext const& ctx, CommandService const& cmds,
+            uint32_t particleCount);
+    void createComputePipeline(VulkanContext const& ctx);
+    void createComputeDescriptors(VulkanContext const& ctx, uint32_t particleCount);
+    void createGraphicsPipeline(VulkanContext const& ctx, Swapchain const& swapchain);
 };
