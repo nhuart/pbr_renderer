@@ -64,6 +64,89 @@ float updateHorizonCosine(vec3 toSample, vec3 towardCamera, float currentHorizon
             : mix(currentHorizonCosine, sampleHorizonCosine, ubo.thicknessHeuristic);
 }
 
+struct HorizonSearch {
+    vec2 centerUV;
+    vec3 centerPosition;
+    vec3 towardCamera;
+    vec2 depthTextureSize;
+    float pixelsPerStep;
+    float stepJitter;
+};
+
+float sampleHorizonCosine(vec2 sampleUV, HorizonSearch search, float currentHorizonCosine) {
+    if (any(lessThan(sampleUV, vec2(0.0))) ||
+        any(greaterThan(sampleUV, vec2(1.0)))) {
+        return currentHorizonCosine;
+    }
+    float sampleDeviceDepth = texture(depthSampler, sampleUV).r;
+    if (sampleDeviceDepth >= 0.9999) {
+        return currentHorizonCosine;
+    }
+    vec3 toSample = reconstructViewPosition(sampleUV, sampleDeviceDepth) - search.centerPosition;
+    return updateHorizonCosine(toSample, search.towardCamera, currentHorizonCosine);
+}
+
+vec2 findHorizonCosines(vec2 screenDirection, HorizonSearch search) {
+    vec2 horizonCosines = vec2(-1.0);
+    for (int stepIndex = 0; stepIndex < ubo.stepCount; ++stepIndex) {
+        float sampleDistancePixels = max((float(stepIndex) + search.stepJitter) * search.pixelsPerStep,
+                                         1.0 + float(stepIndex));
+        vec2 sampleOffsetUV = sampleDistancePixels * screenDirection / search.depthTextureSize;
+        for (int sideIndex = 0; sideIndex < 2; ++sideIndex) {
+            vec2 sampleUV = search.centerUV + (sideIndex == 0 ? sampleOffsetUV : -sampleOffsetUV);
+            horizonCosines[sideIndex] = sampleHorizonCosine(
+                    sampleUV, search, horizonCosines[sideIndex]);
+        }
+    }
+    return horizonCosines;
+}
+
+float integrateSliceHorizons(vec2 horizonCosines, float normalAngle) {
+    // Limit the horizons to the surface hemisphere before integrating visible light.
+    float negativeHorizonAngle = -acos(clamp(horizonCosines.y, -1.0, 1.0));
+    float positiveHorizonAngle = acos(clamp(horizonCosines.x, -1.0, 1.0));
+    negativeHorizonAngle = normalAngle +
+            clamp(negativeHorizonAngle - normalAngle, -HALF_PI, HALF_PI);
+    positiveHorizonAngle = normalAngle +
+            clamp(positiveHorizonAngle - normalAngle, -HALF_PI, HALF_PI);
+    return integrateVisibleArc(negativeHorizonAngle, normalAngle) +
+           integrateVisibleArc(positiveHorizonAngle, normalAngle);
+}
+
+float sliceVisibility(vec2 screenDirection, vec3 viewNormal, HorizonSearch search,
+        float centerDeviceDepth) {
+    // Project the surface normal into the plane containing this slice and the view ray.
+    vec3 sliceTangent = normalize(reconstructViewPosition(
+            search.centerUV + screenDirection / search.depthTextureSize, centerDeviceDepth) -
+            search.centerPosition);
+    sliceTangent = normalize(sliceTangent - search.towardCamera * dot(sliceTangent, search.towardCamera));
+    vec3 slicePlaneNormal = normalize(cross(search.towardCamera, sliceTangent));
+    vec3 normalInSlice = viewNormal - slicePlaneNormal * dot(viewNormal, slicePlaneNormal);
+    float normalProjectionLength = length(normalInSlice);
+    if (normalProjectionLength < 1e-5) {
+        return 0.0;
+    }
+    float normalViewCosine = clamp(dot(normalInSlice, search.towardCamera) /
+                                   normalProjectionLength, 0.0, 1.0);
+    float normalAngle = sign(dot(sliceTangent, normalInSlice)) * acos(normalViewCosine);
+
+    vec2 horizonCosines = findHorizonCosines(screenDirection, search);
+    return normalProjectionLength * integrateSliceHorizons(horizonCosines, normalAngle);
+}
+
+float accumulateSliceVisibility(vec3 viewNormal, HorizonSearch search, float centerDeviceDepth,
+        ivec2 pixelCoord) {
+    float sliceRotation = sliceRotationNoise(pixelCoord);
+    float sliceVisibilitySum = 0.0;
+    // A half-turn covers all unique slices because each is sampled in both directions.
+    for (int sliceIndex = 0; sliceIndex < ubo.directionCount; ++sliceIndex) {
+        float sliceAngle = PI * (float(sliceIndex) + sliceRotation) / float(ubo.directionCount);
+        vec2 screenDirection = vec2(cos(sliceAngle), sin(sliceAngle));
+        sliceVisibilitySum += sliceVisibility(screenDirection, viewNormal, search, centerDeviceDepth);
+    }
+    return sliceVisibilitySum;
+}
+
 void main() {
     // Reconstruct the visible surface; sky pixels cannot receive occlusion.
     float centerDeviceDepth = texture(depthSampler, inUV).r;
@@ -87,63 +170,9 @@ void main() {
     }
 
     ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
-    float sliceRotation = sliceRotationNoise(pixelCoord);
-    float stepJitter = stepJitterNoise(pixelCoord);
-    float pixelsPerStep = screenRadiusPixels / float(ubo.stepCount + 1);
-    float sliceVisibilitySum = 0.0;
-
-    // A half-turn covers all unique slices because each is sampled in both directions.
-    for (int sliceIndex = 0; sliceIndex < ubo.directionCount; ++sliceIndex) {
-        float sliceAngle = PI * (float(sliceIndex) + sliceRotation) / float(ubo.directionCount);
-        vec2 screenDirection = vec2(cos(sliceAngle), sin(sliceAngle));
-
-        // Project the surface normal into the plane containing this slice and the view ray.
-        vec3 sliceTangent = normalize(reconstructViewPosition(
-                inUV + screenDirection / depthTextureSize, centerDeviceDepth) - centerPosition);
-        sliceTangent = normalize(sliceTangent - towardCamera * dot(sliceTangent, towardCamera));
-        vec3 slicePlaneNormal = normalize(cross(towardCamera, sliceTangent));
-        vec3 normalInSlice = viewNormal - slicePlaneNormal * dot(viewNormal, slicePlaneNormal);
-        float normalProjectionLength = length(normalInSlice);
-        if (normalProjectionLength < 1e-5) {
-            continue;
-        }
-        float normalViewCosine = clamp(dot(normalInSlice, towardCamera) /
-                                       normalProjectionLength, 0.0, 1.0);
-        float normalAngle = sign(dot(sliceTangent, normalInSlice)) * acos(normalViewCosine);
-
-        // Find the highest occluder on each side of the slice.
-        vec2 horizonCosines = vec2(-1.0);
-        for (int stepIndex = 0; stepIndex < ubo.stepCount; ++stepIndex) {
-            float sampleDistancePixels = max((float(stepIndex) + stepJitter) * pixelsPerStep,
-                                             1.0 + float(stepIndex));
-            vec2 sampleOffsetUV = sampleDistancePixels * screenDirection / depthTextureSize;
-            for (int sideIndex = 0; sideIndex < 2; ++sideIndex) {
-                vec2 sampleUV = inUV + (sideIndex == 0 ? sampleOffsetUV : -sampleOffsetUV);
-                if (any(lessThan(sampleUV, vec2(0.0))) ||
-                    any(greaterThan(sampleUV, vec2(1.0)))) {
-                    continue;
-                }
-                float sampleDeviceDepth = texture(depthSampler, sampleUV).r;
-                if (sampleDeviceDepth >= 0.9999) {
-                    continue;
-                }
-                vec3 toSample = reconstructViewPosition(sampleUV, sampleDeviceDepth) - centerPosition;
-                horizonCosines[sideIndex] = updateHorizonCosine(
-                        toSample, towardCamera, horizonCosines[sideIndex]);
-            }
-        }
-
-        // Limit the horizons to the surface hemisphere and integrate visible light.
-        float negativeHorizonAngle = -acos(clamp(horizonCosines.y, -1.0, 1.0));
-        float positiveHorizonAngle = acos(clamp(horizonCosines.x, -1.0, 1.0));
-        negativeHorizonAngle = normalAngle +
-                clamp(negativeHorizonAngle - normalAngle, -HALF_PI, HALF_PI);
-        positiveHorizonAngle = normalAngle +
-                clamp(positiveHorizonAngle - normalAngle, -HALF_PI, HALF_PI);
-        sliceVisibilitySum += normalProjectionLength *
-                (integrateVisibleArc(negativeHorizonAngle, normalAngle) +
-                 integrateVisibleArc(positiveHorizonAngle, normalAngle));
-    }
+    HorizonSearch search = HorizonSearch(inUV, centerPosition, towardCamera, depthTextureSize,
+            screenRadiusPixels / float(ubo.stepCount + 1), stepJitterNoise(pixelCoord));
+    float sliceVisibilitySum = accumulateSliceVisibility(viewNormal, search, centerDeviceDepth, pixelCoord);
 
     // Average slices, adjust contrast, then keep depth for the bilateral blur.
     float aoVisibility = pow(clamp(sliceVisibilitySum / float(ubo.directionCount), 0.0, 1.0),

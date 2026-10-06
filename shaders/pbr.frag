@@ -98,6 +98,16 @@ struct LightSample {
     float attenuation;
 };
 
+struct PbrShadingData {
+    vec3 normal;
+    vec3 viewDirection;
+    vec3 albedo;
+    vec3 F0;
+    float NdotV;
+    float metallic;
+    float roughness;
+};
+
 LightSample sampleLight(GpuLight light) {
     int lightType = int(light.colorAndType.w);
 
@@ -119,22 +129,21 @@ LightSample sampleLight(GpuLight light) {
     return LightSample(L, attenuation);
 }
 
-vec3 lightContribution(GpuLight light, vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0,
-        float metallic, float roughness) {
+vec3 lightContribution(GpuLight light, PbrShadingData surface) {
     LightSample ls = sampleLight(light);
 
-    vec3 H = normalize(V + ls.L);
-    float NdotL = max(dot(N, ls.L), 0.0);
-    float NdotH = max(dot(N, H), 0.0);
-    float HdotV = max(dot(H, V), 0.0);
+    vec3 H = normalize(surface.viewDirection + ls.L);
+    float NdotL = max(dot(surface.normal, ls.L), 0.0);
+    float NdotH = max(dot(surface.normal, H), 0.0);
+    float HdotV = max(dot(H, surface.viewDirection), 0.0);
 
-    float D = distributionGGX(NdotH, roughness);
-    float G = geometrySmith(NdotV, NdotL, roughness);
-    vec3  F = fresnelSchlick(HdotV, F0);
+    float D = distributionGGX(NdotH, surface.roughness);
+    float G = geometrySmith(surface.NdotV, NdotL, surface.roughness);
+    vec3 F = fresnelSchlick(HdotV, surface.F0);
 
-    vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.0001);
-    vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
-    vec3 diffuse = kD * albedo / PI;
+    vec3 specular = (D * G * F) / max(4.0 * surface.NdotV * NdotL, 0.0001);
+    vec3 kD = (vec3(1.0) - F) * (1.0 - surface.metallic);
+    vec3 diffuse = kD * surface.albedo / PI;
 
     return (diffuse + specular) * light.colorAndType.xyz * ls.attenuation * NdotL;
 }
@@ -157,21 +166,21 @@ vec3 shIrradiance(vec3 N) {
          + iblSH.sh[8].rgb * (N.x * N.x - N.y * N.y);
 }
 
-vec3 iblAmbient(vec3 N, vec3 V, float NdotV, vec3 albedo, vec3 F0, float metallic, float roughness) {
-    vec3 kS = fresnelSchlickRoughness(NdotV, F0, roughness);
-    vec3 kD = (1.0 - kS) * (1.0 - metallic);
+vec3 iblAmbient(PbrShadingData surface) {
+    vec3 kS = fresnelSchlickRoughness(surface.NdotV, surface.F0, surface.roughness);
+    vec3 kD = (1.0 - kS) * (1.0 - surface.metallic);
 
-    vec3 diffuse = kD * max(shIrradiance(N), vec3(0.0)) * albedo;
+    vec3 diffuse = kD * max(shIrradiance(surface.normal), vec3(0.0)) * surface.albedo;
 
-    vec3 R = reflect(-V, N);
+    vec3 R = reflect(-surface.viewDirection, surface.normal);
     // perceptualRoughnessToLod from filament/shaders/src/surface_light_indirect.fs
-    float lod = 4.0 * roughness * (2.0 - roughness);
+    float lod = 4.0 * surface.roughness * (2.0 - surface.roughness);
     vec3 prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
-    vec2 brdf = texture(brdfLut, vec2(NdotV, 1.0 - roughness)).rg;
+    vec2 brdf = texture(brdfLut, vec2(surface.NdotV, 1.0 - surface.roughness)).rg;
     vec3 Fr = prefilteredColor * (kS * brdf.x + brdf.y);
     // Energy compensation (Karis 2017): corrects single-scattering energy loss at high roughness.
     float directionalAlbedo = brdf.x + brdf.y;
-    vec3 energyCompensation = 1.0 + F0 * (1.0 / directionalAlbedo - 1.0);
+    vec3 energyCompensation = 1.0 + surface.F0 * (1.0 / directionalAlbedo - 1.0);
     vec3 specular = Fr * energyCompensation;
 
     return diffuse + specular;
@@ -220,48 +229,50 @@ float shadowVisibility() {
 }
 #endif
 
-void main() {
-    float metallic         = ubo.pbrParams.x;
-    float roughness        = ubo.pbrParams.y;
-    float ambientIntensity = ubo.pbrParams.z;
-
-    vec4 texColor = texture(texSampler, fragTexCoord);
-    vec3 albedo   = texColor.rgb * fragBaseColor.rgb;
-
-    vec3 N = resolveNormal();
-    if (!gl_FrontFacing) N = -N;
-    vec3 V = normalize(ubo.cameraPos.xyz - fragWorldPos);
-
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
-    float NdotV = max(dot(N, V), 0.0001);
-
+vec3 directLighting(PbrShadingData surface) {
+    float visibility = 1.0;
 #ifdef USE_SHADOW
-    float visibility = shadowVisibility();
+    visibility = shadowVisibility();
 #endif
 
     vec3 Lo = vec3(0.0);
     int numLights = int(lights.counts.x);
     for (int i = 0; i < numLights; i++) {
+        float lightShadow = 1.0;
 #ifdef USE_SHADOW
-        float lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? visibility : 1.0;
-        Lo += lightShadow * lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
-#else
-        Lo += lightContribution(lights.lights[i], N, V, NdotV, albedo, F0, metallic, roughness);
+        lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? visibility : 1.0;
 #endif
+        Lo += lightShadow * lightContribution(lights.lights[i], surface);
     }
+    return Lo;
+}
 
+vec3 ambientLighting(PbrShadingData surface) {
+    vec3 ambient = ubo.pbrParams.z * surface.albedo;
 #ifdef USE_IBL
-    vec3 ambient = iblAmbient(N, V, NdotV, albedo, F0, metallic, roughness);
-#else
-    vec3 ambient = ambientIntensity * albedo;
+    ambient = iblAmbient(surface);
 #endif
 
 #ifdef USE_SAO
     float ao = texture(aoMap, screenUV()).r;
     ambient *= ao;
 #endif
+    return ambient;
+}
 
-    vec3 color = ambient + Lo;
+void main() {
+    vec4 texColor = texture(texSampler, fragTexCoord);
+    vec3 albedo = texColor.rgb * fragBaseColor.rgb;
+    vec3 normal = resolveNormal();
+    if (!gl_FrontFacing) normal = -normal;
+    vec3 viewDirection = normalize(ubo.cameraPos.xyz - fragWorldPos);
+    PbrShadingData surface = PbrShadingData(normal, viewDirection, albedo,
+            mix(vec3(0.04), albedo, ubo.pbrParams.x), max(dot(normal, viewDirection), 0.0001),
+            ubo.pbrParams.x, ubo.pbrParams.y);
+
+    vec3 direct = directLighting(surface);
+    vec3 ambient = ambientLighting(surface);
+    vec3 color = ambient + direct;
     color = color / (color + vec3(1.0));          // Reinhard tone mapping
     // No manual gamma: sRGB swapchain handles it
 
