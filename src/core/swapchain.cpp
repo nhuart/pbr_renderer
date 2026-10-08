@@ -156,15 +156,15 @@ void Swapchain::createHdrResources(VulkanContext const& ctx) {
     hdrImage = std::move(resolved);
     hdrImageMemory = std::move(resolvedMemory);
     hdrImageView = vkutil::createImageView(ctx, *hdrImage, HDR_COLOR_FORMAT);
-    hdrSampler = vk::raii::Sampler(ctx.device,
-            vk::SamplerCreateInfo{
-                .magFilter = vk::Filter::eNearest,
-                .minFilter = vk::Filter::eNearest,
-                .mipmapMode = vk::SamplerMipmapMode::eNearest,
-                .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-                .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-                .addressModeW = vk::SamplerAddressMode::eClampToEdge,
-            });
+    hdrSampler =
+            vk::raii::Sampler(ctx.device, vk::SamplerCreateInfo{
+                                              .magFilter = vk::Filter::eNearest,
+                                              .minFilter = vk::Filter::eNearest,
+                                              .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                                              .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+                                              .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+                                              .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+                                          });
 }
 
 void Swapchain::createDepthResources(VulkanContext const& ctx) {

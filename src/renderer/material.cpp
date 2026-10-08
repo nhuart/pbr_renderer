@@ -10,8 +10,7 @@
 #include <iostream>
 
 Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFilename,
-        std::string const& fragmentShaderFilename,
-        ShaderFeatures features, bool doubleSided) {
+        std::string const& fragmentShaderFilename, ShaderFeatures features, bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
 
     // Build descriptor set layout from active features only

@@ -37,13 +37,15 @@ void Renderer::buildRenderGraph() {
                         .usage = vk::ImageUsageFlagBits::eColorAttachment,
                         .aspect = vk::ImageAspectFlagBits::eColor,
                         .samples = vk::SampleCountFlagBits::e1,
-                    }, vk::ImageLayout::eUndefined, true);
+                    },
+                    vk::ImageLayout::eUndefined, true);
 
     bool multisampled = mCtx->msaaSamples != vk::SampleCountFlagBits::e1;
     RenderGraphImageHandle colorImage{};
     if (multisampled) {
         colorImage = mRenderGraph.importImage("color", *mSwapchain->colorImage,
-                *mSwapchain->colorImageView, RenderGraphImage{
+                *mSwapchain->colorImageView,
+                RenderGraphImage{
                     .format = Swapchain::HDR_COLOR_FORMAT,
                     .extent = swapchainExtent,
                     .usage = vk::ImageUsageFlagBits::eColorAttachment,
@@ -299,12 +301,12 @@ void Renderer::buildRenderGraph() {
 }
 
 RenderGraphImageHandle Renderer::importHdrColorImage() {
-    return mRenderGraph.importImage("hdrColor", *mSwapchain->hdrImage,
-            *mSwapchain->hdrImageView, RenderGraphImage{
+    return mRenderGraph.importImage("hdrColor", *mSwapchain->hdrImage, *mSwapchain->hdrImageView,
+            RenderGraphImage{
                 .format = Swapchain::HDR_COLOR_FORMAT,
                 .extent = mSwapchain->extent,
-                .usage = vk::ImageUsageFlagBits::eColorAttachment |
-                         vk::ImageUsageFlagBits::eSampled,
+                .usage =
+                        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
                 .aspect = vk::ImageAspectFlagBits::eColor,
             });
 }

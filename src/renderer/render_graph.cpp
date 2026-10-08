@@ -14,10 +14,14 @@ void updateBarrierImages(std::vector<RenderGraphBarrier>& barriers, uint32_t res
 } // namespace
 
 RenderGraphImageHandle RenderGraph::importImage(std::string /*name*/, vk::Image image,
-        vk::ImageView view, RenderGraphImage desc, vk::ImageLayout initialLayout, bool presentable) {
+        vk::ImageView view, RenderGraphImage desc, vk::ImageLayout initialLayout,
+        bool presentable) {
     RenderGraphImageHandle handle{ static_cast<uint32_t>(mImages.size()) };
-    mImages.push_back({ .image = image, .viewHandle = view, .currentLayout = initialLayout,
-            .desc = desc, .presentable = presentable });
+    mImages.push_back({ .image = image,
+        .viewHandle = view,
+        .currentLayout = initialLayout,
+        .desc = desc,
+        .presentable = presentable });
     return handle;
 }
 
@@ -75,8 +79,8 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
         std::vector<vk::RenderingAttachmentInfo> colorAttachments;
         for (auto imageHandle: pass.colorWrites) {
             auto& physicalImage = mImages[imageHandle.index];
-            bool isRead = mSubsequentlyRead.count(imageHandle.index) > 0 ||
-                          physicalImage.presentable;
+            bool isRead =
+                    mSubsequentlyRead.count(imageHandle.index) > 0 || physicalImage.presentable;
             vk::RenderingAttachmentInfo colorAttachmentInfo{
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
