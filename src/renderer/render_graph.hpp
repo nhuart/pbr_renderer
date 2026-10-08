@@ -45,6 +45,7 @@ struct RenderGraphPass {
     RenderGraphImageHandle resolveTarget{};
     std::function<void(vk::raii::CommandBuffer const&)> execute;
     std::vector<RenderGraphBarrier> preBarriers;
+    std::vector<RenderGraphBarrier> postBarriers;
 };
 
 struct RenderGraphPhysicalImage {
@@ -52,6 +53,7 @@ struct RenderGraphPhysicalImage {
     vk::ImageView viewHandle{};
     vk::ImageLayout currentLayout = vk::ImageLayout::eUndefined;
     RenderGraphImage desc{};
+    bool presentable = false;
 
     [[nodiscard]] vk::ImageView view() const { return viewHandle; }
 };
@@ -60,7 +62,7 @@ class RenderGraph {
 public:
     [[nodiscard]] RenderGraphImageHandle importImage(std::string name, vk::Image image,
             vk::ImageView view, RenderGraphImage desc,
-            vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined);
+            vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined, bool presentable = false);
 
     void updateImportedImage(RenderGraphImageHandle handle, vk::Image image, vk::ImageView view);
 

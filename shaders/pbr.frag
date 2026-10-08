@@ -273,8 +273,5 @@ void main() {
     vec3 direct = directLighting(surface);
     vec3 ambient = ambientLighting(surface);
     vec3 color = ambient + direct;
-    color = color / (color + vec3(1.0));          // Reinhard tone mapping
-    // No manual gamma: sRGB swapchain handles it
-
     outColor = vec4(color, texColor.a * fragBaseColor.a);
 }

@@ -12,7 +12,6 @@ import vulkan_hpp;
 #include "scene/types.hpp"
 
 struct VulkanContext;
-struct Swapchain;
 struct CommandService;
 
 struct ParticlePipeline {
@@ -29,13 +28,13 @@ struct ParticlePipeline {
     std::vector<vk::raii::DeviceMemory> computeUniformBuffersMemory;
     std::vector<void*> computeUniformBuffersMapped;
 
-    ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-            CommandService const& cmds, ParticleSystem const& particleSystem);
+    ParticlePipeline(VulkanContext const& ctx, CommandService const& cmds,
+            ParticleSystem const& particleSystem);
 
 private:
     void createParticleBuffers(VulkanContext const& ctx, CommandService const& cmds,
             uint32_t particleCount);
     void createComputePipeline(VulkanContext const& ctx);
     void createComputeDescriptors(VulkanContext const& ctx, uint32_t particleCount);
-    void createGraphicsPipeline(VulkanContext const& ctx, Swapchain const& swapchain);
+    void createGraphicsPipeline(VulkanContext const& ctx);
 };

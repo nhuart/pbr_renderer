@@ -73,6 +73,10 @@ foreach(shader IN LISTS SHADER_SOURCES)
     add_shader_output("${shader}" "${shader_name}")
 endforeach()
 
+# Compile both presentation modes from the same source.
+add_shader_output("shaders/tonemap.frag" "tonemap.frag")
+add_shader_output("shaders/tonemap.frag" "tonemap_none.frag" -DNO_TONEMAP)
+
 # Keep suffix order in sync with Renderer::resolveShaderVariants().
 function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
     set(variant_name pbr)
@@ -136,6 +140,7 @@ add_executable(pbr_renderer
     src/renderer/light_buffer.cpp
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
+    src/renderer/tonemap_pipeline.cpp
     src/renderer/material.cpp
     src/renderer/material_instance.cpp
     src/renderer/shadow_pipeline.cpp

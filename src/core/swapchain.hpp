@@ -14,6 +14,8 @@ import vulkan_hpp;
 struct VulkanContext;
 
 struct Swapchain {
+    static constexpr vk::Format HDR_COLOR_FORMAT = vk::Format::eR16G16B16A16Sfloat;
+
     vk::raii::SwapchainKHR swapChain = nullptr;
     std::vector<vk::Image> images;
     vk::SurfaceFormatKHR surfaceFormat;
@@ -22,6 +24,10 @@ struct Swapchain {
     vk::raii::Image colorImage = nullptr;
     vk::raii::DeviceMemory colorImageMemory = nullptr;
     vk::raii::ImageView colorImageView = nullptr;
+    vk::raii::Image hdrImage = nullptr;
+    vk::raii::DeviceMemory hdrImageMemory = nullptr;
+    vk::raii::ImageView hdrImageView = nullptr;
+    vk::raii::Sampler hdrSampler = nullptr;
     vk::raii::Image depthImage = nullptr;
     vk::raii::DeviceMemory depthImageMemory = nullptr;
     vk::raii::ImageView depthImageView = nullptr;
@@ -33,6 +39,7 @@ struct Swapchain {
 private:
     void create(VulkanContext const& ctx, GLFWwindow* window);
     void createColorResources(VulkanContext const& ctx);
+    void createHdrResources(VulkanContext const& ctx);
     void createDepthResources(VulkanContext const& ctx);
     static vk::SurfaceFormatKHR chooseFormat(std::vector<vk::SurfaceFormatKHR> const&);
     static vk::PresentModeKHR choosePresentMode(std::vector<vk::PresentModeKHR> const&);

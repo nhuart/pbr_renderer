@@ -18,12 +18,12 @@
 #include <random>
 #include <stdexcept>
 
-ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-        CommandService const& cmds, ParticleSystem const& particleSystem) {
+ParticlePipeline::ParticlePipeline(VulkanContext const& ctx, CommandService const& cmds,
+        ParticleSystem const& particleSystem) {
     createParticleBuffers(ctx, cmds, particleSystem.count);
     createComputePipeline(ctx);
     createComputeDescriptors(ctx, particleSystem.count);
-    createGraphicsPipeline(ctx, swapchain);
+    createGraphicsPipeline(ctx);
 }
 
 void ParticlePipeline::createParticleBuffers(VulkanContext const& ctx, CommandService const& cmds,
@@ -203,8 +203,7 @@ void ParticlePipeline::createComputeDescriptors(VulkanContext const& ctx, uint32
     }
 }
 
-void ParticlePipeline::createGraphicsPipeline(VulkanContext const& ctx,
-        Swapchain const& swapchain) {
+void ParticlePipeline::createGraphicsPipeline(VulkanContext const& ctx) {
     auto vertCode = vkutil::readSpirv("shaders/compiled/particle.vert.spv");
     auto fragCode = vkutil::readSpirv("shaders/compiled/particle.frag.spv");
     vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
@@ -288,6 +287,7 @@ void ParticlePipeline::createGraphicsPipeline(VulkanContext const& ctx,
                                                                       .setLayoutCount = 0,
                                                                   });
 
+    vk::Format colorFormat = Swapchain::HDR_COLOR_FORMAT;
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
             pipelineCreateInfoChain = {
@@ -306,7 +306,7 @@ void ParticlePipeline::createGraphicsPipeline(VulkanContext const& ctx,
                 },
                 {
                     .colorAttachmentCount = 1,
-                    .pColorAttachmentFormats = &swapchain.surfaceFormat.format,
+                    .pColorAttachmentFormats = &colorFormat,
                     .depthAttachmentFormat = depthFormat,
                 },
             };

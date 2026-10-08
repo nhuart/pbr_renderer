@@ -74,12 +74,13 @@ void Renderer::initVulkan() {
     createEnvironment();
     createShadowPipeline();
     createAoPipeline();
+    createTonemapPipeline();
     resolveShaderVariants();
     createMaterials();
     createRenderObjects();
 
     if (mScene.particles) {
-        mParticlePipeline.emplace(*mCtx, *mSwapchain, *mCmds, *mScene.particles);
+        mParticlePipeline.emplace(*mCtx, *mCmds, *mScene.particles);
         mCmds->allocateComputeCommandBuffers(*mCtx);
     }
 
@@ -111,7 +112,7 @@ void Renderer::createEnvironment() {
         mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "/" + iblName + "_ibl.ktx",
                 *mScene.iblPath + "/sh.txt");
         if (mScene.skybox) {
-            mSkyboxPipeline.emplace(*mCtx, *mSwapchain, *mIblEnvironment);
+            mSkyboxPipeline.emplace(*mCtx, *mIblEnvironment);
         }
     }
 }
@@ -155,7 +156,7 @@ void Renderer::createMaterials() {
         auto key = materialKey(instance, doubleSided);
         if (!mMaterials.contains(key)) {
             mMaterials.emplace(key,
-                    Material(*mCtx, *mSwapchain, instance.vertexShader, instance.resolvedFragShader,
+                    Material(*mCtx, instance.vertexShader, instance.resolvedFragShader,
                             instance.shaderFeatures, doubleSided));
         }
     }
@@ -223,9 +224,15 @@ void Renderer::scrollCallback(GLFWwindow* window, double /*xoffset*/, double yof
 
 void Renderer::recreateSwapchain() {
     mCtx->device.waitIdle();
+    mTonemapPipeline.reset();
     mSwapchain->recreate(*mCtx, mWindow);
+    createTonemapPipeline();
     mSync->recreatePresent(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()));
     buildRenderGraph();
+}
+
+void Renderer::createTonemapPipeline() {
+    mTonemapPipeline.emplace(*mCtx, *mSwapchain, mScene.toneMapping);
 }
 
 void Renderer::updateUniforms() {

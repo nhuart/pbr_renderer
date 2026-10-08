@@ -65,6 +65,10 @@ void Swapchain::recreate(VulkanContext const& ctx, GLFWwindow* window) {
 }
 
 void Swapchain::cleanup() {
+    hdrSampler = nullptr;
+    hdrImageView = nullptr;
+    hdrImage = nullptr;
+    hdrImageMemory = nullptr;
     colorImageView = nullptr;
     colorImage = nullptr;
     colorImageMemory = nullptr;
@@ -131,13 +135,36 @@ void Swapchain::create(VulkanContext const& ctx, GLFWwindow* window) {
 }
 
 void Swapchain::createColorResources(VulkanContext const& ctx) {
-    auto [image, memory] = vkutil::createImage(ctx, extent.width, extent.height, 1, ctx.msaaSamples,
-            surfaceFormat.format, vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+    if (ctx.msaaSamples != vk::SampleCountFlagBits::e1) {
+        auto [image, memory] = vkutil::createImage(ctx, extent.width, extent.height, 1,
+                ctx.msaaSamples, HDR_COLOR_FORMAT, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eTransientAttachment |
+                        vk::ImageUsageFlagBits::eColorAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal);
+        colorImage = std::move(image);
+        colorImageMemory = std::move(memory);
+        colorImageView = vkutil::createImageView(ctx, *colorImage, HDR_COLOR_FORMAT);
+    }
+    createHdrResources(ctx);
+}
+
+void Swapchain::createHdrResources(VulkanContext const& ctx) {
+    auto [resolved, resolvedMemory] = vkutil::createImage(ctx, extent.width, extent.height, 1,
+            vk::SampleCountFlagBits::e1, HDR_COLOR_FORMAT, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-    colorImage = std::move(image);
-    colorImageMemory = std::move(memory);
-    colorImageView = vkutil::createImageView(ctx, *colorImage, surfaceFormat.format);
+    hdrImage = std::move(resolved);
+    hdrImageMemory = std::move(resolvedMemory);
+    hdrImageView = vkutil::createImageView(ctx, *hdrImage, HDR_COLOR_FORMAT);
+    hdrSampler = vk::raii::Sampler(ctx.device,
+            vk::SamplerCreateInfo{
+                .magFilter = vk::Filter::eNearest,
+                .minFilter = vk::Filter::eNearest,
+                .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+                .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+                .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+            });
 }
 
 void Swapchain::createDepthResources(VulkanContext const& ctx) {

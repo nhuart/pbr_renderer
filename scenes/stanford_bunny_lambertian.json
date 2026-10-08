@@ -1,4 +1,5 @@
 {
+    "toneMapping": "none",
     "camera": {
         "target": [0.0, 0.0, 0.0],
         "azimuth": 45.0,

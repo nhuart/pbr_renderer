@@ -9,8 +9,8 @@
 #include <array>
 #include <iostream>
 
-Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
-        std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
+Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFilename,
+        std::string const& fragmentShaderFilename,
         ShaderFeatures features, bool doubleSided) {
     constexpr uint32_t maxInstances = 64;
 
@@ -170,6 +170,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
                                                               .pushConstantRangeCount = 0,
                                                           });
 
+    vk::Format colorFormat = Swapchain::HDR_COLOR_FORMAT;
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
             pipelineCreateInfoChain = {
@@ -189,7 +190,7 @@ Material::Material(VulkanContext const& ctx, Swapchain const& swapchain,
                 },
                 {
                     .colorAttachmentCount = 1,
-                    .pColorAttachmentFormats = &swapchain.surfaceFormat.format,
+                    .pColorAttachmentFormats = &colorFormat,
                     .depthAttachmentFormat = depthFormat,
                 },
             };
