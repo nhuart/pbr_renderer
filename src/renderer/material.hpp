@@ -12,7 +12,6 @@ import vulkan_hpp;
 #include "renderer/gpu_types.hpp"
 
 struct VulkanContext;
-struct Swapchain;
 struct TextureAtlas;
 struct IblEnvironment;
 struct ShadowPipeline;
@@ -41,8 +40,8 @@ struct Material {
     vk::raii::DescriptorPool descriptorPool{ nullptr };
     vk::raii::Pipeline pipeline{ nullptr };
 
-    Material(VulkanContext const& ctx, Swapchain const& swapchain,
-            std::string const& vertexShaderFilename, std::string const& fragmentShaderFilename,
+    Material(VulkanContext const& ctx, std::string const& vertexShaderFilename,
+            std::string const& fragmentShaderFilename,
             ShaderFeatures features = ShaderFeatures::None, bool doubleSided = false);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,

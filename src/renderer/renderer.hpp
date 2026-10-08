@@ -28,6 +28,7 @@
 #include "renderer/resource_manager.hpp"
 #include "renderer/shadow_pipeline.hpp"
 #include "renderer/skybox_pipeline.hpp"
+#include "renderer/tonemap_pipeline.hpp"
 #include "scene/scene_loader.hpp"
 #include "scene/types.hpp"
 
@@ -53,6 +54,7 @@ private:
 
     std::optional<VulkanContext> mCtx;
     std::optional<Swapchain> mSwapchain;
+    std::optional<TonemapPipeline> mTonemapPipeline;
     std::optional<CommandService> mCmds;
     std::optional<SyncObjects> mSync;
     std::optional<ResourceManager> mResources;
@@ -79,6 +81,7 @@ private:
     void createEnvironment();
     void createShadowPipeline();
     void createAoPipeline();
+    void createTonemapPipeline();
     void createMaterials();
     void createRenderObjects();
     void resolveShaderVariants();
@@ -93,6 +96,8 @@ private:
     void updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projection);
     void recreateSwapchain();
     void buildRenderGraph();
+    [[nodiscard]] RenderGraphImageHandle importHdrColorImage();
+    void addTonemapPass(RenderGraphImageHandle hdrColor);
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);
     void captureScreenshot(uint32_t imageIndex);

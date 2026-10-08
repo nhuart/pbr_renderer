@@ -1,10 +1,27 @@
 #include "renderer/render_graph.hpp"
 
+namespace {
+
+void updateBarrierImages(std::vector<RenderGraphBarrier>& barriers, uint32_t resourceIndex,
+        vk::Image image) {
+    for (auto& barrier: barriers) {
+        if (barrier.resourceIndex == resourceIndex) {
+            barrier.image = image;
+        }
+    }
+}
+
+} // namespace
+
 RenderGraphImageHandle RenderGraph::importImage(std::string /*name*/, vk::Image image,
-        vk::ImageView view, RenderGraphImage desc, vk::ImageLayout initialLayout) {
+        vk::ImageView view, RenderGraphImage desc, vk::ImageLayout initialLayout,
+        bool presentable) {
     RenderGraphImageHandle handle{ static_cast<uint32_t>(mImages.size()) };
-    mImages.push_back(
-            { .image = image, .viewHandle = view, .currentLayout = initialLayout, .desc = desc });
+    mImages.push_back({ .image = image,
+        .viewHandle = view,
+        .currentLayout = initialLayout,
+        .desc = desc,
+        .presentable = presentable });
     return handle;
 }
 
@@ -14,11 +31,8 @@ void RenderGraph::updateImportedImage(RenderGraphImageHandle handle, vk::Image i
     physicalImage.image = image;
     physicalImage.viewHandle = view;
     for (auto& pass: mPasses) {
-        for (auto& barrier: pass.preBarriers) {
-            if (barrier.resourceIndex == handle.index) {
-                barrier.image = image;
-            }
-        }
+        updateBarrierImages(pass.preBarriers, handle.index, image);
+        updateBarrierImages(pass.postBarriers, handle.index, image);
     }
 }
 
@@ -65,7 +79,8 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
         std::vector<vk::RenderingAttachmentInfo> colorAttachments;
         for (auto imageHandle: pass.colorWrites) {
             auto& physicalImage = mImages[imageHandle.index];
-            bool isRead = mSubsequentlyRead.count(imageHandle.index) > 0;
+            bool isRead =
+                    mSubsequentlyRead.count(imageHandle.index) > 0 || physicalImage.presentable;
             vk::RenderingAttachmentInfo colorAttachmentInfo{
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -108,6 +123,7 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
         });
         pass.execute(commandBuffer);
         commandBuffer.endRendering();
+        insertBarriers(commandBuffer, pass.postBarriers);
     }
 }
 
@@ -134,6 +150,7 @@ void RenderGraph::buildBarriers() {
 
     for (auto& pass: mPasses) {
         pass.preBarriers.clear();
+        pass.postBarriers.clear();
 
         auto addBarrier = [&](RenderGraphImageHandle imageHandle, vk::ImageLayout newLayout,
                                   vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 dstStage) {
@@ -189,9 +206,8 @@ void RenderGraph::buildBarriers() {
             continue;
         }
         auto& physicalImage = mImages[i];
-        if (physicalImage.desc.usage & vk::ImageUsageFlagBits::eColorAttachment &&
-                physicalImage.desc.samples == vk::SampleCountFlagBits::e1) {
-            mPasses.back().preBarriers.push_back({
+        if (physicalImage.presentable) {
+            mPasses.back().postBarriers.push_back({
                 .image = physicalImage.image,
                 .resourceIndex = static_cast<uint32_t>(i),
                 .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,

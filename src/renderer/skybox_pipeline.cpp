@@ -11,11 +11,10 @@
 #include <stdexcept>
 
 
-SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-        IblEnvironment const& ibl) {
+SkyboxPipeline::SkyboxPipeline(VulkanContext const& ctx, IblEnvironment const& ibl) {
     createDescriptorResources(ctx);
     createDescriptorSets(ctx, ibl);
-    createGraphicsPipeline(ctx, swapchain);
+    createGraphicsPipeline(ctx);
 }
 
 void SkyboxPipeline::createDescriptorResources(VulkanContext const& ctx) {
@@ -109,7 +108,7 @@ void SkyboxPipeline::createDescriptorSets(VulkanContext const& ctx, IblEnvironme
     }
 }
 
-void SkyboxPipeline::createGraphicsPipeline(VulkanContext const& ctx, Swapchain const& swapchain) {
+void SkyboxPipeline::createGraphicsPipeline(VulkanContext const& ctx) {
     auto vertCode = vkutil::readSpirv("shaders/compiled/skybox.vert.spv");
     auto fragCode = vkutil::readSpirv("shaders/compiled/skybox.frag.spv");
     vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
@@ -181,6 +180,7 @@ void SkyboxPipeline::createGraphicsPipeline(VulkanContext const& ctx, Swapchain 
                                                               .pSetLayouts = &dslHandle,
                                                           });
 
+    vk::Format colorFormat = Swapchain::HDR_COLOR_FORMAT;
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
             pipelineChain = {
@@ -199,7 +199,7 @@ void SkyboxPipeline::createGraphicsPipeline(VulkanContext const& ctx, Swapchain 
                 },
                 {
                     .colorAttachmentCount = 1,
-                    .pColorAttachmentFormats = &swapchain.surfaceFormat.format,
+                    .pColorAttachmentFormats = &colorFormat,
                     .depthAttachmentFormat = depthFormat,
                 },
             };

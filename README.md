@@ -114,7 +114,7 @@ Multiple instances can reference the same `gltf` path. The mesh data, however, i
 - Image-based lighting and skybox
 - Directional-light shadows with hard or percentage-closer filtered (PCF) shadow maps
 - Screen-space ambient occlusion with Scalable ambient obscurance (SAO) and ground-truth ambient occlusion (GTAO)
-- Reinhard tone mapping
+- Linear HDR rendering with configurable final tone mapping (None, Reinhard)
 
 The [Stanford bunny scenes](scenes/) demonstrate these features with different materials, lights, and effects.
 
@@ -142,7 +142,6 @@ This section lists improvements I identified during development but deferred for
 ### Vulkan and performance
 
 - Suballocate buffer and image memory, for example with [Vulkan Memory Allocator (VMA)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator).
-- Fix swapchain presentation in `RenderGraph`: the present-layout barrier is currently added to the final pass's *pre*-barriers, before that pass resolves to the swapchain image. It needs to execute after rendering.
 - Add topological sorting to `RenderGraph::buildBarriers()` so passes can be registered in any order. Currently passes must be declared in dependency order.
 - Add frustum culling.
 

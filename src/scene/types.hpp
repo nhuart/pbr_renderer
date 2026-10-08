@@ -57,6 +57,7 @@ struct AmbientLight {
 };
 
 enum class ShadowType { Hard, PCF };
+enum class ToneMapping { Reinhard, None };
 
 struct DirectionalLight {
     glm::vec3 direction;
@@ -113,6 +114,7 @@ struct Scene {
     std::optional<ParticleSystem> particles;
     std::vector<Light> lights;
     Camera camera;
+    ToneMapping toneMapping = ToneMapping::Reinhard;
     std::optional<std::string> iblPath;
     bool skybox = false;
     std::optional<SaoConfig> sao;

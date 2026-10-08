@@ -258,6 +258,17 @@ void parseCamera(json const& cameraJson, Camera& camera) {
     camera.sensitivity = cameraJson.value("sensitivity", camera.sensitivity);
 }
 
+ToneMapping parseToneMapping(json const& value, std::string const& path) {
+    std::string mode = value.get<std::string>();
+    if (mode == "reinhard") {
+        return ToneMapping::Reinhard;
+    }
+    if (mode == "none") {
+        return ToneMapping::None;
+    }
+    throw std::runtime_error("unknown toneMapping '" + mode + "': " + path);
+}
+
 } // namespace
 
 Scene loadScene(std::string const& path) {
@@ -267,6 +278,9 @@ Scene loadScene(std::string const& path) {
     }
     json j = json::parse(file);
     Scene scene;
+    if (j.contains("toneMapping")) {
+        scene.toneMapping = parseToneMapping(j.at("toneMapping"), path);
+    }
     if (j.contains("ibl")) {
         scene.iblPath = j["ibl"].get<std::string>();
     }

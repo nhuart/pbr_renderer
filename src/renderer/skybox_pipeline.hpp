@@ -5,7 +5,6 @@
 #include <glm/glm.hpp>
 
 struct VulkanContext;
-struct Swapchain;
 struct IblEnvironment;
 
 struct SkyboxUBO {
@@ -23,12 +22,12 @@ struct SkyboxPipeline {
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
 
-    SkyboxPipeline(VulkanContext const& ctx, Swapchain const& swapchain, IblEnvironment const& ibl);
+    SkyboxPipeline(VulkanContext const& ctx, IblEnvironment const& ibl);
 
     void updateUBO(uint32_t frameIndex, SkyboxUBO const& ubo);
 
 private:
     void createDescriptorResources(VulkanContext const& ctx);
     void createDescriptorSets(VulkanContext const& ctx, IblEnvironment const& ibl);
-    void createGraphicsPipeline(VulkanContext const& ctx, Swapchain const& swapchain);
+    void createGraphicsPipeline(VulkanContext const& ctx);
 };

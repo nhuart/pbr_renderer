@@ -37,17 +37,24 @@ void Renderer::buildRenderGraph() {
                         .usage = vk::ImageUsageFlagBits::eColorAttachment,
                         .aspect = vk::ImageAspectFlagBits::eColor,
                         .samples = vk::SampleCountFlagBits::e1,
-                    });
+                    },
+                    vk::ImageLayout::eUndefined, true);
 
-    auto colorImage =
-            mRenderGraph.importImage("color", *mSwapchain->colorImage, *mSwapchain->colorImageView,
-                    RenderGraphImage{
-                        .format = mSwapchain->surfaceFormat.format,
-                        .extent = swapchainExtent,
-                        .usage = vk::ImageUsageFlagBits::eColorAttachment,
-                        .aspect = vk::ImageAspectFlagBits::eColor,
-                        .samples = mCtx->msaaSamples,
-                    });
+    bool multisampled = mCtx->msaaSamples != vk::SampleCountFlagBits::e1;
+    RenderGraphImageHandle colorImage{};
+    if (multisampled) {
+        colorImage = mRenderGraph.importImage("color", *mSwapchain->colorImage,
+                *mSwapchain->colorImageView,
+                RenderGraphImage{
+                    .format = Swapchain::HDR_COLOR_FORMAT,
+                    .extent = swapchainExtent,
+                    .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                    .aspect = vk::ImageAspectFlagBits::eColor,
+                    .samples = mCtx->msaaSamples,
+                });
+    }
+
+    auto hdrImage = importHdrColorImage();
 
     auto depthImage =
             mRenderGraph.importImage("depth", *mSwapchain->depthImage, *mSwapchain->depthImageView,
@@ -244,9 +251,11 @@ void Renderer::buildRenderGraph() {
     }
 
     auto& forwardPass = mRenderGraph.addPass("ForwardPass")
-                                .writesColor(colorImage)
-                                .resolvesTo(mSwapchainImageHandle)
+                                .writesColor(multisampled ? colorImage : hdrImage)
                                 .writesDepth(depthImage);
+    if (multisampled) {
+        forwardPass.resolvesTo(hdrImage);
+    }
     if (mShadowMapImageHandle.isValid()) {
         forwardPass.reads(mShadowMapImageHandle);
     }
@@ -286,5 +295,28 @@ void Renderer::buildRenderGraph() {
         }
     });
 
+    addTonemapPass(hdrImage);
+
     mRenderGraph.compile(*mCtx);
+}
+
+RenderGraphImageHandle Renderer::importHdrColorImage() {
+    return mRenderGraph.importImage("hdrColor", *mSwapchain->hdrImage, *mSwapchain->hdrImageView,
+            RenderGraphImage{
+                .format = Swapchain::HDR_COLOR_FORMAT,
+                .extent = mSwapchain->extent,
+                .usage =
+                        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+                .aspect = vk::ImageAspectFlagBits::eColor,
+            });
+}
+
+void Renderer::addTonemapPass(RenderGraphImageHandle hdrColor) {
+    mRenderGraph.addPass("TonemapPass")
+            .writesColor(mSwapchainImageHandle)
+            .reads(hdrColor)
+            .execute([this](vk::raii::CommandBuffer const& cmd) {
+                setViewportAndScissor(cmd, mSwapchain->extent);
+                mTonemapPipeline->draw(cmd);
+            });
 }
