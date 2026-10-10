@@ -41,10 +41,10 @@ void Renderer::buildRenderGraph() {
                     vk::ImageLayout::eUndefined, true);
 
     bool multisampled = mCtx->msaaSamples != vk::SampleCountFlagBits::e1;
-    RenderGraphImageHandle colorImage{};
+    RenderGraphImageHandle msaaHdrImage{};
     if (multisampled) {
-        colorImage = mRenderGraph.importImage("color", *mSwapchain->colorImage,
-                *mSwapchain->colorImageView,
+        msaaHdrImage = mRenderGraph.importImage("msaaHdrColor", *mSwapchain->msaaHdrImage,
+                *mSwapchain->msaaHdrImageView,
                 RenderGraphImage{
                     .format = Swapchain::HDR_COLOR_FORMAT,
                     .extent = swapchainExtent,
@@ -251,7 +251,7 @@ void Renderer::buildRenderGraph() {
     }
 
     auto& forwardPass = mRenderGraph.addPass("ForwardPass")
-                                .writesColor(multisampled ? colorImage : hdrImage)
+                                .writesColor(multisampled ? msaaHdrImage : hdrImage)
                                 .writesDepth(depthImage);
     if (multisampled) {
         forwardPass.resolvesTo(hdrImage);

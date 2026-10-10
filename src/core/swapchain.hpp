@@ -21,9 +21,9 @@ struct Swapchain {
     vk::SurfaceFormatKHR surfaceFormat;
     vk::Extent2D extent;
     std::vector<vk::raii::ImageView> imageViews;
-    vk::raii::Image colorImage = nullptr;
-    vk::raii::DeviceMemory colorImageMemory = nullptr;
-    vk::raii::ImageView colorImageView = nullptr;
+    vk::raii::Image msaaHdrImage = nullptr;
+    vk::raii::DeviceMemory msaaHdrImageMemory = nullptr;
+    vk::raii::ImageView msaaHdrImageView = nullptr;
     vk::raii::Image hdrImage = nullptr;
     vk::raii::DeviceMemory hdrImageMemory = nullptr;
     vk::raii::ImageView hdrImageView = nullptr;
