@@ -12,6 +12,7 @@
     .card { background: #1c1c1c; border-radius: 8px; overflow: hidden; }
     .card-title { padding: 0.6rem 1rem; font-size: 0.85rem; font-weight: 600; background: #222; border-bottom: 1px solid #333; }
     .card-title span { color: #888; font-weight: 400; }
+    .card-title a { float: right; color: #aaa; font-weight: 400; }
 
     .compare { position: relative; user-select: none; cursor: ew-resize; overflow: hidden; }
     .compare img { display: block; width: 100%; height: auto; pointer-events: none; }
@@ -57,16 +58,17 @@
       { title: "Directional",          filament: "../filament/stanford_bunny_pbr_directional.png",   ours: "../standford_bunny/pbr_directional.png" },
       { title: "Point light",          filament: "../filament/stanford_bunny_pbr_point.png",         ours: "../standford_bunny/pbr_point.png" },
       { title: "Spot light",           filament: "../filament/stanford_bunny_pbr_spot.png",          ours: "../standford_bunny/pbr_spot.png" },
-      { title: "PCF Shadow",           filament: "../filament/stanford_bunny_pbr_shadow_pcf.png",    ours: "../standford_bunny/pbr_shadow_pcf.png" },
+      { title: "Hard Shadow",          filament: "../filament/stanford_bunny_pbr_shadow_hard.png",   ours: "../standford_bunny/pbr_shadow_hard.png", depth: "../standford_bunny/depth_stanford_bunny_pbr_shadow_hard.png" },
+      { title: "PCF Shadow",           filament: "../filament/stanford_bunny_pbr_shadow_pcf.png",    ours: "../standford_bunny/pbr_shadow_pcf.png", depth: "../standford_bunny/depth_stanford_bunny_pbr_shadow_pcf.png" },
       { title: "Normal map",           filament: "../filament/stanford_bunny_pbr_normal_map.png",    ours: "../standford_bunny/pbr_normal_map.png" },
       { title: "No normal map",        filament: "../filament/stanford_bunny_pbr_no_normal_map.png", ours: "../standford_bunny/pbr_no_normal_map.png" },
     ];
 
-    function makeCard({ title, filament, ours }) {
+    function makeCard({ title, filament, ours, depth }) {
       const card = document.createElement('div');
       card.className = 'card';
       card.innerHTML = `
-        <div class="card-title">${title} <span>← filament · pbr_renderer →</span></div>
+        <div class="card-title">${title} <span>← filament · pbr_renderer →</span>${depth ? `<a href="${depth}">Shadow depth</a>` : ''}</div>
         <div class="compare">
           <img src="${ours}" alt="pbr_renderer" />
           <div class="right-wrap"><img src="${filament}" alt="Filament" /></div>
