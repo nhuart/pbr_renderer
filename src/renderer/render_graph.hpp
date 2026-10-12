@@ -40,6 +40,7 @@ struct RenderGraphBarrier {
 struct RenderGraphPass {
     std::string name;
     std::vector<RenderGraphImageHandle> colorWrites;
+    std::vector<RenderGraphImageHandle> preservedColorAttachments;
     RenderGraphImageHandle depthWrite{};
     std::vector<RenderGraphImageHandle> reads;
     RenderGraphImageHandle resolveTarget{};
@@ -68,6 +69,7 @@ public:
 
     RenderGraph& addPass(std::string name);
     RenderGraph& writesColor(RenderGraphImageHandle handle);
+    RenderGraph& preservesColorContents(RenderGraphImageHandle handle);
     RenderGraph& writesDepth(RenderGraphImageHandle handle);
     RenderGraph& reads(RenderGraphImageHandle handle);
     RenderGraph& resolvesTo(RenderGraphImageHandle handle);

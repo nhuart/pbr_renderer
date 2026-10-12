@@ -147,7 +147,7 @@ void main() {
         return;
     }
 
-    float softeningRadius = 0.1 * ubo.radius;
+    float softeningRadius = 0.1 * ubo.radius; // Where the falloff function peaks
     SaoContext context = SaoContext(inUV, depthTextureSize, centerPosition, viewNormal,
             screenRadiusPixels, 1.0 / (ubo.radius * ubo.radius), softeningRadius * softeningRadius);
     outAO = vec4(obscuranceToVisibility(accumulateObscurance(context)), packedDepth, 1.0);

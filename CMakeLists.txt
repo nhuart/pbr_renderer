@@ -65,6 +65,7 @@ set(SHADER_SOURCES
     shaders/sao_depth_mip.frag
     shaders/gtao.frag
     shaders/sao_blur.frag
+    shaders/volumetric.frag
 )
 
 set(SHADER_SPIRV_OUTPUTS)
@@ -147,6 +148,7 @@ add_executable(pbr_renderer
     src/renderer/ao_pipeline.cpp
     src/renderer/ao_pipeline_prepass.cpp
     src/renderer/ao_pipeline_effects.cpp
+    src/renderer/volumetric_pipeline.cpp
     src/renderer/particle_pipeline.cpp
     src/scene/scene_loader.cpp
 )

@@ -11,6 +11,8 @@
 
 struct VulkanContext;
 struct CommandService;
+struct GameObject;
+struct MeshBuffer;
 
 constexpr uint32_t SHADOW_MAP_SIZE = 2048;
 
@@ -51,12 +53,17 @@ struct ShadowPipeline {
     ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount);
 
     void allocateObjectData(VulkanContext const& ctx, uint32_t objectCount);
-    void updateLightSpaceMatrix(DirectionalLight const& light);
+    void updateLightSpaceMatrix(DirectionalLight const& light, Scene const& scene,
+            MeshBuffer const& meshBuffer, std::vector<GameObject> const& gameObjects);
     void updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex, glm::mat4 const& model);
     void updateFragmentUBO(uint32_t frameIndex);
 
 private:
     void createDepthImage(VulkanContext const& ctx, CommandService const& cmds);
-    void createFragmentUboBuffers(VulkanContext const& ctx);
-    void createPipeline(VulkanContext const& ctx, uint32_t objectCount);
+    void createDepthSampler(VulkanContext const& ctx);
+    void initializeDepthImageLayout(CommandService const& cmds);
+    void createFragmentUniformBuffers(VulkanContext const& ctx);
+    void createDescriptorResources(VulkanContext const& ctx, uint32_t objectCount);
+    void createGraphicsPipeline(VulkanContext const& ctx);
+    void allocateObjectDescriptorSets(VulkanContext const& ctx, ShadowObjectData& objectData);
 };

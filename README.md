@@ -1,9 +1,9 @@
 # pbr_renderer
 This project is a forward PBR renderer in C++ with Vulkan. It does not yet use clustered forward rendering.
 
-The primary goal of this project was to learn Vulkan. After working through this Vulkan [tutorial](https://docs.vulkan.org/tutorial/latest/00_Introduction.html), my aim was not to reinvent the wheel in computer graphics, but to integrate graphics features into this Vulkan architecture and expand my Vulkan knowledge. Therefore, the (surface) rendering features were heavily inspired by, and validated against, [Google Filament](https://github.com/google/filament).
+The primary goal of this project was to learn Vulkan. After working through this Vulkan [tutorial](https://docs.vulkan.org/tutorial/latest/00_Introduction.html), my aim was not to reinvent the wheel in computer graphics, but to integrate graphics features into this Vulkan architecture and expand my Vulkan knowledge. Therefore, the surface rendering features were inspired by, and validated against, [Google Filament](https://github.com/google/filament). On the other hand, the volume-rendering equations and implementation were based on [Scratchapixel's tutorial](https://www.scratchapixel.com/lessons/3d-basic-rendering/volume-rendering-for-developers/intro-volume-rendering.html). Throughout the project, Physically Based Rendering (https://www.pbr-book.org/) also served as a key reference for the theoretical foundations.
 
-See the [side-by-side comparisons with Filament](results/comparison/filament_validations.html) for the rendering results.
+See the [side-by-side comparisons with Filament](results/comparison/filament_validations.html) for the (surface) rendering results.
 
 This project is still in progress and the end goal is to render a visually appealing scene that also includes volumetric effects, such as light beams, and particle effects, such as fire.
 
@@ -113,6 +113,7 @@ Multiple instances can reference the same `gltf` path. The mesh data, however, i
 - Physically based camera
 - Image-based lighting and skybox
 - Directional-light shadows with hard or percentage-closer filtered (PCF) shadow maps
+- Ray-marched volume rendering of a homogeneous participating medium using single scattering from a directional light, with optional volume bounds.
 - Screen-space ambient occlusion with Scalable ambient obscurance (SAO) and ground-truth ambient occlusion (GTAO)
 - Linear HDR rendering with configurable final tone mapping (None, Reinhard)
 
@@ -137,7 +138,7 @@ results/        Rendered results and Filament comparisons
 
 ## TODOs
 
-This section lists improvements I identified during development but deferred for later. It does not cover broader rendering features planned for the future, such as volumetric rendering and cascaded shadows.
+This section lists improvements I identified during development but deferred for later. It does not cover broader rendering features planned for the future.
 
 ### Vulkan and performance
 

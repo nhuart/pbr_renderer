@@ -24,6 +24,16 @@ static std::string materialKey(MeshInstance const& instance, bool doubleSided) {
     return instance.vertexShader + "+" + instance.resolvedFragShader + (doubleSided ? "+ds" : "");
 }
 
+static DirectionalLight const* shadowCastingDirectionalLight(Scene const& scene) {
+    for (auto const& light: scene.lights) {
+        if (auto const* directional = std::get_if<DirectionalLight>(&light);
+                directional && directional->castShadow) {
+            return directional;
+        }
+    }
+    return nullptr;
+}
+
 static float diffuseIblLuminance(std::vector<Light> const& lights, float exposure) {
     auto const* ambientLight = ambientLightFromLights(lights);
     if (!ambientLight) {
@@ -73,7 +83,8 @@ void Renderer::initVulkan() {
     mLightBuffer.emplace(*mCtx, LightUBO{});
     createEnvironment();
     createShadowPipeline();
-    createAoPipeline();
+    createDepthAndAoPipeline();
+    createVolumetricPipeline();
     createTonemapPipeline();
     resolveShaderVariants();
     createMaterials();
@@ -118,35 +129,36 @@ void Renderer::createEnvironment() {
 }
 
 void Renderer::createShadowPipeline() {
-    DirectionalLight const* shadowCastingLight = nullptr;
-    for (auto const& light: mScene.lights) {
-        if (auto const* directional = std::get_if<DirectionalLight>(&light)) {
-            if (directional->castShadow) {
-                shadowCastingLight = directional;
-                break;
-            }
-        }
-    }
-    if (shadowCastingLight) {
+    if (auto const* shadowCastingLight = shadowCastingDirectionalLight(mScene)) {
         uint32_t shadowCasterCount = static_cast<uint32_t>(
                 std::count_if(mScene.meshInstances.begin(), mScene.meshInstances.end(),
                         [](MeshInstance const& inst) { return inst.castShadows; }));
         mShadowPipeline.emplace(*mCtx, *mCmds, shadowCasterCount);
         mShadowPipeline->shadowType = shadowCastingLight->shadowType;
         mShadowPipeline->shadowBias = shadowCastingLight->shadowBias;
-        mShadowPipeline->updateLightSpaceMatrix(*shadowCastingLight);
+        mShadowPipeline->updateLightSpaceMatrix(*shadowCastingLight, mScene, *mMeshBuffer,
+                mGameObjects);
     }
 }
 
-void Renderer::createAoPipeline() {
+void Renderer::createDepthAndAoPipeline() {
     if (mScene.sao) {
         mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
     } else if (mScene.gtao) {
         mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.gtao);
+    } else if (mScene.volumetric) {
+        // Volumetric marching needs the depth prepass even without ambient occlusion.
+        mAoPipeline.emplace(*mCtx, *mSwapchain, SaoConfig{}, true);
     }
     if (mAoPipeline) {
         mAoPipeline->allocateNormalsObjects(*mCtx,
                 static_cast<uint32_t>(mScene.meshInstances.size()));
+    }
+}
+
+void Renderer::createVolumetricPipeline() {
+    if (mScene.volumetric) {
+        mVolumetricPipeline.emplace(*mCtx, *mAoPipeline, *mShadowPipeline);
     }
 }
 
@@ -172,18 +184,28 @@ void Renderer::createRenderObjects() {
                 &mResources->getNormalMap(*mCtx, *mCmds, instance.gltfPath, *mMeshBuffer);
         auto key = materialKey(instance, renderObject.range.doubleSided);
         renderObject.material = &mMaterials.at(key);
-        renderObject.materialInstance = renderObject.material->createInstance(*mCtx,
-                *renderObject.texture, mLightBuffer->buffer,
-                hasFeature(instance.shaderFeatures, ShaderFeatures::Ibl) ? &*mIblEnvironment
-                                                                         : nullptr,
-                hasFeature(instance.shaderFeatures, ShaderFeatures::NormalMap)
-                        ? renderObject.normalMap
-                        : nullptr,
-                (hasFeature(instance.shaderFeatures, ShaderFeatures::HardShadow) ||
-                        hasFeature(instance.shaderFeatures, ShaderFeatures::PcfShadow))
-                        ? &*mShadowPipeline
-                        : nullptr,
-                hasFeature(instance.shaderFeatures, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
+        createMaterialInstance(renderObject);
+    }
+}
+
+void Renderer::createMaterialInstance(RenderObject& renderObject) {
+    auto features = mScene.meshInstances[renderObject.gameObjectIndex].shaderFeatures;
+    bool hasShadow = hasFeature(features, ShaderFeatures::HardShadow) ||
+                     hasFeature(features, ShaderFeatures::PcfShadow);
+    renderObject.materialInstance = renderObject.material->createInstance(*mCtx,
+            *renderObject.texture, mLightBuffer->buffer,
+            hasFeature(features, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
+            hasFeature(features, ShaderFeatures::NormalMap) ? renderObject.normalMap : nullptr,
+            hasShadow ? &*mShadowPipeline : nullptr,
+            hasFeature(features, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
+}
+
+void Renderer::recreateAoMaterialInstances() {
+    for (auto& renderObject: mRenderObjects) {
+        auto features = mScene.meshInstances[renderObject.gameObjectIndex].shaderFeatures;
+        if (hasFeature(features, ShaderFeatures::Ao)) {
+            createMaterialInstance(renderObject);
+        }
     }
 }
 
@@ -225,7 +247,12 @@ void Renderer::scrollCallback(GLFWwindow* window, double /*xoffset*/, double yof
 void Renderer::recreateSwapchain() {
     mCtx->device.waitIdle();
     mTonemapPipeline.reset();
+    mVolumetricPipeline.reset();
+    mAoPipeline.reset();
     mSwapchain->recreate(*mCtx, mWindow);
+    createDepthAndAoPipeline();
+    createVolumetricPipeline();
+    recreateAoMaterialInstances();
     createTonemapPipeline();
     mSync->recreatePresent(*mCtx, static_cast<uint32_t>(mSwapchain->images.size()));
     buildRenderGraph();
@@ -272,6 +299,7 @@ void Renderer::updateUniforms() {
     }
 
     updateAoUniforms(view, projection);
+    updateVolumetricUniforms(view, projection, mCamera.position(), exposure);
 }
 
 void Renderer::updateLights(float exposure) {
@@ -348,6 +376,30 @@ void Renderer::updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projecti
     }
 }
 
+void Renderer::updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& projection,
+        glm::vec3 const& cameraPosition, float exposure) {
+    if (!mVolumetricPipeline) {
+        return;
+    }
+    auto const& config = *mScene.volumetric;
+    auto const& light = *shadowCastingDirectionalLight(mScene);
+    VolumetricUBO ubo{
+        .invViewProj = glm::inverse(projection * view),
+        .lightSpaceMatrix = mShadowPipeline->lightSpaceMatrix,
+        .cameraPos = glm::vec4(cameraPosition, 1.0f),
+        .lightDirection = glm::vec4(glm::normalize(light.direction), light.shadowBias),
+        .lightColor = glm::vec4(light.color * light.intensity * exposure, 1.0f),
+        .extinctionCoefficient = config.density,
+        .scatteringAlbedo = config.scatteringAlbedo,
+        .maxDistance = config.maxDistance,
+        .anisotropy = config.anisotropy,
+        .boundsMin = glm::vec4(config.boundsMin, config.bounded ? 1.0f : 0.0f),
+        .boundsMax = glm::vec4(config.boundsMax, 0.0f),
+        .stepCount = config.steps,
+    };
+    mVolumetricPipeline->update(mFrameIndex, ubo);
+}
+
 void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
     auto const& cmd = mCmds->computeCommandBuffers[frameIdx];
     cmd.begin({});
@@ -371,7 +423,7 @@ void Renderer::resolveShaderVariants() {
         bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
         bool hasShadow = inst.receiveShadows && mShadowPipeline.has_value();
         bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
-        bool hasAo = mAoPipeline.has_value();
+        bool hasAo = mScene.sao.has_value() || mScene.gtao.has_value();
 
         ShaderFeatures features = ShaderFeatures::None;
         std::string frag = "pbr";

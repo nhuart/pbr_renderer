@@ -25,22 +25,25 @@ static vk::raii::Sampler makeNearestSampler(VulkanContext const& ctx, uint32_t m
                                          });
 }
 
-AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg)
-        : AoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
+AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg,
+        bool depthOnly)
+        : AoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }, depthOnly) {}
 
 AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg)
         : AoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
 
 AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-        std::variant<SaoConfig, GtaoConfig> cfg)
-        : config(std::move(cfg)) {
+        std::variant<SaoConfig, GtaoConfig> cfg, bool onlyDepth)
+        : config(std::move(cfg)), depthOnly(onlyDepth) {
     createImages(ctx, swapchain.extent);
     createNormalsPass(ctx);
     if (depthMipLevelCount > 1) {
         createDepthMipPass(ctx);
     }
-    createAoPass(ctx);
-    createBlurPass(ctx);
+    if (!depthOnly) {
+        createAoPass(ctx);
+        createBlurPass(ctx);
+    }
 }
 
 void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
@@ -63,7 +66,7 @@ void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
 
     // Match Filament's min(8, maxLevelCount(width, height) - 5), with dimensions
     // clamped to at least 32 pixels as in its structure pass.
-    if (std::holds_alternative<SaoConfig>(config)) {
+    if (!depthOnly && std::holds_alternative<SaoConfig>(config)) {
         uint32_t largestDimension = std::max({ 32u, extent.width, extent.height });
         depthMipLevelCount = std::min(8, std::bit_width(largestDimension) - 5);
     }
@@ -94,6 +97,10 @@ void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
     normalsView = vkutil::createImageView(ctx, *normalsImage, normalsFormat);
     normalsSampler = makeNearestSampler(ctx);
 
+    if (depthOnly) {
+        return;
+    }
+
     auto [ri, rm] = createImage(aoFormat, colorUsage);
     aoRawImage = std::move(ri);
     aoRawMemory = std::move(rm);
@@ -109,6 +116,9 @@ void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
 
 void AoPipeline::updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::mat4 const& proj,
         float fovYRad, float height, float nearPlane, float farPlane) {
+    if (depthOnly) {
+        return;
+    }
     float projScale = (0.5f * height) / std::tan(0.5f * fovYRad);
 
     if (auto const* gtao = std::get_if<GtaoConfig>(&config)) {

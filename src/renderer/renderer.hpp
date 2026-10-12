@@ -29,6 +29,7 @@
 #include "renderer/shadow_pipeline.hpp"
 #include "renderer/skybox_pipeline.hpp"
 #include "renderer/tonemap_pipeline.hpp"
+#include "renderer/volumetric_pipeline.hpp"
 #include "scene/scene_loader.hpp"
 #include "scene/types.hpp"
 
@@ -54,7 +55,6 @@ private:
 
     std::optional<VulkanContext> mCtx;
     std::optional<Swapchain> mSwapchain;
-    std::optional<TonemapPipeline> mTonemapPipeline;
     std::optional<CommandService> mCmds;
     std::optional<SyncObjects> mSync;
     std::optional<ResourceManager> mResources;
@@ -67,6 +67,8 @@ private:
     std::optional<SkyboxPipeline> mSkyboxPipeline;
     std::optional<ParticlePipeline> mParticlePipeline;
     std::optional<AoPipeline> mAoPipeline;
+    std::optional<VolumetricPipeline> mVolumetricPipeline;
+    std::optional<TonemapPipeline> mTonemapPipeline;
     RenderGraphImageHandle mNormalsImageHandle{};
     RenderGraphImageHandle mAoRawImageHandle{};
     RenderGraphImageHandle mAoBlurImageHandle{};
@@ -80,10 +82,13 @@ private:
     void createSceneObjects();
     void createEnvironment();
     void createShadowPipeline();
-    void createAoPipeline();
+    void createDepthAndAoPipeline();
+    void createVolumetricPipeline();
     void createTonemapPipeline();
     void createMaterials();
     void createRenderObjects();
+    void createMaterialInstance(RenderObject& renderObject);
+    void recreateAoMaterialInstances();
     void resolveShaderVariants();
     void mainLoop();
     void cleanup();
@@ -94,9 +99,24 @@ private:
             glm::vec3 const& cameraPosition, float exposure);
     void updateShadowUniforms();
     void updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projection);
+    void updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& projection,
+            glm::vec3 const& cameraPosition, float exposure);
     void recreateSwapchain();
     void buildRenderGraph();
+    void addShadowPass();
+    void addDepthPrepass(vk::Format depthFormat);
+    void addAmbientOcclusionPasses(vk::Format depthFormat);
+    void importAoImages();
+    void addDepthMipPasses(vk::Format depthFormat);
+    void addAoBlurPass(std::string name, RenderGraphImageHandle input,
+            RenderGraphImageHandle output, uint32_t passIndex);
+    void addForwardPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
+            RenderGraphImageHandle resolveTarget);
     [[nodiscard]] RenderGraphImageHandle importHdrColorImage();
+    void importSwapchainImage();
+    [[nodiscard]] RenderGraphImageHandle importMsaaHdrColorImage();
+    [[nodiscard]] RenderGraphImageHandle importForwardDepthImage(vk::Format depthFormat);
+    void addVolumetricPass(RenderGraphImageHandle hdrColor);
     void addTonemapPass(RenderGraphImageHandle hdrColor);
     void recordCommandBuffer(uint32_t imageIndex);
     void recordComputeCommandBuffer(uint32_t frameIdx);

@@ -133,8 +133,10 @@ struct AoPipeline {
     std::vector<std::array<void*, 2>> blurUboMapped;
 
     std::variant<SaoConfig, GtaoConfig> config;
+    bool depthOnly = false;
 
-    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg);
+    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg,
+            bool depthOnly = false);
     AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg);
 
     void allocateNormalsObjects(VulkanContext const& ctx, uint32_t objectCount);
@@ -147,7 +149,7 @@ struct AoPipeline {
 
 private:
     AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-            std::variant<SaoConfig, GtaoConfig> cfg);
+            std::variant<SaoConfig, GtaoConfig> cfg, bool depthOnly = false);
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
     void createNormalsPass(VulkanContext const& ctx);
     void createDepthMipPass(VulkanContext const& ctx);

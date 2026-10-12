@@ -1,5 +1,7 @@
 #include "renderer/render_graph.hpp"
 
+#include <algorithm>
+
 namespace {
 
 void updateBarrierImages(std::vector<RenderGraphBarrier>& barriers, uint32_t resourceIndex,
@@ -9,6 +11,13 @@ void updateBarrierImages(std::vector<RenderGraphBarrier>& barriers, uint32_t res
             barrier.image = image;
         }
     }
+}
+
+bool hasPreservedColorAttachment(RenderGraphPass const& pass, RenderGraphImageHandle handle) {
+    return std::any_of(pass.preservedColorAttachments.begin(), pass.preservedColorAttachments.end(),
+            [handle](RenderGraphImageHandle attachment) {
+                return attachment.index == handle.index;
+            });
 }
 
 } // namespace
@@ -43,6 +52,11 @@ RenderGraph& RenderGraph::addPass(std::string name) {
 
 RenderGraph& RenderGraph::writesColor(RenderGraphImageHandle handle) {
     mPasses.back().colorWrites.push_back(handle);
+    return *this;
+}
+
+RenderGraph& RenderGraph::preservesColorContents(RenderGraphImageHandle handle) {
+    mPasses.back().preservedColorAttachments.push_back(handle);
     return *this;
 }
 
@@ -81,10 +95,12 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
             auto& physicalImage = mImages[imageHandle.index];
             bool isRead =
                     mSubsequentlyRead.count(imageHandle.index) > 0 || physicalImage.presentable;
+            bool preservesContents = hasPreservedColorAttachment(pass, imageHandle);
             vk::RenderingAttachmentInfo colorAttachmentInfo{
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
+                .loadOp = preservesContents ? vk::AttachmentLoadOp::eLoad
+                                            : vk::AttachmentLoadOp::eClear,
                 .storeOp =
                         isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
                 .clearValue = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f },
@@ -141,6 +157,9 @@ void RenderGraph::buildBarriers() {
         for (auto imageHandle: pass.reads) {
             mSubsequentlyRead.insert(imageHandle.index);
         }
+        for (auto imageHandle: pass.preservedColorAttachments) {
+            mSubsequentlyRead.insert(imageHandle.index);
+        }
     }
 
     std::vector<vk::ImageLayout> layouts(mImages.size(), vk::ImageLayout::eUndefined);
@@ -159,7 +178,9 @@ void RenderGraph::buildBarriers() {
             }
             auto& physicalImage = mImages[imageHandle.index];
             vk::ImageLayout oldLayout = layouts[imageHandle.index];
-            if (oldLayout == newLayout) {
+            bool preservesColorContents = newLayout == vk::ImageLayout::eColorAttachmentOptimal &&
+                                          hasPreservedColorAttachment(pass, imageHandle);
+            if (oldLayout == newLayout && !preservesColorContents) {
                 return;
             }
             auto [srcAccess, srcStage] = accessForLayout(oldLayout);
@@ -179,8 +200,11 @@ void RenderGraph::buildBarriers() {
         };
 
         for (auto imageHandle: pass.colorWrites) {
-            addBarrier(imageHandle, vk::ImageLayout::eColorAttachmentOptimal,
-                    vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::AccessFlags2 destinationAccess = vk::AccessFlagBits2::eColorAttachmentWrite;
+            if (hasPreservedColorAttachment(pass, imageHandle)) {
+                destinationAccess |= vk::AccessFlagBits2::eColorAttachmentRead;
+            }
+            addBarrier(imageHandle, vk::ImageLayout::eColorAttachmentOptimal, destinationAccess,
                     vk::PipelineStageFlagBits2::eColorAttachmentOutput);
             if (pass.resolveTarget.isValid()) {
                 addBarrier(pass.resolveTarget, vk::ImageLayout::eColorAttachmentOptimal,

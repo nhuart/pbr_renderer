@@ -3,6 +3,7 @@
 #include "core/resource_allocator.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -86,7 +87,7 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     if (mShadowPipeline) {
         captureShadowMapDebug();
     }
-    if (mAoPipeline) {
+    if (mAoPipeline && !mAoPipeline->depthOnly) {
         captureAoTextureDebug();
         captureNormalsTextureDebug();
     }
@@ -206,7 +207,8 @@ void Renderer::captureImageToPng(vk::Image image, vk::ImageLayout currentLayout,
 
 void Renderer::captureShadowMapDebug() {
     constexpr uint32_t shadowMapSize = SHADOW_MAP_SIZE;
-    std::string path = screenshotOutputPath("shadow_depth.png");
+    std::string sceneName = std::filesystem::path(mScenePath).stem().string();
+    std::string path = screenshotOutputPath("depth_" + sceneName + ".png");
     captureImageToPng(*mShadowPipeline->image, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eDepth, shadowMapSize, shadowMapSize, sizeof(float), path,
             [](void const* data, uint32_t pixelCount) {
