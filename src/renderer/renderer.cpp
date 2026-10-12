@@ -83,7 +83,8 @@ void Renderer::initVulkan() {
     mLightBuffer.emplace(*mCtx, LightUBO{});
     createEnvironment();
     createShadowPipeline();
-    createDepthAndAoPipeline();
+    createGeometryPrepass();
+    createAoPipeline();
     createVolumetricPipeline();
     createTonemapPipeline();
     resolveShaderVariants();
@@ -141,24 +142,26 @@ void Renderer::createShadowPipeline() {
     }
 }
 
-void Renderer::createDepthAndAoPipeline() {
-    if (mScene.sao) {
-        mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.sao);
-    } else if (mScene.gtao) {
-        mAoPipeline.emplace(*mCtx, *mSwapchain, *mScene.gtao);
-    } else if (mScene.volumetric) {
-        // Volumetric marching needs the depth prepass even without ambient occlusion.
-        mAoPipeline.emplace(*mCtx, *mSwapchain, SaoConfig{}, true);
+void Renderer::createGeometryPrepass() {
+    if (!mScene.sao && !mScene.gtao && !mScene.volumetric) {
+        return;
     }
-    if (mAoPipeline) {
-        mAoPipeline->allocateNormalsObjects(*mCtx,
-                static_cast<uint32_t>(mScene.meshInstances.size()));
+    uint32_t depthMipLevels = mScene.sao ? AoPipeline::saoDepthMipLevels(mSwapchain->extent) : 1;
+    mGeometryPrepass.emplace(*mCtx, *mSwapchain, depthMipLevels);
+    mGeometryPrepass->allocateObjects(*mCtx, static_cast<uint32_t>(mScene.meshInstances.size()));
+}
+
+void Renderer::createAoPipeline() {
+    if (mScene.sao) {
+        mAoPipeline.emplace(*mCtx, *mSwapchain, *mGeometryPrepass, *mScene.sao);
+    } else if (mScene.gtao) {
+        mAoPipeline.emplace(*mCtx, *mSwapchain, *mGeometryPrepass, *mScene.gtao);
     }
 }
 
 void Renderer::createVolumetricPipeline() {
     if (mScene.volumetric) {
-        mVolumetricPipeline.emplace(*mCtx, *mAoPipeline, *mShadowPipeline);
+        mVolumetricPipeline.emplace(*mCtx, *mGeometryPrepass, *mShadowPipeline);
     }
 }
 
@@ -249,8 +252,10 @@ void Renderer::recreateSwapchain() {
     mTonemapPipeline.reset();
     mVolumetricPipeline.reset();
     mAoPipeline.reset();
+    mGeometryPrepass.reset();
     mSwapchain->recreate(*mCtx, mWindow);
-    createDepthAndAoPipeline();
+    createGeometryPrepass();
+    createAoPipeline();
     createVolumetricPipeline();
     recreateAoMaterialInstances();
     createTonemapPipeline();
@@ -298,6 +303,7 @@ void Renderer::updateUniforms() {
         memcpy(mParticlePipeline->computeUniformBuffersMapped[mFrameIndex], &cubo, sizeof(cubo));
     }
 
+    updateGeometryPrepassUniforms(view, projection);
     updateAoUniforms(view, projection);
     updateVolumetricUniforms(view, projection, mCamera.position(), exposure);
 }
@@ -361,7 +367,11 @@ void Renderer::updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projecti
         mAoPipeline->updateUBOs(mFrameIndex, view, projection, fovYRad,
                 static_cast<float>(mSwapchain->extent.height),
                 static_cast<float>(mCamera.nearPlane), static_cast<float>(mCamera.farPlane));
+    }
+}
 
+void Renderer::updateGeometryPrepassUniforms(glm::mat4 const& view, glm::mat4 const& projection) {
+    if (mGeometryPrepass) {
         for (size_t i = 0; i < mRenderObjects.size(); ++i) {
             auto const& obj = mGameObjects[mRenderObjects[i].gameObjectIndex];
             glm::mat4 model = obj.getModelMatrix();
@@ -371,7 +381,7 @@ void Renderer::updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projecti
                 .proj = projection,
                 .normalMatrix = glm::transpose(glm::inverse(model)),
             };
-            mAoPipeline->updateNormalsUBO(static_cast<uint32_t>(i), mFrameIndex, nubo);
+            mGeometryPrepass->updateObjectUBO(static_cast<uint32_t>(i), mFrameIndex, nubo);
         }
     }
 }

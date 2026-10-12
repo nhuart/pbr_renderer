@@ -17,6 +17,7 @@
 #include "core/sync.hpp"
 #include "renderer/ao_pipeline.hpp"
 #include "renderer/game_object.hpp"
+#include "renderer/geometry_prepass.hpp"
 #include "renderer/gpu_types.hpp"
 #include "renderer/ibl_environment.hpp"
 #include "renderer/light_buffer.hpp"
@@ -66,6 +67,7 @@ private:
     RenderGraphImageHandle mShadowMapImageHandle{};
     std::optional<SkyboxPipeline> mSkyboxPipeline;
     std::optional<ParticlePipeline> mParticlePipeline;
+    std::optional<GeometryPrepass> mGeometryPrepass;
     std::optional<AoPipeline> mAoPipeline;
     std::optional<VolumetricPipeline> mVolumetricPipeline;
     std::optional<TonemapPipeline> mTonemapPipeline;
@@ -82,7 +84,8 @@ private:
     void createSceneObjects();
     void createEnvironment();
     void createShadowPipeline();
-    void createDepthAndAoPipeline();
+    void createGeometryPrepass();
+    void createAoPipeline();
     void createVolumetricPipeline();
     void createTonemapPipeline();
     void createMaterials();
@@ -99,6 +102,7 @@ private:
             glm::vec3 const& cameraPosition, float exposure);
     void updateShadowUniforms();
     void updateAoUniforms(glm::mat4 const& view, glm::mat4 const& projection);
+    void updateGeometryPrepassUniforms(glm::mat4 const& view, glm::mat4 const& projection);
     void updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& projection,
             glm::vec3 const& cameraPosition, float exposure);
     void recreateSwapchain();

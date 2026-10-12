@@ -5,17 +5,17 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
-#include "renderer/ao_pipeline.hpp"
+#include "renderer/geometry_prepass.hpp"
 #include "renderer/shadow_pipeline.hpp"
 
-VolumetricPipeline::VolumetricPipeline(VulkanContext const& ctx, AoPipeline const& depth,
+VolumetricPipeline::VolumetricPipeline(VulkanContext const& ctx, GeometryPrepass const& depth,
         ShadowPipeline const& shadow) {
     createDescriptorResources(ctx, depth, shadow);
     createGraphicsPipeline(ctx);
 }
 
 void VolumetricPipeline::createDescriptorResources(VulkanContext const& ctx,
-        AoPipeline const& depth, ShadowPipeline const& shadow) {
+        GeometryPrepass const& depth, ShadowPipeline const& shadow) {
     createDescriptorLayout(ctx);
     allocateDescriptorSets(ctx);
     initializeFrameDescriptors(ctx, depth, shadow);
@@ -62,7 +62,7 @@ void VolumetricPipeline::allocateDescriptorSets(VulkanContext const& ctx) {
 }
 
 void VolumetricPipeline::initializeFrameDescriptors(VulkanContext const& ctx,
-        AoPipeline const& depth, ShadowPipeline const& shadow) {
+        GeometryPrepass const& depth, ShadowPipeline const& shadow) {
     vk::DescriptorImageInfo depthInfo{ *depth.depthSampler, *depth.depthMipViews[0],
         vk::ImageLayout::eShaderReadOnlyOptimal };
     vk::DescriptorImageInfo shadowInfo{ *shadow.sampler, *shadow.imageView,

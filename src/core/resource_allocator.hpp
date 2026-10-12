@@ -42,6 +42,9 @@ void copyBuffer(VulkanContext const& ctx, vk::raii::CommandPool const& pool, vk:
 
 [[nodiscard]] vk::Format findDepthFormat(VulkanContext const& ctx);
 
+[[nodiscard]] vk::raii::Sampler createNearestSampler(VulkanContext const& ctx,
+        uint32_t mipLevels = 1);
+
 void transitionImageLayout(vk::raii::CommandBuffer const& cmd, vk::Image image,
         vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccess,
         vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 srcStage,

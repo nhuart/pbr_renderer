@@ -146,7 +146,8 @@ add_executable(pbr_renderer
     src/renderer/material_instance.cpp
     src/renderer/shadow_pipeline.cpp
     src/renderer/ao_pipeline.cpp
-    src/renderer/ao_pipeline_prepass.cpp
+    src/renderer/ao_pipeline_depth_mips.cpp
+    src/renderer/geometry_prepass.cpp
     src/renderer/ao_pipeline_effects.cpp
     src/renderer/volumetric_pipeline.cpp
     src/renderer/particle_pipeline.cpp

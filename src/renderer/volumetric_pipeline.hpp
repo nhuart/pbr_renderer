@@ -8,7 +8,7 @@
 #include "core/config.hpp"
 
 struct VulkanContext;
-struct AoPipeline;
+struct GeometryPrepass;
 struct ShadowPipeline;
 
 struct VolumetricUBO {
@@ -27,7 +27,7 @@ struct VolumetricUBO {
 };
 
 struct VolumetricPipeline {
-    VolumetricPipeline(VulkanContext const& ctx, AoPipeline const& depth,
+    VolumetricPipeline(VulkanContext const& ctx, GeometryPrepass const& depth,
             ShadowPipeline const& shadow);
     void update(uint32_t frame, VolumetricUBO const& ubo);
     void draw(vk::raii::CommandBuffer const& cmd, uint32_t frame) const;
@@ -42,11 +42,11 @@ private:
     std::array<void*, MAX_FRAMES_IN_FLIGHT> mapped{};
     vk::raii::DescriptorSets descriptorSets{ nullptr };
 
-    void createDescriptorResources(VulkanContext const& ctx, AoPipeline const& depth,
+    void createDescriptorResources(VulkanContext const& ctx, GeometryPrepass const& depth,
             ShadowPipeline const& shadow);
     void createDescriptorLayout(VulkanContext const& ctx);
     void allocateDescriptorSets(VulkanContext const& ctx);
-    void initializeFrameDescriptors(VulkanContext const& ctx, AoPipeline const& depth,
+    void initializeFrameDescriptors(VulkanContext const& ctx, GeometryPrepass const& depth,
             ShadowPipeline const& shadow);
     void createGraphicsPipeline(VulkanContext const& ctx);
 };

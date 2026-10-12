@@ -87,7 +87,7 @@ void Renderer::captureScreenshot(uint32_t imageIndex) {
     if (mShadowPipeline) {
         captureShadowMapDebug();
     }
-    if (mAoPipeline && !mAoPipeline->depthOnly) {
+    if (mAoPipeline) {
         captureAoTextureDebug();
         captureNormalsTextureDebug();
     }
@@ -241,7 +241,7 @@ void Renderer::captureNormalsTextureDebug() {
     uint32_t width = mSwapchain->extent.width;
     uint32_t height = mSwapchain->extent.height;
     std::string path = screenshotOutputPath("normals_texture.png");
-    captureImageToPng(*mAoPipeline->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
+    captureImageToPng(*mGeometryPrepass->normalsImage, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageAspectFlagBits::eColor, width, height, 4, path);
 }
 

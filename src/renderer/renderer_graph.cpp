@@ -86,9 +86,9 @@ void Renderer::addShadowPass() {
 
 void Renderer::addDepthPrepass(vk::Format depthFormat) {
     vk::Extent2D swapchainExtent = mSwapchain->extent;
-    if (mAoPipeline) {
-        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass", *mAoPipeline->normalsImage,
-                *mAoPipeline->normalsView,
+    if (mGeometryPrepass) {
+        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass",
+                *mGeometryPrepass->normalsImage, *mGeometryPrepass->normalsView,
                 RenderGraphImage{
                     .format = vk::Format::eR8G8B8A8Unorm,
                     .extent = swapchainExtent,
@@ -99,7 +99,7 @@ void Renderer::addDepthPrepass(vk::Format depthFormat) {
                 });
 
         mDepthPrepassImageHandle = mRenderGraph.importImage("depthPrepass",
-                *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[0],
+                *mGeometryPrepass->depthImage, *mGeometryPrepass->depthMipViews[0],
                 RenderGraphImage{
                     .format = depthFormat,
                     .extent = swapchainExtent,
@@ -109,19 +109,20 @@ void Renderer::addDepthPrepass(vk::Format depthFormat) {
                     .samples = vk::SampleCountFlagBits::e1,
                 });
 
-        mRenderGraph.addPass("NormalsPrepass")
+        mRenderGraph.addPass("GeometryPrepass")
                 .writesColor(mNormalsImageHandle)
                 .writesDepth(mDepthPrepassImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
                     setViewportAndScissor(cmd, mSwapchain->extent);
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                            *mAoPipeline->normalsPipeline);
+                            *mGeometryPrepass->normalsPipeline);
                     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
                     cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
                     for (size_t i = 0; i < mRenderObjects.size(); ++i) {
                         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                *mAoPipeline->normalsPipeLayout, 0,
-                                *mAoPipeline->normalsObjects[i].descriptorSets[mFrameIndex], {});
+                                *mGeometryPrepass->normalsPipeLayout, 0,
+                                *mGeometryPrepass->normalsObjects[i].descriptorSets[mFrameIndex],
+                                {});
                         cmd.drawIndexed(mRenderObjects[i].range.indexCount, 1,
                                 mRenderObjects[i].range.firstIndex, 0, 0);
                     }
@@ -130,7 +131,7 @@ void Renderer::addDepthPrepass(vk::Format depthFormat) {
 }
 
 void Renderer::addAmbientOcclusionPasses(vk::Format depthFormat) {
-    if (mAoPipeline && !mAoPipeline->depthOnly) {
+    if (mAoPipeline) {
         importAoImages();
         addDepthMipPasses(depthFormat);
 
@@ -187,13 +188,13 @@ void Renderer::addDepthMipPasses(vk::Format depthFormat) {
         return;
     }
     mDepthMipImageHandles.push_back(mDepthPrepassImageHandle);
-    for (uint32_t level = 1; level < mAoPipeline->depthMipLevelCount; ++level) {
+    for (uint32_t level = 1; level < mGeometryPrepass->depthMipLevelCount; ++level) {
         vk::Extent2D mipExtent{
             std::max(1u, mSwapchain->extent.width >> level),
             std::max(1u, mSwapchain->extent.height >> level),
         };
         auto mipHandle = mRenderGraph.importImage("depthMip" + std::to_string(level),
-                *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[level],
+                *mGeometryPrepass->depthImage, *mGeometryPrepass->depthMipViews[level],
                 RenderGraphImage{
                     .format = depthFormat,
                     .extent = mipExtent,
