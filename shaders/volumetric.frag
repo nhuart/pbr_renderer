@@ -142,7 +142,8 @@ float calculateSampleJitter(vec2 pixelCoordinates) {
 }
 
 MediumIntegration integrateMedium(RaySegment ray) {
-    float stepLength = (ray.endDistance - ray.startDistance) / float(ubo.stepCount);
+    float pathLength = ray.endDistance - ray.startDistance;
+    float stepLength = pathLength / float(ubo.stepCount);
     float segmentTransmittance = exp(-ubo.extinctionCoefficient * stepLength);
     float sampleJitter = calculateSampleJitter(gl_FragCoord.xy);
     float transmittance = 1.0;
@@ -159,7 +160,9 @@ MediumIntegration integrateMedium(RaySegment ray) {
             break;
         }
     }
-    return MediumIntegration(scattering, transmittance);
+    // Background attenuation covers the full medium path even when scattering stops early.
+    float fullPathTransmittance = exp(-ubo.extinctionCoefficient * pathLength);
+    return MediumIntegration(scattering, fullPathTransmittance);
 }
 
 void main() {
