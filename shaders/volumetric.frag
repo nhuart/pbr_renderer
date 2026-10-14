@@ -24,7 +24,6 @@ const float PI = 3.14159265359;
 const float MIN_TRANSMITTANCE = 1e-3;
 const float DIRECTION_EPSILON = 1e-6;
 const float INITIAL_EXIT_DISTANCE = 1e20;
-const float MIN_PHASE_BASE = 0.001;
 const float FAR_PLANE_DEPTH = 1.0;
 const vec2 JITTER_HASH_WEIGHTS = vec2(12.9898, 78.233);
 const float JITTER_HASH_SCALE = 43758.5453;
@@ -126,9 +125,15 @@ float transmittanceFromLight(vec3 worldPosition) {
 }
 
 float evaluateHenyeyGreensteinPhase(float scatteringCosine, float anisotropy) {
-    float phaseBase = 1.0 + anisotropy * anisotropy - 2.0 * anisotropy * scatteringCosine;
-    return (1.0 - anisotropy * anisotropy) /
-           (4.0 * PI * pow(max(phaseBase, MIN_PHASE_BASE), 1.5));
+    float cosine = clamp(scatteringCosine, -1.0, 1.0);
+    float anisotropyMagnitude = abs(anisotropy);
+    float alignedCosine = anisotropy >= 0.0 ? cosine : -cosine;
+    float anisotropyGap = 1.0 - anisotropyMagnitude;
+    // Factor HG to avoid cancellation near |g| = 1 without clamping away scattered energy.
+    float phaseBase = anisotropyGap * anisotropyGap +
+                      2.0 * anisotropyMagnitude * (1.0 - alignedCosine);
+    return (anisotropyGap * (1.0 + anisotropyMagnitude)) /
+           (4.0 * PI * phaseBase * sqrt(phaseBase));
 }
 
 float calculateSampleJitter(vec2 pixelCoordinates) {
