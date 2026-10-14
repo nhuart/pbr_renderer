@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "medium.glsl"
 
 layout(binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -22,6 +25,8 @@ struct GpuLight {
 layout(binding = 2) uniform LightUBO {
     uvec4 counts; // x = number of active lights
     GpuLight lights[8];
+    vec4 mediumBoundsMin; // xyz = bounds min, w = extinction coefficient
+    vec4 mediumBoundsMax; // xyz = bounds max, w = 1 for a bounded participating medium
 } lights;
 
 #ifdef USE_IBL
@@ -96,6 +101,7 @@ float windowedFalloff(float distSq, float invRange) {
 struct LightSample {
     vec3 L;
     float attenuation;
+    float distance;
 };
 
 struct PbrShadingData {
@@ -112,12 +118,13 @@ LightSample sampleLight(GpuLight light) {
     int lightType = int(light.colorAndType.w);
 
     if (lightType == 1) {
-        return LightSample(light.direction.xyz, 1.0);
+        return LightSample(light.direction.xyz, 1.0, MEDIUM_MAX_RAY_DISTANCE);
     }
 
     vec3 toLight = light.positionAndInvRange.xyz - fragWorldPos;
     float distSq = dot(toLight, toLight);
-    vec3 L = toLight / sqrt(distSq);
+    float distance = sqrt(distSq);
+    vec3 L = toLight / distance;
     float attenuation = windowedFalloff(distSq, light.positionAndInvRange.w);
 
     if (lightType == 2) {
@@ -126,7 +133,17 @@ LightSample sampleLight(GpuLight light) {
         attenuation *= cone * cone;
     }
 
-    return LightSample(L, attenuation);
+    return LightSample(L, attenuation, distance);
+}
+
+float surfaceLightTransmittance(LightSample light) {
+    // Unbounded fog uses the same unattenuated incident-light model as the volume pass.
+    if (lights.mediumBoundsMax.w == 0.0) {
+        return 1.0;
+    }
+    RaySegment lightRay = RaySegment(fragWorldPos, light.L, 0.0, light.distance);
+    return boundedMediumTransmittance(lightRay, lights.mediumBoundsMin.xyz,
+            lights.mediumBoundsMax.xyz, lights.mediumBoundsMin.w);
 }
 
 vec3 lightContribution(GpuLight light, PbrShadingData surface) {
@@ -145,7 +162,8 @@ vec3 lightContribution(GpuLight light, PbrShadingData surface) {
     vec3 kD = (vec3(1.0) - F) * (1.0 - surface.metallic);
     vec3 diffuse = kD * surface.albedo / PI;
 
-    return (diffuse + specular) * light.colorAndType.xyz * ls.attenuation * NdotL;
+    return (diffuse + specular) * light.colorAndType.xyz * ls.attenuation * NdotL *
+           surfaceLightTransmittance(ls);
 }
 
 #ifdef USE_IBL

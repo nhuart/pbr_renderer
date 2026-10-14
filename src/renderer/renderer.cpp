@@ -310,6 +310,11 @@ void Renderer::updateUniforms() {
 
 void Renderer::updateLights(float exposure) {
     LightUBO lightUbo{};
+    if (mScene.volumetric && mScene.volumetric->bounded) {
+        auto const& medium = *mScene.volumetric;
+        lightUbo.mediumBoundsMin = glm::vec4(medium.boundsMin, medium.density);
+        lightUbo.mediumBoundsMax = glm::vec4(medium.boundsMax, 1.0f);
+    }
     uint32_t lightCount = 0;
     for (auto const& light: mScene.lights) {
         if (lightCount >= MAX_LIGHTS) {

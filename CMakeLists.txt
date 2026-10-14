@@ -37,11 +37,15 @@ find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 
 function(add_shader_output shader_source output_name)
     set(output_path "${CMAKE_BINARY_DIR}/shaders/${output_name}.spv")
+    set(shader_dependencies "${CMAKE_SOURCE_DIR}/${shader_source}")
+    if(shader_source STREQUAL "shaders/pbr.frag" OR shader_source STREQUAL "shaders/volumetric.frag")
+        list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/medium.glsl")
+    endif()
     add_custom_command(
         OUTPUT "${output_path}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/shaders"
         COMMAND "${GLSLC}" "${CMAKE_SOURCE_DIR}/${shader_source}" ${ARGN} -o "${output_path}"
-        DEPENDS "${CMAKE_SOURCE_DIR}/${shader_source}"
+        DEPENDS ${shader_dependencies}
         COMMENT "Compiling shader ${output_name}"
         VERBATIM
     )

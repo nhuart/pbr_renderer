@@ -55,6 +55,8 @@ private:
 struct LightUBO {
     alignas(16) glm::uvec4 counts; // x = active light count (uvec4 for std140 padding)
     GpuLight lights[MAX_LIGHTS];
+    alignas(16) glm::vec4 mediumBoundsMin{}; // xyz = bounds min, w = extinction coefficient
+    alignas(16) glm::vec4 mediumBoundsMax{}; // xyz = bounds max, w = 1 for a bounded medium
 };
 
 struct UniformBufferObject {
