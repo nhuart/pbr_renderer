@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "medium.glsl"
 
 layout(std140, binding = 0) uniform VolumetricUBO {
     mat4 invViewProj;
@@ -22,19 +25,9 @@ layout(location = 0) out vec4 outColor;
 
 const float PI = 3.14159265359;
 const float MIN_TRANSMITTANCE = 1e-3;
-const float DIRECTION_EPSILON = 1e-6;
-const float INITIAL_EXIT_DISTANCE = 1e20;
-const float MIN_PHASE_BASE = 0.001;
 const float FAR_PLANE_DEPTH = 1.0;
 const vec2 JITTER_HASH_WEIGHTS = vec2(12.9898, 78.233);
 const float JITTER_HASH_SCALE = 43758.5453;
-
-struct RaySegment {
-    vec3 origin;
-    vec3 direction;
-    float startDistance;
-    float endDistance;
-};
 
 struct MediumIntegration {
     float scattering;
@@ -62,28 +55,11 @@ RaySegment createViewRay() {
     return RaySegment(origin, direction, 0.0, endDistance);
 }
 
-bool clipRayToMediumSlab(int axis, inout RaySegment ray) {
-    // A parallel ray intersects the slab only if its origin is between the boundary planes.
-    if (abs(ray.direction[axis]) < DIRECTION_EPSILON) {
-        return !(ray.origin[axis] < ubo.boundsMin[axis] || ray.origin[axis] > ubo.boundsMax[axis]);
-    }
-    float distanceToMinPlane = (ubo.boundsMin[axis] - ray.origin[axis]) / ray.direction[axis];
-    float distanceToMaxPlane = (ubo.boundsMax[axis] - ray.origin[axis]) / ray.direction[axis];
-    ray.startDistance = max(ray.startDistance, min(distanceToMinPlane, distanceToMaxPlane));
-    ray.endDistance = min(ray.endDistance, max(distanceToMinPlane, distanceToMaxPlane));
-    return true;
-}
-
 bool intersectMediumBounds(inout RaySegment ray) {
     if (!isBoundedMedium()) {
         return true;
     }
-    for (int axis = 0; axis < 3; ++axis) {
-        if (!clipRayToMediumSlab(axis, ray)) {
-            return false;
-        }
-    }
-    return ray.endDistance > ray.startDistance;
+    return intersectBoundedMedium(ubo.boundsMin.xyz, ubo.boundsMax.xyz, ray);
 }
 
 bool isInsideShadowCoverage(vec3 lightNdcPosition) {
@@ -103,32 +79,28 @@ bool isVisibleToLight(vec3 worldPosition) {
     return lightNdcPosition.z - shadowBias <= closestOccluderDepth;
 }
 
-float distanceToLightEntryBoundary(vec3 worldPosition) {
-    float distanceToBoundary = INITIAL_EXIT_DISTANCE;
-    for (int axis = 0; axis < 3; ++axis) {
-        float directionComponent = ubo.lightDirection[axis];
-        if (abs(directionComponent) > DIRECTION_EPSILON) {
-            float boundary = directionComponent > 0.0 ? ubo.boundsMax[axis] : ubo.boundsMin[axis];
-            float candidateDistance = (boundary - worldPosition[axis]) / directionComponent;
-            distanceToBoundary = min(distanceToBoundary, candidateDistance);
-        }
-    }
-    return max(distanceToBoundary, 0.0);
-}
-
 float transmittanceFromLight(vec3 worldPosition) {
     // The unbounded model assumes unattenuated incident directional light.
     if (!isBoundedMedium()) {
         return 1.0;
     }
     // The source outside the bounded medium is assumed to have unit medium transmittance.
-    return exp(-ubo.extinctionCoefficient * distanceToLightEntryBoundary(worldPosition));
+    RaySegment lightRay = RaySegment(worldPosition, ubo.lightDirection.xyz, 0.0,
+            MEDIUM_MAX_RAY_DISTANCE);
+    return boundedMediumTransmittance(lightRay, ubo.boundsMin.xyz, ubo.boundsMax.xyz,
+            ubo.extinctionCoefficient);
 }
 
 float evaluateHenyeyGreensteinPhase(float scatteringCosine, float anisotropy) {
-    float phaseBase = 1.0 + anisotropy * anisotropy - 2.0 * anisotropy * scatteringCosine;
-    return (1.0 - anisotropy * anisotropy) /
-           (4.0 * PI * pow(max(phaseBase, MIN_PHASE_BASE), 1.5));
+    float cosine = clamp(scatteringCosine, -1.0, 1.0);
+    float anisotropyMagnitude = abs(anisotropy);
+    float alignedCosine = anisotropy >= 0.0 ? cosine : -cosine;
+    float anisotropyGap = 1.0 - anisotropyMagnitude;
+    // Factor HG to avoid cancellation near |g| = 1 without clamping away scattered energy.
+    float phaseBase = anisotropyGap * anisotropyGap +
+                      2.0 * anisotropyMagnitude * (1.0 - alignedCosine);
+    return (anisotropyGap * (1.0 + anisotropyMagnitude)) /
+           (4.0 * PI * phaseBase * sqrt(phaseBase));
 }
 
 float calculateSampleJitter(vec2 pixelCoordinates) {
@@ -137,7 +109,8 @@ float calculateSampleJitter(vec2 pixelCoordinates) {
 }
 
 MediumIntegration integrateMedium(RaySegment ray) {
-    float stepLength = (ray.endDistance - ray.startDistance) / float(ubo.stepCount);
+    float pathLength = ray.endDistance - ray.startDistance;
+    float stepLength = pathLength / float(ubo.stepCount);
     float segmentTransmittance = exp(-ubo.extinctionCoefficient * stepLength);
     float sampleJitter = calculateSampleJitter(gl_FragCoord.xy);
     float transmittance = 1.0;
@@ -154,7 +127,9 @@ MediumIntegration integrateMedium(RaySegment ray) {
             break;
         }
     }
-    return MediumIntegration(scattering, transmittance);
+    // Background attenuation covers the full medium path even when scattering stops early.
+    float fullPathTransmittance = exp(-ubo.extinctionCoefficient * pathLength);
+    return MediumIntegration(scattering, fullPathTransmittance);
 }
 
 void main() {
