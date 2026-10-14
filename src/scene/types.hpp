@@ -109,6 +109,17 @@ struct GtaoConfig {
     float depthThreshold = 0.05f;
 };
 
+struct VolumetricConfig {
+    float density = 0.22f;
+    float scatteringAlbedo = 0.9f;
+    float maxDistance = 12.0f;
+    float anisotropy = 0.2f;
+    int steps = 64;
+    bool bounded = false;
+    glm::vec3 boundsMin{};
+    glm::vec3 boundsMax{};
+};
+
 struct Scene {
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
@@ -119,4 +130,5 @@ struct Scene {
     bool skybox = false;
     std::optional<SaoConfig> sao;
     std::optional<GtaoConfig> gtao;
+    std::optional<VolumetricConfig> volumetric;
 };

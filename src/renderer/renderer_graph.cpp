@@ -3,6 +3,7 @@
 #include "core/resource_allocator.hpp"
 
 #include <algorithm>
+#include <utility>
 
 static void setViewportAndScissor(vk::raii::CommandBuffer const& cmd, vk::Extent2D extent) {
     cmd.setViewport(0, vk::Viewport{
@@ -25,47 +26,24 @@ void Renderer::buildRenderGraph() {
     mAoRawImageHandle = {};
     mAoBlurImageHandle = {};
 
-    vk::Extent2D swapchainExtent = mSwapchain->extent;
-
-    // Import swapchain-provided images — the graph records transitions but does not own them.
-    // updateImportedImage() updates the swapchain backing each frame.
-    mSwapchainImageHandle =
-            mRenderGraph.importImage("swapchain", mSwapchain->images[0], *mSwapchain->imageViews[0],
-                    RenderGraphImage{
-                        .format = mSwapchain->surfaceFormat.format,
-                        .extent = swapchainExtent,
-                        .usage = vk::ImageUsageFlagBits::eColorAttachment,
-                        .aspect = vk::ImageAspectFlagBits::eColor,
-                        .samples = vk::SampleCountFlagBits::e1,
-                    },
-                    vk::ImageLayout::eUndefined, true);
-
+    importSwapchainImage();
     bool multisampled = mCtx->msaaSamples != vk::SampleCountFlagBits::e1;
-    RenderGraphImageHandle colorImage{};
-    if (multisampled) {
-        colorImage = mRenderGraph.importImage("color", *mSwapchain->colorImage,
-                *mSwapchain->colorImageView,
-                RenderGraphImage{
-                    .format = Swapchain::HDR_COLOR_FORMAT,
-                    .extent = swapchainExtent,
-                    .usage = vk::ImageUsageFlagBits::eColorAttachment,
-                    .aspect = vk::ImageAspectFlagBits::eColor,
-                    .samples = mCtx->msaaSamples,
-                });
-    }
-
+    auto msaaHdrImage = multisampled ? importMsaaHdrColorImage() : RenderGraphImageHandle{};
     auto hdrImage = importHdrColorImage();
+    vk::Format depthFormat = vkutil::findDepthFormat(*mCtx);
+    auto depthImage = importForwardDepthImage(depthFormat);
 
-    auto depthImage =
-            mRenderGraph.importImage("depth", *mSwapchain->depthImage, *mSwapchain->depthImageView,
-                    RenderGraphImage{
-                        .format = vkutil::findDepthFormat(*mCtx),
-                        .extent = swapchainExtent,
-                        .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                        .aspect = vk::ImageAspectFlagBits::eDepth,
-                        .samples = mCtx->msaaSamples,
-                    });
+    addShadowPass();
+    addDepthPrepass(depthFormat);
+    addAmbientOcclusionPasses(depthFormat);
+    addForwardPass(multisampled ? msaaHdrImage : hdrImage, depthImage,
+            multisampled ? hdrImage : RenderGraphImageHandle{});
+    addVolumetricPass(hdrImage);
+    addTonemapPass(hdrImage);
+    mRenderGraph.compile(*mCtx);
+}
 
+void Renderer::addShadowPass() {
     if (mShadowPipeline) {
         vk::Extent2D shadowExtent{ SHADOW_MAP_SIZE, SHADOW_MAP_SIZE };
         mShadowMapImageHandle = mRenderGraph.importImage("shadowMap", *mShadowPipeline->image,
@@ -104,12 +82,13 @@ void Renderer::buildRenderGraph() {
                     }
                 });
     }
+}
 
-    if (mAoPipeline) {
-        vk::Format depthFmt = vkutil::findDepthFormat(*mCtx);
-
-        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass", *mAoPipeline->normalsImage,
-                *mAoPipeline->normalsView,
+void Renderer::addDepthPrepass(vk::Format depthFormat) {
+    vk::Extent2D swapchainExtent = mSwapchain->extent;
+    if (mGeometryPrepass) {
+        mNormalsImageHandle = mRenderGraph.importImage("normalsPrepass",
+                *mGeometryPrepass->normalsImage, *mGeometryPrepass->normalsView,
                 RenderGraphImage{
                     .format = vk::Format::eR8G8B8A8Unorm,
                     .extent = swapchainExtent,
@@ -120,9 +99,9 @@ void Renderer::buildRenderGraph() {
                 });
 
         mDepthPrepassImageHandle = mRenderGraph.importImage("depthPrepass",
-                *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[0],
+                *mGeometryPrepass->depthImage, *mGeometryPrepass->depthMipViews[0],
                 RenderGraphImage{
-                    .format = depthFmt,
+                    .format = depthFormat,
                     .extent = swapchainExtent,
                     .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
                              vk::ImageUsageFlagBits::eSampled,
@@ -130,80 +109,31 @@ void Renderer::buildRenderGraph() {
                     .samples = vk::SampleCountFlagBits::e1,
                 });
 
-        mAoRawImageHandle =
-                mRenderGraph.importImage("aoRaw", *mAoPipeline->aoRawImage, *mAoPipeline->aoRawView,
-                        RenderGraphImage{
-                            .format = vk::Format::eR8Unorm,
-                            .extent = swapchainExtent,
-                            .usage = vk::ImageUsageFlagBits::eColorAttachment |
-                                     vk::ImageUsageFlagBits::eSampled |
-                                     vk::ImageUsageFlagBits::eTransferSrc,
-                            .aspect = vk::ImageAspectFlagBits::eColor,
-                            .samples = vk::SampleCountFlagBits::e1,
-                        });
-
-        mAoBlurImageHandle = mRenderGraph.importImage("aoBlur", *mAoPipeline->aoBlurImage,
-                *mAoPipeline->aoBlurView,
-                RenderGraphImage{
-                    .format = vk::Format::eR8Unorm,
-                    .extent = swapchainExtent,
-                    .usage = vk::ImageUsageFlagBits::eColorAttachment |
-                             vk::ImageUsageFlagBits::eSampled,
-                    .aspect = vk::ImageAspectFlagBits::eColor,
-                    .samples = vk::SampleCountFlagBits::e1,
-                });
-
-        mRenderGraph.addPass("NormalsPrepass")
+        mRenderGraph.addPass("GeometryPrepass")
                 .writesColor(mNormalsImageHandle)
                 .writesDepth(mDepthPrepassImageHandle)
                 .execute([this](vk::raii::CommandBuffer const& cmd) {
                     setViewportAndScissor(cmd, mSwapchain->extent);
                     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                            *mAoPipeline->normalsPipeline);
+                            *mGeometryPrepass->normalsPipeline);
                     cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
                     cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
                     for (size_t i = 0; i < mRenderObjects.size(); ++i) {
                         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                *mAoPipeline->normalsPipeLayout, 0,
-                                *mAoPipeline->normalsObjects[i].descriptorSets[mFrameIndex], {});
+                                *mGeometryPrepass->normalsPipeLayout, 0,
+                                *mGeometryPrepass->normalsObjects[i].descriptorSets[mFrameIndex],
+                                {});
                         cmd.drawIndexed(mRenderObjects[i].range.indexCount, 1,
                                 mRenderObjects[i].range.firstIndex, 0, 0);
                     }
                 });
+    }
+}
 
-        if (mScene.sao) {
-            mDepthMipImageHandles.push_back(mDepthPrepassImageHandle);
-            for (uint32_t level = 1; level < mAoPipeline->depthMipLevelCount; ++level) {
-                vk::Extent2D mipExtent{
-                    std::max(1u, swapchainExtent.width >> level),
-                    std::max(1u, swapchainExtent.height >> level),
-                };
-                auto mipHandle = mRenderGraph.importImage("depthMip" + std::to_string(level),
-                        *mAoPipeline->depthImage, *mAoPipeline->depthMipViews[level],
-                        RenderGraphImage{
-                            .format = depthFmt,
-                            .extent = mipExtent,
-                            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
-                                     vk::ImageUsageFlagBits::eSampled,
-                            .aspect = vk::ImageAspectFlagBits::eDepth,
-                            .samples = vk::SampleCountFlagBits::e1,
-                            .mipLevel = level,
-                        });
-                mDepthMipImageHandles.push_back(mipHandle);
-                mRenderGraph.addPass("DepthMip" + std::to_string(level))
-                        .reads(mDepthMipImageHandles[level - 1])
-                        .writesDepth(mipHandle)
-                        .execute([this, level, mipExtent](vk::raii::CommandBuffer const& cmd) {
-                            setViewportAndScissor(cmd, mipExtent);
-                            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                    *mAoPipeline->depthMipPipeline);
-                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                    *mAoPipeline->depthMipPipeLayout, 0,
-                                    *mAoPipeline->depthMipDescSets[level - 1], {});
-                            cmd.draw(3, 1, 0, 0);
-                        });
-            }
-        }
+void Renderer::addAmbientOcclusionPasses(vk::Format depthFormat) {
+    if (mAoPipeline) {
+        importAoImages();
+        addDepthMipPasses(depthFormat);
 
         mRenderGraph.addPass(mScene.gtao ? "GtaoPass" : "SaoPass")
                 .writesColor(mAoRawImageHandle)
@@ -225,36 +155,91 @@ void Renderer::buildRenderGraph() {
             }
         }
 
-        mRenderGraph.addPass("BlurH")
-                .writesColor(mAoBlurImageHandle)
-                .reads(mAoRawImageHandle)
-                .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    setViewportAndScissor(cmd, mSwapchain->extent);
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
-                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *mAoPipeline->blurPipeLayout, 0,
-                            *mAoPipeline->blurDescSets[mFrameIndex][0], {});
-                    cmd.draw(3, 1, 0, 0);
-                });
+        addAoBlurPass("BlurH", mAoRawImageHandle, mAoBlurImageHandle, 0);
+        addAoBlurPass("BlurV", mAoBlurImageHandle, mAoRawImageHandle, 1);
+    }
+}
 
-        mRenderGraph.addPass("BlurV")
-                .writesColor(mAoRawImageHandle)
-                .reads(mAoBlurImageHandle)
-                .execute([this](vk::raii::CommandBuffer const& cmd) {
-                    setViewportAndScissor(cmd, mSwapchain->extent);
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
+void Renderer::importAoImages() {
+    mAoRawImageHandle = mRenderGraph.importImage("aoRaw", *mAoPipeline->aoRawImage,
+            *mAoPipeline->aoRawView,
+            RenderGraphImage{
+                .format = vk::Format::eR8Unorm,
+                .extent = mSwapchain->extent,
+                .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc,
+                .aspect = vk::ImageAspectFlagBits::eColor,
+                .samples = vk::SampleCountFlagBits::e1,
+            });
+    mAoBlurImageHandle =
+            mRenderGraph.importImage("aoBlur", *mAoPipeline->aoBlurImage, *mAoPipeline->aoBlurView,
+                    RenderGraphImage{
+                        .format = vk::Format::eR8Unorm,
+                        .extent = mSwapchain->extent,
+                        .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                                 vk::ImageUsageFlagBits::eSampled,
+                        .aspect = vk::ImageAspectFlagBits::eColor,
+                        .samples = vk::SampleCountFlagBits::e1,
+                    });
+}
+
+void Renderer::addDepthMipPasses(vk::Format depthFormat) {
+    if (!mScene.sao) {
+        return;
+    }
+    mDepthMipImageHandles.push_back(mDepthPrepassImageHandle);
+    for (uint32_t level = 1; level < mGeometryPrepass->depthMipLevelCount; ++level) {
+        vk::Extent2D mipExtent{
+            std::max(1u, mSwapchain->extent.width >> level),
+            std::max(1u, mSwapchain->extent.height >> level),
+        };
+        auto mipHandle = mRenderGraph.importImage("depthMip" + std::to_string(level),
+                *mGeometryPrepass->depthImage, *mGeometryPrepass->depthMipViews[level],
+                RenderGraphImage{
+                    .format = depthFormat,
+                    .extent = mipExtent,
+                    .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                             vk::ImageUsageFlagBits::eSampled,
+                    .aspect = vk::ImageAspectFlagBits::eDepth,
+                    .samples = vk::SampleCountFlagBits::e1,
+                    .mipLevel = level,
+                });
+        mDepthMipImageHandles.push_back(mipHandle);
+        mRenderGraph.addPass("DepthMip" + std::to_string(level))
+                .reads(mDepthMipImageHandles[level - 1])
+                .writesDepth(mipHandle)
+                .execute([this, level, mipExtent](vk::raii::CommandBuffer const& cmd) {
+                    setViewportAndScissor(cmd, mipExtent);
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                            *mAoPipeline->depthMipPipeline);
                     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *mAoPipeline->blurPipeLayout, 0,
-                            *mAoPipeline->blurDescSets[mFrameIndex][1], {});
+                            *mAoPipeline->depthMipPipeLayout, 0,
+                            *mAoPipeline->depthMipDescSets[level - 1], {});
                     cmd.draw(3, 1, 0, 0);
                 });
     }
+}
 
-    auto& forwardPass = mRenderGraph.addPass("ForwardPass")
-                                .writesColor(multisampled ? colorImage : hdrImage)
-                                .writesDepth(depthImage);
-    if (multisampled) {
-        forwardPass.resolvesTo(hdrImage);
+void Renderer::addAoBlurPass(std::string name, RenderGraphImageHandle input,
+        RenderGraphImageHandle output, uint32_t passIndex) {
+    mRenderGraph.addPass(std::move(name))
+            .writesColor(output)
+            .reads(input)
+            .execute([this, passIndex](vk::raii::CommandBuffer const& cmd) {
+                setViewportAndScissor(cmd, mSwapchain->extent);
+                cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mAoPipeline->blurPipeline);
+                cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                        *mAoPipeline->blurPipeLayout, 0,
+                        *mAoPipeline->blurDescSets[mFrameIndex][passIndex], {});
+                cmd.draw(3, 1, 0, 0);
+            });
+}
+
+void Renderer::addForwardPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
+        RenderGraphImageHandle resolveTarget) {
+    auto& forwardPass = mRenderGraph.addPass("ForwardPass").writesColor(color).writesDepth(depth);
+    if (resolveTarget.isValid()) {
+        forwardPass.resolvesTo(resolveTarget);
     }
     if (mShadowMapImageHandle.isValid()) {
         forwardPass.reads(mShadowMapImageHandle);
@@ -294,10 +279,44 @@ void Renderer::buildRenderGraph() {
             commandBuffer.draw(3, 1, 0, 0);
         }
     });
+}
 
-    addTonemapPass(hdrImage);
+void Renderer::importSwapchainImage() {
+    // The graph records transitions but does not own swapchain images.
+    // updateImportedImage() selects the current frame's backing image.
+    mSwapchainImageHandle =
+            mRenderGraph.importImage("swapchain", mSwapchain->images[0], *mSwapchain->imageViews[0],
+                    RenderGraphImage{
+                        .format = mSwapchain->surfaceFormat.format,
+                        .extent = mSwapchain->extent,
+                        .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                        .aspect = vk::ImageAspectFlagBits::eColor,
+                        .samples = vk::SampleCountFlagBits::e1,
+                    },
+                    vk::ImageLayout::eUndefined, true);
+}
 
-    mRenderGraph.compile(*mCtx);
+RenderGraphImageHandle Renderer::importMsaaHdrColorImage() {
+    return mRenderGraph.importImage("msaaHdrColor", *mSwapchain->msaaHdrImage,
+            *mSwapchain->msaaHdrImageView,
+            RenderGraphImage{
+                .format = Swapchain::HDR_COLOR_FORMAT,
+                .extent = mSwapchain->extent,
+                .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                .aspect = vk::ImageAspectFlagBits::eColor,
+                .samples = mCtx->msaaSamples,
+            });
+}
+
+RenderGraphImageHandle Renderer::importForwardDepthImage(vk::Format depthFormat) {
+    return mRenderGraph.importImage("depth", *mSwapchain->depthImage, *mSwapchain->depthImageView,
+            RenderGraphImage{
+                .format = depthFormat,
+                .extent = mSwapchain->extent,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                .aspect = vk::ImageAspectFlagBits::eDepth,
+                .samples = mCtx->msaaSamples,
+            });
 }
 
 RenderGraphImageHandle Renderer::importHdrColorImage() {
@@ -308,6 +327,21 @@ RenderGraphImageHandle Renderer::importHdrColorImage() {
                 .usage =
                         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
                 .aspect = vk::ImageAspectFlagBits::eColor,
+            });
+}
+
+void Renderer::addVolumetricPass(RenderGraphImageHandle hdrColor) {
+    if (!mVolumetricPipeline) {
+        return;
+    }
+    mRenderGraph.addPass("VolumetricPass")
+            .writesColor(hdrColor)
+            .preservesColorContents(hdrColor)
+            .reads(mDepthPrepassImageHandle)
+            .reads(mShadowMapImageHandle)
+            .execute([this](vk::raii::CommandBuffer const& cmd) {
+                setViewportAndScissor(cmd, mSwapchain->extent);
+                mVolumetricPipeline->draw(cmd, mFrameIndex);
             });
 }
 

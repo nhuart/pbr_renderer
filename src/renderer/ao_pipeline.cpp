@@ -3,6 +3,7 @@
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
 #include "core/swapchain.hpp"
+#include "renderer/geometry_prepass.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -12,44 +13,37 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtc/matrix_inverse.hpp>
 
-static vk::raii::Sampler makeNearestSampler(VulkanContext const& ctx, uint32_t mipLevels = 1) {
-    return vk::raii::Sampler(ctx.device, vk::SamplerCreateInfo{
-                                             .magFilter = vk::Filter::eNearest,
-                                             .minFilter = vk::Filter::eNearest,
-                                             .mipmapMode = vk::SamplerMipmapMode::eNearest,
-                                             .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-                                             .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-                                             .addressModeW = vk::SamplerAddressMode::eClampToEdge,
-                                             .minLod = 0.0f,
-                                             .maxLod = static_cast<float>(mipLevels - 1),
-                                         });
-}
-
-AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg)
-        : AoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
-
-AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg)
-        : AoPipeline(ctx, swapchain, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
+AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+        GeometryPrepass const& geometryPrepass, SaoConfig const& cfg)
+        : AoPipeline(ctx, swapchain, geometryPrepass, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
 
 AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-        std::variant<SaoConfig, GtaoConfig> cfg)
-        : config(std::move(cfg)) {
+        GeometryPrepass const& geometryPrepass, GtaoConfig const& cfg)
+        : AoPipeline(ctx, swapchain, geometryPrepass, std::variant<SaoConfig, GtaoConfig>{ cfg }) {}
+
+AoPipeline::AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+        GeometryPrepass const& geometryPrepass, std::variant<SaoConfig, GtaoConfig> cfg)
+        : config(std::move(cfg)),
+          mGeometryPrepass(geometryPrepass) {
     createImages(ctx, swapchain.extent);
-    createNormalsPass(ctx);
-    if (depthMipLevelCount > 1) {
+    if (std::holds_alternative<SaoConfig>(config) && mGeometryPrepass.depthMipLevelCount > 1) {
         createDepthMipPass(ctx);
     }
     createAoPass(ctx);
     createBlurPass(ctx);
 }
 
+uint32_t AoPipeline::saoDepthMipLevels(vk::Extent2D extent) {
+    // Match Filament's depth pyramid dimensions, clamped to at least 32 pixels.
+    uint32_t largestDimension = std::max({ 32u, extent.width, extent.height });
+    return std::min(8, std::bit_width(largestDimension) - 5);
+}
+
 void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
-    constexpr vk::Format normalsFormat = vk::Format::eR8G8B8A8Unorm;
     // R=AO value (0=occluded, 1=unoccluded); G+B=linearized depth packed as 16-bit (G*256/257 +
     // B/257) for bilateral blur: depth is compared per-neighbor to avoid blurring AO across depth
     // discontinuities
     constexpr vk::Format aoFormat = vk::Format::eR8G8B8A8Unorm;
-    vk::Format depthFormat = vkutil::findDepthFormat(ctx);
 
     auto createImage = [&](vk::Format format, vk::ImageUsageFlags usage)
             -> std::pair<vk::raii::Image, vk::raii::DeviceMemory> {
@@ -61,50 +55,17 @@ void AoPipeline::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
                                                vk::ImageUsageFlagBits::eSampled |
                                                vk::ImageUsageFlagBits::eTransferSrc;
 
-    // Match Filament's min(8, maxLevelCount(width, height) - 5), with dimensions
-    // clamped to at least 32 pixels as in its structure pass.
-    if (std::holds_alternative<SaoConfig>(config)) {
-        uint32_t largestDimension = std::max({ 32u, extent.width, extent.height });
-        depthMipLevelCount = std::min(8, std::bit_width(largestDimension) - 5);
-    }
-
-    auto [di, dm] = vkutil::createImage(ctx, extent.width, extent.height, depthMipLevelCount,
-            vk::SampleCountFlagBits::e1, depthFormat, vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
-            vk::MemoryPropertyFlagBits::eDeviceLocal);
-    depthImage = std::move(di);
-    depthMemory = std::move(dm);
-    depthView = vkutil::createImageView(ctx, *depthImage, depthFormat,
-            vk::ImageAspectFlagBits::eDepth, depthMipLevelCount);
-    depthMipViews.reserve(depthMipLevelCount);
-    for (uint32_t level = 0; level < depthMipLevelCount; ++level) {
-        depthMipViews.emplace_back(ctx.device,
-                vk::ImageViewCreateInfo{
-                    .image = *depthImage,
-                    .viewType = vk::ImageViewType::e2D,
-                    .format = depthFormat,
-                    .subresourceRange = { vk::ImageAspectFlagBits::eDepth, level, 1, 0, 1 },
-                });
-    }
-    depthSampler = makeNearestSampler(ctx, depthMipLevelCount);
-
-    auto [ni, nm] = createImage(normalsFormat, colorUsage);
-    normalsImage = std::move(ni);
-    normalsMemory = std::move(nm);
-    normalsView = vkutil::createImageView(ctx, *normalsImage, normalsFormat);
-    normalsSampler = makeNearestSampler(ctx);
-
     auto [ri, rm] = createImage(aoFormat, colorUsage);
     aoRawImage = std::move(ri);
     aoRawMemory = std::move(rm);
     aoRawView = vkutil::createImageView(ctx, *aoRawImage, aoFormat);
-    aoRawSampler = makeNearestSampler(ctx);
+    aoRawSampler = vkutil::createNearestSampler(ctx);
 
     auto [bi, bm] = createImage(aoFormat, colorUsage);
     aoBlurImage = std::move(bi);
     aoBlurMemory = std::move(bm);
     aoBlurView = vkutil::createImageView(ctx, *aoBlurImage, aoFormat);
-    aoBlurSampler = makeNearestSampler(ctx);
+    aoBlurSampler = vkutil::createNearestSampler(ctx);
 }
 
 void AoPipeline::updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::mat4 const& proj,
@@ -140,7 +101,7 @@ void AoPipeline::updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::mat
             .spiralTurns = sao.spiralTurns,
             .nearPlane = nearPlane,
             .farPlane = farPlane,
-            .maxLevel = static_cast<int>(depthMipLevelCount - 1),
+            .maxLevel = static_cast<int>(mGeometryPrepass.depthMipLevelCount - 1),
         };
         memcpy(aoUboMapped[frameIndex], &ubo, sizeof(ubo));
     }

@@ -7,6 +7,19 @@
 
 namespace vkutil {
 
+vk::raii::Sampler createNearestSampler(VulkanContext const& ctx, uint32_t mipLevels) {
+    return vk::raii::Sampler(ctx.device, vk::SamplerCreateInfo{
+                                             .magFilter = vk::Filter::eNearest,
+                                             .minFilter = vk::Filter::eNearest,
+                                             .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                                             .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+                                             .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+                                             .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+                                             .minLod = 0.0f,
+                                             .maxLod = static_cast<float>(mipLevels - 1),
+                                         });
+}
+
 uint32_t findMemoryType(VulkanContext const& ctx, uint32_t typeFilter,
         vk::MemoryPropertyFlags properties) {
     vk::PhysicalDeviceMemoryProperties memProperties = ctx.physicalDevice.getMemoryProperties();

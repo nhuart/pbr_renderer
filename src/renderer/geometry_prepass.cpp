@@ -1,16 +1,56 @@
-#include "renderer/ao_pipeline.hpp"
+#include "renderer/geometry_prepass.hpp"
 
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "core/swapchain.hpp"
 #include "core/vulkan_logging.hpp"
-#include "renderer/ao_pipeline_helpers.hpp"
 #include "renderer/vertex.hpp"
 
 #include <array>
 #include <cstring>
 #include <iostream>
 
-void AoPipeline::createNormalsPass(VulkanContext const& ctx) {
+GeometryPrepass::GeometryPrepass(VulkanContext const& ctx, Swapchain const& swapchain,
+        uint32_t depthMipLevels)
+        : depthMipLevelCount(depthMipLevels) {
+    createImages(ctx, swapchain.extent);
+    createNormalsPass(ctx);
+}
+
+void GeometryPrepass::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
+    vk::Format depthFormat = vkutil::findDepthFormat(ctx);
+    auto [depth, depthAllocation] = vkutil::createImage(ctx, extent.width, extent.height,
+            depthMipLevelCount, vk::SampleCountFlagBits::e1, depthFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+    depthImage = std::move(depth);
+    depthMemory = std::move(depthAllocation);
+    depthView = vkutil::createImageView(ctx, *depthImage, depthFormat,
+            vk::ImageAspectFlagBits::eDepth, depthMipLevelCount);
+    for (uint32_t level = 0; level < depthMipLevelCount; ++level) {
+        depthMipViews.emplace_back(ctx.device,
+                vk::ImageViewCreateInfo{
+                    .image = *depthImage,
+                    .viewType = vk::ImageViewType::e2D,
+                    .format = depthFormat,
+                    .subresourceRange = { vk::ImageAspectFlagBits::eDepth, level, 1, 0, 1 },
+                });
+    }
+    depthSampler = vkutil::createNearestSampler(ctx, depthMipLevelCount);
+
+    constexpr vk::Format normalsFormat = vk::Format::eR8G8B8A8Unorm;
+    auto [normals, normalsAllocation] = vkutil::createImage(ctx, extent.width, extent.height, 1,
+            vk::SampleCountFlagBits::e1, normalsFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled |
+                    vk::ImageUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+    normalsImage = std::move(normals);
+    normalsMemory = std::move(normalsAllocation);
+    normalsView = vkutil::createImageView(ctx, *normalsImage, normalsFormat);
+    normalsSampler = vkutil::createNearestSampler(ctx);
+}
+
+void GeometryPrepass::createNormalsPass(VulkanContext const& ctx) {
     // Descriptor set layout: binding 0 = UniformBufferObject (vert+frag)
     std::array<vk::DescriptorSetLayoutBinding, 1> bindings{ {
         { .binding = 0,
@@ -24,7 +64,7 @@ void AoPipeline::createNormalsPass(VulkanContext const& ctx) {
                 .pBindings = bindings.data(),
             });
 
-    // normalsDescPool is created by allocateNormalsObjects once the object count is known.
+    // The descriptor pool is sized when the scene's object count is known.
 
     vk::DescriptorSetLayout dslHandle = *normalsDescLayout;
     normalsPipeLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
@@ -120,103 +160,15 @@ void AoPipeline::createNormalsPass(VulkanContext const& ctx) {
     normalsPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
     if (vkutil::vulkanLoggingEnabled) {
-        std::cout << "AO normals prepass pipeline: created\n";
+        std::cout << "Geometry prepass pipeline: created\n";
     }
 }
 
-void AoPipeline::createDepthMipPass(VulkanContext const& ctx) {
-    vk::DescriptorSetLayoutBinding binding{ 0, vk::DescriptorType::eCombinedImageSampler, 1,
-        vk::ShaderStageFlagBits::eFragment };
-    depthMipDescLayout = vk::raii::DescriptorSetLayout(ctx.device,
-            vk::DescriptorSetLayoutCreateInfo{ .bindingCount = 1, .pBindings = &binding });
-
-    uint32_t mipPassCount = depthMipLevelCount - 1;
-    vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler, mipPassCount };
-    depthMipDescPool = vk::raii::DescriptorPool(ctx.device,
-            vk::DescriptorPoolCreateInfo{
-                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                .maxSets = mipPassCount,
-                .poolSizeCount = 1,
-                .pPoolSizes = &poolSize,
-            });
-
-    std::vector<vk::DescriptorSetLayout> layouts(mipPassCount, *depthMipDescLayout);
-    auto sets = vk::raii::DescriptorSets(ctx.device, vk::DescriptorSetAllocateInfo{
-                                                         .descriptorPool = *depthMipDescPool,
-                                                         .descriptorSetCount = mipPassCount,
-                                                         .pSetLayouts = layouts.data(),
-                                                     });
-    for (uint32_t level = 1; level < depthMipLevelCount; ++level) {
-        vk::DescriptorImageInfo previousMip{
-            .sampler = *depthSampler,
-            .imageView = *depthMipViews[level - 1],
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-        ctx.device.updateDescriptorSets(
-                vk::WriteDescriptorSet{
-                    .dstSet = *sets[level - 1],
-                    .dstBinding = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                    .pImageInfo = &previousMip,
-                },
-                {});
-        depthMipDescSets.push_back(std::move(sets[level - 1]));
-    }
-
-    vk::DescriptorSetLayout layout = *depthMipDescLayout;
-    depthMipPipeLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                                  .setLayoutCount = 1,
-                                                                  .pSetLayouts = &layout,
-                                                              });
-
-    auto vertMod = vkutil::createShaderModule(ctx,
-            vkutil::readSpirv("shaders/compiled/fullscreen.vert.spv"));
-    auto fragMod = vkutil::createShaderModule(ctx,
-            vkutil::readSpirv("shaders/compiled/sao_depth_mip.frag.spv"));
-    std::array stages = {
-        vk::PipelineShaderStageCreateInfo{
-            .stage = vk::ShaderStageFlagBits::eVertex,
-            .module = *vertMod,
-            .pName = "main",
-        },
-        vk::PipelineShaderStageCreateInfo{
-            .stage = vk::ShaderStageFlagBits::eFragment,
-            .module = *fragMod,
-            .pName = "main",
-        },
-    };
-    auto ps = ao_detail::makeFullscreenPipelineState();
-    ps.cbInfo.attachmentCount = 0;
-    ps.cbInfo.pAttachments = nullptr;
-    vk::PipelineDepthStencilStateCreateInfo depthState{
-        .depthTestEnable = vk::True,
-        .depthWriteEnable = vk::True,
-        .depthCompareOp = vk::CompareOp::eAlways,
-    };
-    vk::Format depthFormat = vkutil::findDepthFormat(ctx);
-    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
-        {
-            .stageCount = static_cast<uint32_t>(stages.size()),
-            .pStages = stages.data(),
-            .pVertexInputState = &ps.vertexInputInfo,
-            .pInputAssemblyState = &ps.iaInfo,
-            .pViewportState = &ps.vpInfo,
-            .pRasterizationState = &ps.rsInfo,
-            .pMultisampleState = &ps.msInfo,
-            .pDepthStencilState = &depthState,
-            .pColorBlendState = &ps.cbInfo,
-            .pDynamicState = &ps.dynInfo,
-            .layout = *depthMipPipeLayout,
-        },
-        { .depthAttachmentFormat = depthFormat },
-    };
-    depthMipPipeline =
-            vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-}
-
-void AoPipeline::allocateNormalsObjects(VulkanContext const& ctx, uint32_t objectCount) {
+void GeometryPrepass::allocateObjects(VulkanContext const& ctx, uint32_t objectCount) {
     normalsObjects.clear();
+    if (objectCount == 0) {
+        return;
+    }
 
     // Recreate pool sized for all objects
     uint32_t totalSets = objectCount * MAX_FRAMES_IN_FLIGHT;
@@ -234,7 +186,10 @@ void AoPipeline::allocateNormalsObjects(VulkanContext const& ctx, uint32_t objec
     for (uint32_t oi = 0; oi < objectCount; oi++) {
         NormalsObject obj;
         for (uint32_t fi = 0; fi < MAX_FRAMES_IN_FLIGHT; fi++) {
-            auto [buf, mem] = ao_detail::makeUboBuffer(ctx, sizeof(NormalsUBO));
+            auto [buf, mem] = vkutil::createBuffer(ctx, sizeof(NormalsUBO),
+                    vk::BufferUsageFlagBits::eUniformBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                            vk::MemoryPropertyFlagBits::eHostCoherent);
             obj.uboMapped[fi] = mem.mapMemory(0, sizeof(NormalsUBO));
             obj.uboBuffers[fi] = std::move(buf);
             obj.uboMemory[fi] = std::move(mem);
@@ -263,7 +218,7 @@ void AoPipeline::allocateNormalsObjects(VulkanContext const& ctx, uint32_t objec
     }
 }
 
-void AoPipeline::updateNormalsUBO(uint32_t objectIndex, uint32_t frameIndex,
+void GeometryPrepass::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex,
         NormalsUBO const& ubo) {
     memcpy(normalsObjects[objectIndex].uboMapped[frameIndex], &ubo, sizeof(ubo));
 }

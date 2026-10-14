@@ -69,9 +69,9 @@ void Swapchain::cleanup() {
     hdrImageView = nullptr;
     hdrImage = nullptr;
     hdrImageMemory = nullptr;
-    colorImageView = nullptr;
-    colorImage = nullptr;
-    colorImageMemory = nullptr;
+    msaaHdrImageView = nullptr;
+    msaaHdrImage = nullptr;
+    msaaHdrImageMemory = nullptr;
     depthImageView = nullptr;
     depthImage = nullptr;
     depthImageMemory = nullptr;
@@ -141,9 +141,9 @@ void Swapchain::createColorResources(VulkanContext const& ctx) {
                 vk::ImageUsageFlagBits::eTransientAttachment |
                         vk::ImageUsageFlagBits::eColorAttachment,
                 vk::MemoryPropertyFlagBits::eDeviceLocal);
-        colorImage = std::move(image);
-        colorImageMemory = std::move(memory);
-        colorImageView = vkutil::createImageView(ctx, *colorImage, HDR_COLOR_FORMAT);
+        msaaHdrImage = std::move(image);
+        msaaHdrImageMemory = std::move(memory);
+        msaaHdrImageView = vkutil::createImageView(ctx, *msaaHdrImage, HDR_COLOR_FORMAT);
     }
     createHdrResources(ctx);
 }

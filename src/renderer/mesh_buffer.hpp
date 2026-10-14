@@ -27,6 +27,8 @@ struct MeshIndexRange {
     uint32_t firstIndex = 0;
     uint32_t indexCount = 0;
     bool doubleSided = false;
+    glm::vec3 boundsMin{};
+    glm::vec3 boundsMax{};
 };
 
 struct EmbeddedTexture {

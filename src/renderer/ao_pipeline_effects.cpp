@@ -3,6 +3,7 @@
 #include "core/vulkan_logging.hpp"
 #include "renderer/ao_pipeline.hpp"
 #include "renderer/ao_pipeline_helpers.hpp"
+#include "renderer/geometry_prepass.hpp"
 
 #include <array>
 #include <cstring>
@@ -49,13 +50,13 @@ void AoPipeline::createAoPass(VulkanContext const& ctx) {
                                                      });
 
     vk::DescriptorImageInfo normalsInfo{
-        .sampler = *normalsSampler,
-        .imageView = *normalsView,
+        .sampler = *mGeometryPrepass.normalsSampler,
+        .imageView = *mGeometryPrepass.normalsView,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
     vk::DescriptorImageInfo depthInfo{
-        .sampler = *depthSampler,
-        .imageView = *depthView,
+        .sampler = *mGeometryPrepass.depthSampler,
+        .imageView = *mGeometryPrepass.depthView,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 

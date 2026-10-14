@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -171,8 +172,15 @@ void MeshBuffer::loadMeshes(Scene const& scene) {
             doubleSided = model.materials[0].doubleSided;
         }
 
+        glm::vec3 boundsMin(std::numeric_limits<float>::max());
+        glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+        for (size_t i = firstIndex; i < indices.size(); ++i) {
+            auto const& pos = vertices[indices[i]].pos;
+            boundsMin = glm::min(boundsMin, pos);
+            boundsMax = glm::max(boundsMax, pos);
+        }
         meshRanges[inst.gltfPath] = { firstIndex,
-            static_cast<uint32_t>(indices.size()) - firstIndex, doubleSided };
+            static_cast<uint32_t>(indices.size()) - firstIndex, doubleSided, boundsMin, boundsMax };
         std::cout << "Model loaded (" << inst.gltfPath << "): " << vertices.size()
                   << " unique vertices, " << indices.size() << " indices\n";
 

@@ -3,6 +3,7 @@
 #include <array>
 #include <glm/glm.hpp>
 #include <variant>
+#include <vector>
 #include <vulkan/vulkan_raii.hpp>
 
 #include "core/config.hpp"
@@ -10,6 +11,7 @@
 
 struct VulkanContext;
 struct Swapchain;
+struct GeometryPrepass;
 
 struct SaoUBO {
     alignas(16) glm::mat4 proj;
@@ -51,53 +53,13 @@ struct BlurUBO {
     int sampleStride;
 };
 
-// NormalsUBO mirrors UniformBufferObject so view_space_normals.frag works with standard.vert
-struct NormalsUBO {
-    alignas(16) glm::mat4 model;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 proj;
-    alignas(16) glm::mat4 normalMatrix;
-    alignas(16) glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
-    alignas(16) glm::vec4 cameraPos = {};
-    alignas(16) glm::vec4 pbrParams = {};
-};
-
 struct AoPipeline {
-    // Single-sample depth image shared by normals prepass and AO pass
-    uint32_t depthMipLevelCount = 1;
-    vk::raii::Image depthImage{ nullptr };
-    vk::raii::DeviceMemory depthMemory{ nullptr };
-    // Full-range view for AO sampling; per-mip views for the prepass and downsampling.
-    vk::raii::ImageView depthView{ nullptr };
-    std::vector<vk::raii::ImageView> depthMipViews; // individual mips for rendering
-    vk::raii::Sampler depthSampler{ nullptr };
-
     // SAO depth pyramid: rotated-grid sub-sampling of the preceding mip.
     vk::raii::DescriptorSetLayout depthMipDescLayout{ nullptr };
     vk::raii::PipelineLayout depthMipPipeLayout{ nullptr };
     vk::raii::DescriptorPool depthMipDescPool{ nullptr };
     vk::raii::Pipeline depthMipPipeline{ nullptr };
     std::vector<vk::raii::DescriptorSet> depthMipDescSets;
-
-    // Normals prepass (writes view-space normals)
-    vk::raii::Image normalsImage{ nullptr };
-    vk::raii::DeviceMemory normalsMemory{ nullptr };
-    vk::raii::ImageView normalsView{ nullptr };
-    vk::raii::Sampler normalsSampler{ nullptr };
-
-    vk::raii::DescriptorSetLayout normalsDescLayout{ nullptr };
-    vk::raii::PipelineLayout normalsPipeLayout{ nullptr };
-    vk::raii::DescriptorPool normalsDescPool{ nullptr };
-    vk::raii::Pipeline normalsPipeline{ nullptr };
-
-    // Per-object, per-frame normals UBOs and descriptor sets
-    struct NormalsObject {
-        std::array<vk::raii::Buffer, MAX_FRAMES_IN_FLIGHT> uboBuffers{ nullptr, nullptr };
-        std::array<vk::raii::DeviceMemory, MAX_FRAMES_IN_FLIGHT> uboMemory{ nullptr, nullptr };
-        std::array<void*, MAX_FRAMES_IN_FLIGHT> uboMapped{};
-        vk::raii::DescriptorSets descriptorSets{ nullptr };
-    };
-    std::vector<NormalsObject> normalsObjects;
 
     // Raw AO image (output of the selected occlusion pass)
     vk::raii::Image aoRawImage{ nullptr };
@@ -133,12 +95,12 @@ struct AoPipeline {
     std::vector<std::array<void*, 2>> blurUboMapped;
 
     std::variant<SaoConfig, GtaoConfig> config;
+    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+            GeometryPrepass const& geometryPrepass, SaoConfig const& cfg);
+    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
+            GeometryPrepass const& geometryPrepass, GtaoConfig const& cfg);
 
-    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, SaoConfig const& cfg);
-    AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain, GtaoConfig const& cfg);
-
-    void allocateNormalsObjects(VulkanContext const& ctx, uint32_t objectCount);
-    void updateNormalsUBO(uint32_t objectIndex, uint32_t frameIndex, NormalsUBO const& ubo);
+    [[nodiscard]] static uint32_t saoDepthMipLevels(vk::Extent2D extent);
     void updateUBOs(uint32_t frameIndex, glm::mat4 const& view, glm::mat4 const& proj,
             float fovYRad, float height, float nearPlane, float farPlane);
 
@@ -146,10 +108,10 @@ struct AoPipeline {
     [[nodiscard]] vk::Sampler finalAoSampler() const { return *aoRawSampler; }
 
 private:
+    GeometryPrepass const& mGeometryPrepass;
     AoPipeline(VulkanContext const& ctx, Swapchain const& swapchain,
-            std::variant<SaoConfig, GtaoConfig> cfg);
+            GeometryPrepass const& geometryPrepass, std::variant<SaoConfig, GtaoConfig> cfg);
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
-    void createNormalsPass(VulkanContext const& ctx);
     void createDepthMipPass(VulkanContext const& ctx);
     void createAoPass(VulkanContext const& ctx);
     void createBlurPass(VulkanContext const& ctx);

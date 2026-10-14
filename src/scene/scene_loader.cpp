@@ -1,5 +1,6 @@
 #include "scene/scene_loader.hpp"
 
+#include <cmath>
 #include <fstream>
 #include <initializer_list>
 #include <stdexcept>
@@ -70,6 +71,9 @@ void validateLights(Scene const& scene, std::string const& path) {
                 "scene has " + std::to_string(shadowDirLightCount) +
                 " shadow-casting directional lights — only one is supported: " + path);
     }
+    if (scene.volumetric && shadowDirLightCount != 1) {
+        throw std::runtime_error("volumetric requires a shadow-casting directional light: " + path);
+    }
 }
 
 void validateMeshes(Scene const& scene, std::string const& path) {
@@ -88,9 +92,40 @@ void validateMeshes(Scene const& scene, std::string const& path) {
     }
 }
 
+void validateVolumetricBounds(VolumetricConfig const& config, std::string const& path) {
+    if (!config.bounded) {
+        return;
+    }
+    for (int axis = 0; axis < 3; ++axis) {
+        if (!std::isfinite(config.boundsMin[axis]) || !std::isfinite(config.boundsMax[axis]) ||
+                config.boundsMin[axis] >= config.boundsMax[axis]) {
+            throw std::runtime_error("volumetric.bounds must have min < max: " + path);
+        }
+    }
+}
+
+void validateVolumetric(Scene const& scene, std::string const& path) {
+    if (!scene.volumetric) {
+        return;
+    }
+    auto const& config = *scene.volumetric;
+    validateVolumetricBounds(config, path);
+    bool invalidDensity = !std::isfinite(config.density) || config.density < 0.0f;
+    bool invalidAlbedo = !std::isfinite(config.scatteringAlbedo) ||
+                         config.scatteringAlbedo < 0.0f || config.scatteringAlbedo > 1.0f;
+    bool invalidDistance = !std::isfinite(config.maxDistance) || config.maxDistance <= 0.0f;
+    bool invalidAnisotropy =
+            !std::isfinite(config.anisotropy) || std::abs(config.anisotropy) >= 1.0f;
+    bool invalidSteps = config.steps < 1 || config.steps > 256;
+    if (invalidDensity || invalidAlbedo || invalidDistance || invalidAnisotropy || invalidSteps) {
+        throw std::runtime_error("invalid volumetric settings: " + path);
+    }
+}
+
 void validateScene(Scene const& scene, std::string const& path) {
     validateAo(scene, path);
     validateCamera(scene.camera, path);
+    validateVolumetric(scene, path);
     if (scene.meshInstances.empty() && !scene.particles) {
         throw std::runtime_error("scene has no meshInstances or particles: " + path);
     }
@@ -123,6 +158,25 @@ GtaoConfig parseGtao(json const& gtaoJson) {
     gtaoConfig.kernelRadius = gtaoJson.value("kernelRadius", gtaoConfig.kernelRadius);
     gtaoConfig.depthThreshold = gtaoJson.value("depthThreshold", gtaoConfig.depthThreshold);
     return gtaoConfig;
+}
+
+void parseVolumetricBounds(json const& bounds, VolumetricConfig& config) {
+    config.boundsMin = vec3FromJson(bounds.at("min"));
+    config.boundsMax = vec3FromJson(bounds.at("max"));
+    config.bounded = true;
+}
+
+VolumetricConfig parseVolumetric(json const& value) {
+    VolumetricConfig config;
+    config.density = value.value("density", config.density);
+    config.scatteringAlbedo = value.value("scatteringAlbedo", config.scatteringAlbedo);
+    config.maxDistance = value.value("maxDistance", config.maxDistance);
+    config.anisotropy = value.value("anisotropy", config.anisotropy);
+    config.steps = value.value("steps", config.steps);
+    if (value.contains("bounds")) {
+        parseVolumetricBounds(value.at("bounds"), config);
+    }
+    return config;
 }
 
 MeshInstance parseMeshInstance(json const& instanceJson) {
@@ -291,6 +345,10 @@ Scene loadScene(std::string const& path) {
     if (j.contains("gtao")) {
         scene.gtao = parseGtao(j["gtao"]);
     }
+    if (j.contains("volumetric")) {
+        scene.volumetric = parseVolumetric(j.at("volumetric"));
+    }
+
     for (auto const& instanceJson: j.at("meshInstances")) {
         scene.meshInstances.push_back(parseMeshInstance(instanceJson));
     }
