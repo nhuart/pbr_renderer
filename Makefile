@@ -41,7 +41,7 @@ screenshots-bunny: build-debug
 	@set -e; for scene in $(BUNNY_SCENES); do \
 		name=$${scene#scenes/stanford_bunny_}; \
 		name=$${name%.json}; \
-		./build/debug/pbr_renderer "$$scene" --screenshot "$(BUNNY_SCREENSHOT_DIR)/$$name.png" --exit-after-screenshot; \
+		./build/debug/pbr_renderer "$$scene" --screenshot "$(BUNNY_SCREENSHOT_DIR)/$$name.png"; \
 	done
 
 format:
