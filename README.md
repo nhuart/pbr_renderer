@@ -1,7 +1,8 @@
 # pbr_renderer
 This project is a forward PBR renderer in C++ with Vulkan. It does not yet use clustered forward rendering.
 
-The primary goal of this project was to learn Vulkan. After working through this Vulkan [tutorial](https://docs.vulkan.org/tutorial/latest/00_Introduction.html), my aim was not to reinvent the wheel in computer graphics, but to integrate graphics features into this Vulkan architecture and expand my Vulkan knowledge. Therefore, the surface rendering features were inspired by, and validated against, [Google Filament](https://github.com/google/filament). On the other hand, the volume-rendering equations and implementation were based on [Scratchapixel's tutorial](https://www.scratchapixel.com/lessons/3d-basic-rendering/volume-rendering-for-developers/intro-volume-rendering.html). Throughout the project, Physically Based Rendering (https://www.pbr-book.org/) also served as a key reference for the theoretical foundations.
+The primary goal of this project was to learn Vulkan. After working through this Vulkan [tutorial](https://docs.vulkan.org/tutorial/latest/00_Introduction.html), my aim was not to reinvent the wheel in computer graphics, but to integrate graphics features into this Vulkan architecture and expand my Vulkan knowledge. \
+The surface rendering features are inspired by, and validated against, [Google Filament](https://github.com/google/filament). The volume-rendering equations and implementation are based on [Scratchapixel's tutorial](https://www.scratchapixel.com/lessons/3d-basic-rendering/volume-rendering-for-developers/intro-volume-rendering.html). Throughout the project, the book [Physically Based Rendering](https://www.pbr-book.org/) as well as the [OpenGL PBR docs](https://learnopengl.com/PBR/IBL/Diffuse-irradiance) and [GTAO paper](https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf) also served as a key reference for the theoretical foundations.
 
 See the [side-by-side comparisons with Filament](results/comparison/filament_validations.html) for the (surface) rendering results.
 
@@ -145,6 +146,7 @@ This section lists improvements I identified during development but deferred for
 - Suballocate buffer and image memory, for example with [Vulkan Memory Allocator (VMA)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator).
 - Add topological sorting to `RenderGraph::buildBarriers()` so passes can be registered in any order. Currently passes must be declared in dependency order.
 - Add frustum culling.
+- Reuse the geometry prepass depth in the forward pass for early-Z. The forward pass currently clears and writes its own depth image, so scenes with SAO, GTAO or volumetrics render geometry twice and still shade hidden fragments.
 
 ### Assets and image-based lighting
 
