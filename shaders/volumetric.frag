@@ -111,18 +111,20 @@ float calculateSampleJitter(vec2 pixelCoordinates) {
 MediumIntegration integrateMedium(RaySegment ray) {
     float pathLength = ray.endDistance - ray.startDistance;
     float stepLength = pathLength / float(ubo.stepCount);
-    float segmentTransmittance = exp(-ubo.extinctionCoefficient * stepLength);
+    float segmentOpticalDepth = ubo.extinctionCoefficient * stepLength;
+    float segmentTransmittance = exp(-segmentOpticalDepth);
     float sampleJitter = calculateSampleJitter(gl_FragCoord.xy);
     float transmittance = 1.0;
     float scattering = 0.0;
     for (int i = 0; i < ubo.stepCount; ++i) {
         float distanceAlongRay = ray.startDistance + (float(i) + sampleJitter) * stepLength;
         vec3 samplePosition = ray.origin + ray.direction * distanceAlongRay;
+        // Weight scattering by transmittance after attenuation through this segment.
+        transmittance *= segmentTransmittance;
         if (ubo.scatteringAlbedo > 0.0 && isVisibleToLight(samplePosition)) {
-            scattering += transmittance * (1.0 - segmentTransmittance) *
+            scattering += transmittance * segmentOpticalDepth *
                           transmittanceFromLight(samplePosition);
         }
-        transmittance *= segmentTransmittance;
         if (transmittance < MIN_TRANSMITTANCE) {
             break;
         }
