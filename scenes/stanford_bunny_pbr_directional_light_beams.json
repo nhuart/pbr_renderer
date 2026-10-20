@@ -15,8 +15,8 @@
     ],
     "volumetric": {
         "density": 0.25,
-        "absorption": 0.5,
-        "scattering": 0.5,
+        "absorption": 0.1,
+        "scattering": 0.9,
         "anisotropy": 0.0,
         "maxDistance": 12.0,
         "steps": 64,
