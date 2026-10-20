@@ -312,7 +312,7 @@ void Renderer::updateLights(float exposure) {
     LightUBO lightUbo{};
     if (mScene.volumetric && mScene.volumetric->bounded) {
         auto const& medium = *mScene.volumetric;
-        lightUbo.mediumBoundsMin = glm::vec4(medium.boundsMin, medium.density);
+        lightUbo.mediumBoundsMin = glm::vec4(medium.boundsMin, medium.extinctionCoefficient());
         lightUbo.mediumBoundsMax = glm::vec4(medium.boundsMax, 1.0f);
     }
     uint32_t lightCount = 0;
@@ -404,8 +404,8 @@ void Renderer::updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& 
         .cameraPos = glm::vec4(cameraPosition, 1.0f),
         .lightDirection = glm::vec4(glm::normalize(light.direction), light.shadowBias),
         .lightColor = glm::vec4(light.color * light.intensity * exposure, 1.0f),
-        .extinctionCoefficient = config.density,
-        .scatteringAlbedo = config.scatteringAlbedo,
+        .extinctionCoefficient = config.extinctionCoefficient(),
+        .scatteringAlbedo = config.scatteringAlbedo(),
         .maxDistance = config.maxDistance,
         .anisotropy = config.anisotropy,
         .boundsMin = glm::vec4(config.boundsMin, config.bounded ? 1.0f : 0.0f),

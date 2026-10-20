@@ -110,14 +110,22 @@ struct GtaoConfig {
 };
 
 struct VolumetricConfig {
-    float density = 0.22f;
-    float scatteringAlbedo = 0.9f;
+    float density = 0.25f;
+    float absorption = 0.5f;
+    float scattering = 0.5f;
     float maxDistance = 12.0f;
-    float anisotropy = 0.2f;
+    float anisotropy = 0.0f;
     int steps = 64;
     bool bounded = false;
     glm::vec3 boundsMin{};
     glm::vec3 boundsMax{};
+
+    float extinctionCoefficient() const { return density * (absorption + scattering); }
+
+    float scatteringAlbedo() const {
+        float total = absorption + scattering;
+        return total > 0.0f ? scattering / total : 0.0f;
+    }
 };
 
 struct Scene {

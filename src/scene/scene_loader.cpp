@@ -111,13 +111,15 @@ void validateVolumetric(Scene const& scene, std::string const& path) {
     auto const& config = *scene.volumetric;
     validateVolumetricBounds(config, path);
     bool invalidDensity = !std::isfinite(config.density) || config.density < 0.0f;
-    bool invalidAlbedo = !std::isfinite(config.scatteringAlbedo) ||
-                         config.scatteringAlbedo < 0.0f || config.scatteringAlbedo > 1.0f;
+    bool invalidCoefficients = !std::isfinite(config.absorption) || config.absorption < 0.0f ||
+                               !std::isfinite(config.scattering) || config.scattering < 0.0f ||
+                               !std::isfinite(config.absorption + config.scattering) ||
+                               !std::isfinite(config.extinctionCoefficient());
     bool invalidDistance = !std::isfinite(config.maxDistance) || config.maxDistance <= 0.0f;
     bool invalidAnisotropy =
             !std::isfinite(config.anisotropy) || std::abs(config.anisotropy) >= 1.0f;
     bool invalidSteps = config.steps < 1 || config.steps > 256;
-    if (invalidDensity || invalidAlbedo || invalidDistance || invalidAnisotropy || invalidSteps) {
+    if (invalidDensity || invalidCoefficients || invalidDistance || invalidAnisotropy || invalidSteps) {
         throw std::runtime_error("invalid volumetric settings: " + path);
     }
 }
@@ -169,7 +171,8 @@ void parseVolumetricBounds(json const& bounds, VolumetricConfig& config) {
 VolumetricConfig parseVolumetric(json const& value) {
     VolumetricConfig config;
     config.density = value.value("density", config.density);
-    config.scatteringAlbedo = value.value("scatteringAlbedo", config.scatteringAlbedo);
+    config.absorption = value.value("absorption", config.absorption);
+    config.scattering = value.value("scattering", config.scattering);
     config.maxDistance = value.value("maxDistance", config.maxDistance);
     config.anisotropy = value.value("anisotropy", config.anisotropy);
     config.steps = value.value("steps", config.steps);
