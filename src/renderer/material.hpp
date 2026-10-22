@@ -17,6 +17,16 @@ struct IblEnvironment;
 struct ShadowPipeline;
 struct AoPipeline;
 
+struct MaterialResources {
+    TextureAtlas const& texture;
+    vk::raii::Buffer const& lightBuffer;
+    IblEnvironment const* ibl = nullptr;
+    TextureAtlas const* brdfLut = nullptr;
+    TextureAtlas const* normalMap = nullptr;
+    ShadowPipeline const* shadowMap = nullptr;
+    AoPipeline const* aoPipeline = nullptr;
+};
+
 struct MaterialInstance {
     std::vector<vk::raii::Buffer> uniformBuffers;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
@@ -45,8 +55,5 @@ struct Material {
             ShaderFeatures features = ShaderFeatures::None, bool doubleSided = false);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
-            TextureAtlas const& texture, vk::raii::Buffer const& lightBuffer,
-            IblEnvironment const* ibl = nullptr, TextureAtlas const* normalMap = nullptr,
-            ShadowPipeline const* shadowMap = nullptr,
-            AoPipeline const* aoPipeline = nullptr) const;
+            MaterialResources const& resources) const;
 };

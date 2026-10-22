@@ -28,8 +28,9 @@ layout(binding = 3) uniform IblSHUBO {
     vec4 sh[9];
 } iblSH;
 layout(binding = 4) uniform samplerCube prefilterMap;
-layout(binding = 5) uniform sampler2D   brdfLut;
 #endif
+
+layout(binding = 5) uniform sampler2D brdfLut;
 
 #ifdef USE_NORMAL_MAP
 layout(binding = 6) uniform sampler2D normalMapSampler;
@@ -96,6 +97,10 @@ struct PbrShadingData {
     float roughness;
 };
 
+vec2 preintegratedBrdf(PbrShadingData surface) {
+    return texture(brdfLut, vec2(surface.NdotV, 1.0 - surface.roughness)).rg;
+}
+
 float surfaceLightTransmittance(LightSample light) {
     // Unbounded fog uses the same unattenuated incident-light model as the volume pass.
     if (lights.mediumBoundsMax.w == 0.0) {
@@ -154,7 +159,7 @@ vec3 iblAmbient(PbrShadingData surface) {
     // perceptualRoughnessToLod from filament/shaders/src/surface_light_indirect.fs
     float lod = 4.0 * surface.roughness * (2.0 - surface.roughness);
     vec3 prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
-    vec2 brdf = texture(brdfLut, vec2(surface.NdotV, 1.0 - surface.roughness)).rg;
+    vec2 brdf = preintegratedBrdf(surface);
     vec3 Fr = prefilteredColor * (kS * brdf.x + brdf.y);
     // Energy compensation (Karis 2017): corrects single-scattering energy loss at high roughness.
     float directionalAlbedo = brdf.x + brdf.y;
@@ -233,9 +238,14 @@ vec3 directLighting(PbrShadingData surface) {
 }
 
 vec3 ambientLighting(PbrShadingData surface) {
-    vec3 ambient = ubo.pbrParams.z * surface.albedo;
 #ifdef USE_IBL
-    ambient = iblAmbient(surface);
+    vec3 ambient = iblAmbient(surface);
+#else
+    vec2 brdf = preintegratedBrdf(surface);
+    vec3 reflectedEnergy = surface.F0 * brdf.x + brdf.y;
+    // Match Filament's indirect diffuse: energy reflected specularly cannot enter the diffuse layer.
+    vec3 diffuseColor = surface.albedo * (1.0 - surface.metallic);
+    vec3 ambient = ubo.pbrParams.z * diffuseColor * (1.0 - reflectedEnergy);
 #endif
 
 #ifdef USE_SAO

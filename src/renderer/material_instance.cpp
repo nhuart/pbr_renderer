@@ -14,10 +14,9 @@ void MaterialInstance::updateUBO(uint32_t frameIndex, UniformBufferObject const&
     memcpy(uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
 }
 
-MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas const& texture,
-        vk::raii::Buffer const& lightBuffer, IblEnvironment const* ibl,
-        TextureAtlas const* normalMap, ShadowPipeline const* shadowMap,
-        AoPipeline const* aoPipeline) const {
+MaterialInstance Material::createInstance(VulkanContext const& ctx,
+        MaterialResources const& resources) const {
+    auto const& [texture, lightBuffer, ibl, brdfLut, normalMap, shadowMap, aoPipeline] = resources;
     MaterialInstance inst;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -61,7 +60,9 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
     if (ibl) {
         prefilterInfo = { *ibl->prefilter.sampler, *ibl->prefilter.imageView,
             vk::ImageLayout::eShaderReadOnlyOptimal };
-        brdfLutInfo = { *ibl->brdfLut.sampler, *ibl->brdfLut.imageView,
+    }
+    if (brdfLut) {
+        brdfLutInfo = { *brdfLut->sampler, *brdfLut->imageView,
             vk::ImageLayout::eShaderReadOnlyOptimal };
     }
 
@@ -101,6 +102,8 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         imageInfos.push_back(albedoInfo);
         if (ibl) {
             imageInfos.push_back(prefilterInfo);
+        }
+        if (brdfLut) {
             imageInfos.push_back(brdfLutInfo);
         }
         if (normalMap) {
@@ -140,6 +143,8 @@ MaterialInstance Material::createInstance(VulkanContext const& ctx, TextureAtlas
         if (ibl) {
             writeUbo(3);
             writeSampler(4);
+        }
+        if (brdfLut) {
             writeSampler(5);
         }
         if (normalMap) {

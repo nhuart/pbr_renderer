@@ -200,12 +200,19 @@ void Renderer::createMaterialInstance(RenderObject& renderObject) {
     auto features = mScene.meshInstances[renderObject.gameObjectIndex].shaderFeatures;
     bool hasShadow = hasFeature(features, ShaderFeatures::HardShadow) ||
                      hasFeature(features, ShaderFeatures::PcfShadow);
-    renderObject.materialInstance = renderObject.material->createInstance(*mCtx,
-            *renderObject.texture, mLightBuffer->buffer,
-            hasFeature(features, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
-            hasFeature(features, ShaderFeatures::NormalMap) ? renderObject.normalMap : nullptr,
-            hasShadow ? &*mShadowPipeline : nullptr,
-            hasFeature(features, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr);
+    MaterialResources resources{
+        .texture = *renderObject.texture,
+        .lightBuffer = mLightBuffer->buffer,
+        .ibl = hasFeature(features, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
+        .brdfLut = hasFeature(features, ShaderFeatures::BrdfLut)
+                           ? &mResources->getTexture(*mCtx, *mCmds, "textures/ibl/brdf_lut.ktx2")
+                           : nullptr,
+        .normalMap =
+                hasFeature(features, ShaderFeatures::NormalMap) ? renderObject.normalMap : nullptr,
+        .shadowMap = hasShadow ? &*mShadowPipeline : nullptr,
+        .aoPipeline = hasFeature(features, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr,
+    };
+    renderObject.materialInstance = renderObject.material->createInstance(*mCtx, resources);
 }
 
 void Renderer::recreateAoMaterialInstances() {
@@ -447,7 +454,7 @@ void Renderer::resolveShaderVariants() {
         bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
         bool hasAo = mScene.sao.has_value() || mScene.gtao.has_value();
 
-        ShaderFeatures features = ShaderFeatures::None;
+        ShaderFeatures features = ShaderFeatures::BrdfLut;
         std::string frag = "pbr";
 
         if (mIblEnvironment) {
