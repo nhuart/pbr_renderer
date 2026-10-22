@@ -35,7 +35,9 @@ Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFile
     if (hasFeature(features, ShaderFeatures::Ibl)) {
         addUbo(3, vk::ShaderStageFlagBits::eFragment); // SH irradiance
         addSampler(4);                                 // prefilter
-        addSampler(5);                                 // BRDF LUT
+    }
+    if (hasFeature(features, ShaderFeatures::BrdfLut)) {
+        addSampler(5); // BRDF LUT
     }
     if (hasFeature(features, ShaderFeatures::NormalMap)) {
         addSampler(6); // normal map
@@ -60,8 +62,11 @@ Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFile
     uint32_t uboCount = 2;     // binding 0 + binding 2 always present
     uint32_t samplerCount = 1; // binding 1 always present
     if (hasFeature(features, ShaderFeatures::Ibl)) {
-        samplerCount += 2;
+        samplerCount += 1;
         uboCount += 1;
+    }
+    if (hasFeature(features, ShaderFeatures::BrdfLut)) {
+        samplerCount += 1;
     }
     if (hasFeature(features, ShaderFeatures::NormalMap)) {
         samplerCount += 1;

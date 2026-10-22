@@ -2,7 +2,6 @@
 
 #include "renderer/cubemap_atlas.hpp"
 #include "renderer/gpu_types.hpp"
-#include "renderer/texture_atlas.hpp"
 
 #include <fstream>
 #include <stdexcept>
@@ -15,13 +14,11 @@ struct CommandService;
 
 struct IblEnvironment {
     CubemapAtlas prefilter;
-    TextureAtlas brdfLut;
     IblSHUBO sh{};
 
     IblEnvironment(VulkanContext const& ctx, CommandService const& cmds,
             std::string const& prefilterPath, std::string const& shPath)
-            : prefilter(ctx, cmds, prefilterPath),
-              brdfLut(ctx, cmds, "textures/ibl/brdf_lut.ktx2") {
+            : prefilter(ctx, cmds, prefilterPath) {
         parseSH(shPath);
     }
 
