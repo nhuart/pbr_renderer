@@ -55,6 +55,7 @@ struct ShadowPipeline {
     void allocateObjectData(VulkanContext const& ctx, uint32_t objectCount);
     void updateLightSpaceMatrix(DirectionalLight const& light, Scene const& scene,
             MeshBuffer const& meshBuffer, std::vector<GameObject> const& gameObjects);
+    void updateLightSpaceMatrix(SpotLight const& light);
     void updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex, glm::mat4 const& model);
     void updateFragmentUBO(uint32_t frameIndex);
 

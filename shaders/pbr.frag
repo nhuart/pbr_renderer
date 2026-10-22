@@ -16,10 +16,10 @@ layout(binding = 0) uniform UniformBufferObject {
 layout(binding = 1) uniform sampler2D texSampler;
 
 struct GpuLight {
-    vec4 colorAndType;        // xyz=RGB intensity, w=type (1=directional,2=spot,3=point)
-    vec4 positionAndInvRange; // xyz=world position, w=1/range (spot/point)
-    vec4 direction;           // xyz=normalized direction (directional/spot), w=unused
-    vec4 coneScaleOffset;     // x=scale, y=offset for cone attenuation (spot only)
+    vec4 colorAndType;           // xyz=RGB intensity, w=type (1=directional,2=spot,3=point)
+    vec4 positionAndInvRange;    // xyz=world position, w=1/range (spot/point)
+    vec4 directionAndShadowFlag; // xyz=normalized direction, w=castsShadow
+    vec4 coneScaleOffset;        // x=scale, y=offset for cone attenuation (spot only)
 };
 
 layout(binding = 2) uniform LightUBO {
@@ -118,7 +118,7 @@ LightSample sampleLight(GpuLight light) {
     int lightType = int(light.colorAndType.w);
 
     if (lightType == 1) {
-        return LightSample(light.direction.xyz, 1.0, MEDIUM_MAX_RAY_DISTANCE);
+        return LightSample(light.directionAndShadowFlag.xyz, 1.0, MEDIUM_MAX_RAY_DISTANCE);
     }
 
     vec3 toLight = light.positionAndInvRange.xyz - fragWorldPos;
@@ -128,7 +128,7 @@ LightSample sampleLight(GpuLight light) {
     float attenuation = windowedFalloff(distSq, light.positionAndInvRange.w);
 
     if (lightType == 2) {
-        float cosTheta = dot(-L, light.direction.xyz);
+        float cosTheta = dot(-L, light.directionAndShadowFlag.xyz);
         float cone = clamp(cosTheta * light.coneScaleOffset.x + light.coneScaleOffset.y, 0.0, 1.0);
         attenuation *= cone * cone;
     }
@@ -219,17 +219,7 @@ vec3 resolveNormal() {
 }
 
 #ifdef USE_SHADOW
-float shadowVisibility() {
-    vec4 fragPosLightSpace = shadowUbo.lightSpaceTransform * vec4(fragWorldPos, 1.0);
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    float currentDepth = projCoords.z;
-
-    if (currentDepth < 0.0 || currentDepth > 1.0)
-        return 1.0;
-
-    // Remap XY from [-1,1] to [0,1]; depth is already [0,1] in Vulkan clip space
-    vec2 shadowUV = projCoords.xy * 0.5 + 0.5;
-
+float sampleShadowVisibility(vec2 shadowUV, float currentDepth) {
 #ifdef USE_PCF
     vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
     float shadow = 0.0;
@@ -245,6 +235,22 @@ float shadowVisibility() {
     return (currentDepth - shadowUbo.shadowBias > closestDepth) ? 0.0 : 1.0;
 #endif
 }
+
+float shadowVisibility() {
+    vec4 fragPosLightSpace = shadowUbo.lightSpaceTransform * vec4(fragWorldPos, 1.0);
+    if (fragPosLightSpace.w <= 0.0) {
+        return 1.0;
+    }
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    float currentDepth = projCoords.z;
+    if (currentDepth < 0.0 || currentDepth > 1.0) {
+        return 1.0;
+    }
+
+    // Remap XY from [-1,1] to [0,1]; depth is already [0,1] in Vulkan clip space.
+    vec2 shadowUV = projCoords.xy * 0.5 + 0.5;
+    return sampleShadowVisibility(shadowUV, currentDepth);
+}
 #endif
 
 vec3 directLighting(PbrShadingData surface) {
@@ -258,7 +264,8 @@ vec3 directLighting(PbrShadingData surface) {
     for (int i = 0; i < numLights; i++) {
         float lightShadow = 1.0;
 #ifdef USE_SHADOW
-        lightShadow = (lights.lights[i].colorAndType.w == 1.0) ? visibility : 1.0;
+        bool castsShadow = lights.lights[i].directionAndShadowFlag.w == 1.0;
+        lightShadow = castsShadow ? visibility : 1.0;
 #endif
         Lo += lightShadow * lightContribution(lights.lights[i], surface);
     }

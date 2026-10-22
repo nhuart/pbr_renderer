@@ -57,21 +57,44 @@ void validateCamera(Camera const& camera, std::string const& path) {
     }
 }
 
+void validateSpotLightShadow(SpotLight const& light, std::string const& path) {
+    if (!light.shadows.castShadow) {
+        return;
+    }
+    bool invalidCone = !std::isfinite(light.outerConeAngle) || light.outerConeAngle <= 0.0f ||
+                       light.outerConeAngle >= 90.0f;
+    bool invalidRange = !std::isfinite(light.range) || light.range <= SPOT_SHADOW_NEAR_DISTANCE;
+    float directionLength = glm::length(light.direction);
+    bool invalidDirection = !std::isfinite(directionLength) || directionLength == 0.0f;
+    if (invalidCone || invalidRange || invalidDirection) {
+        throw std::runtime_error(
+                "invalid shadow-casting spot light cone, range or direction: " + path);
+    }
+}
+
 void validateLights(Scene const& scene, std::string const& path) {
-    int shadowDirLightCount = 0;
+    int shadowCastingLightCount = 0;
+    int shadowCastingDirectionalLightCount = 0;
     for (auto const& light: scene.lights) {
-        if (auto const* directionalLight = std::get_if<DirectionalLight>(&light)) {
-            if (directionalLight->castShadow) {
-                ++shadowDirLightCount;
-            }
+        if (auto const* spot = std::get_if<SpotLight>(&light)) {
+            validateSpotLightShadow(*spot, path);
+        }
+        auto const* shadows = shadowSettings(light);
+        if (!shadows || !shadows->castShadow) {
+            continue;
+        }
+        ++shadowCastingLightCount;
+        if (std::holds_alternative<DirectionalLight>(light)) {
+            ++shadowCastingDirectionalLightCount;
         }
     }
-    if (shadowDirLightCount > 1) {
+    if (shadowCastingLightCount > 1) {
         throw std::runtime_error(
-                "scene has " + std::to_string(shadowDirLightCount) +
-                " shadow-casting directional lights — only one is supported: " + path);
+                "scene has " + std::to_string(shadowCastingLightCount) +
+                " shadow-casting lights — only one directional or spot light is supported: " +
+                path);
     }
-    if (scene.volumetric && shadowDirLightCount != 1) {
+    if (scene.volumetric && shadowCastingDirectionalLightCount != 1) {
         throw std::runtime_error("volumetric requires a shadow-casting directional light: " + path);
     }
 }
@@ -119,7 +142,8 @@ void validateVolumetric(Scene const& scene, std::string const& path) {
     bool invalidAnisotropy =
             !std::isfinite(config.anisotropy) || std::abs(config.anisotropy) >= 1.0f;
     bool invalidSteps = config.steps < 1 || config.steps > 256;
-    if (invalidDensity || invalidCoefficients || invalidDistance || invalidAnisotropy || invalidSteps) {
+    if (invalidDensity || invalidCoefficients || invalidDistance || invalidAnisotropy ||
+            invalidSteps) {
         throw std::runtime_error("invalid volumetric settings: " + path);
     }
 }
@@ -228,22 +252,26 @@ AmbientLight parseAmbientLight(json const& lightJson, std::string const& path) {
     return light;
 }
 
+void parseShadowSettings(json const& lightJson, ShadowSettings& shadows, std::string const& path) {
+    shadows.castShadow = lightJson.value("castShadow", shadows.castShadow);
+    shadows.shadowBias = lightJson.value("shadowBias", shadows.shadowBias);
+    if (lightJson.contains("shadowType")) {
+        std::string shadowType = lightJson["shadowType"].get<std::string>();
+        if (shadowType == "pcf") {
+            shadows.shadowType = ShadowType::PCF;
+        } else if (shadowType != "hard") {
+            throw std::runtime_error("unknown shadowType '" + shadowType + "': " + path);
+        }
+    }
+}
+
 DirectionalLight parseDirectionalLight(json const& lightJson, std::string const& path) {
     requireLightFields(lightJson, "directional", { "direction", "color" }, path);
     DirectionalLight light;
     light.direction = vec3FromJson(lightJson["direction"]);
     light.color = vec3FromJson(lightJson["color"]);
     light.intensity = lightJson.value("intensity", light.intensity);
-    light.castShadow = lightJson.value("castShadow", light.castShadow);
-    light.shadowBias = lightJson.value("shadowBias", light.shadowBias);
-    if (lightJson.contains("shadowType")) {
-        std::string shadowType = lightJson["shadowType"].get<std::string>();
-        if (shadowType == "pcf") {
-            light.shadowType = ShadowType::PCF;
-        } else if (shadowType != "hard") {
-            throw std::runtime_error("unknown shadowType '" + shadowType + "': " + path);
-        }
-    }
+    parseShadowSettings(lightJson, light.shadows, path);
     return light;
 }
 
@@ -259,6 +287,7 @@ SpotLight parseSpotLight(json const& lightJson, std::string const& path) {
     light.innerConeAngle = lightJson["innerConeAngle"].get<float>();
     light.outerConeAngle = lightJson["outerConeAngle"].get<float>();
     light.range = lightJson["range"].get<float>();
+    parseShadowSettings(lightJson, light.shadows, path);
     return light;
 }
 
