@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "medium.glsl"
+#include "lighting.glsl"
 
 layout(binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -14,13 +15,6 @@ layout(binding = 0) uniform UniformBufferObject {
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
-
-struct GpuLight {
-    vec4 colorAndType;           // xyz=RGB intensity, w=type (1=directional,2=spot,3=point)
-    vec4 positionAndInvRange;    // xyz=world position, w=1/range (spot/point)
-    vec4 directionAndShadowFlag; // xyz=normalized direction, w=castsShadow
-    vec4 coneScaleOffset;        // x=scale, y=offset for cone attenuation (spot only)
-};
 
 layout(binding = 2) uniform LightUBO {
     uvec4 counts; // x = number of active lights
@@ -92,18 +86,6 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-float windowedFalloff(float distSq, float invRange) {
-    float factor = distSq * invRange * invRange;
-    float smoothF = max(1.0 - factor * factor, 0.0);
-    return (smoothF * smoothF) / max(distSq, 1e-4);
-}
-
-struct LightSample {
-    vec3 L;
-    float attenuation;
-    float distance;
-};
-
 struct PbrShadingData {
     vec3 normal;
     vec3 viewDirection;
@@ -113,28 +95,6 @@ struct PbrShadingData {
     float metallic;
     float roughness;
 };
-
-LightSample sampleLight(GpuLight light) {
-    int lightType = int(light.colorAndType.w);
-
-    if (lightType == 1) {
-        return LightSample(light.directionAndShadowFlag.xyz, 1.0, MEDIUM_MAX_RAY_DISTANCE);
-    }
-
-    vec3 toLight = light.positionAndInvRange.xyz - fragWorldPos;
-    float distSq = dot(toLight, toLight);
-    float distance = sqrt(distSq);
-    vec3 L = toLight / distance;
-    float attenuation = windowedFalloff(distSq, light.positionAndInvRange.w);
-
-    if (lightType == 2) {
-        float cosTheta = dot(-L, light.directionAndShadowFlag.xyz);
-        float cone = clamp(cosTheta * light.coneScaleOffset.x + light.coneScaleOffset.y, 0.0, 1.0);
-        attenuation *= cone * cone;
-    }
-
-    return LightSample(L, attenuation, distance);
-}
 
 float surfaceLightTransmittance(LightSample light) {
     // Unbounded fog uses the same unattenuated incident-light model as the volume pass.
@@ -147,7 +107,7 @@ float surfaceLightTransmittance(LightSample light) {
 }
 
 vec3 lightContribution(GpuLight light, PbrShadingData surface) {
-    LightSample ls = sampleLight(light);
+    LightSample ls = sampleLight(light, fragWorldPos);
 
     vec3 H = normalize(surface.viewDirection + ls.L);
     float NdotL = max(dot(surface.normal, ls.L), 0.0);

@@ -114,7 +114,7 @@ Multiple instances can reference the same `gltf` path. The mesh data, however, i
 - Physically based camera
 - Image-based lighting and skybox
 - Directional- and spot-light shadows with hard or percentage-closer filtered (PCF) shadow maps (one shadow-casting light per scene)
-- Ray-marched volume rendering of a homogeneous participating medium using single scattering from a directional light, with optional volume bounds.
+- Ray-marched volume rendering of a homogeneous participating medium using single scattering from a directional or spot light, with optional volume bounds.
 - Screen-space ambient occlusion with Scalable ambient obscurance (SAO) and ground-truth ambient occlusion (GTAO)
 - Linear HDR rendering with configurable final tone mapping (None, Reinhard)
 

@@ -402,13 +402,14 @@ void Renderer::updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& 
         return;
     }
     auto const& config = *mScene.volumetric;
-    auto const& light = std::get<DirectionalLight>(*shadowCastingLight(mScene));
+    auto const& light = *shadowCastingLight(mScene);
+    auto gpuLight = std::visit(
+            [exposure](auto const& source) { return GpuLight::from(source, exposure); }, light);
     VolumetricUBO ubo{
         .invViewProj = glm::inverse(projection * view),
         .lightSpaceMatrix = mShadowPipeline->lightSpaceMatrix,
         .cameraPos = glm::vec4(cameraPosition, 1.0f),
-        .lightDirection = glm::vec4(glm::normalize(light.direction), light.shadows.shadowBias),
-        .lightColor = glm::vec4(light.color * light.intensity * exposure, 1.0f),
+        .light = gpuLight,
         .extinctionCoefficient = config.extinctionCoefficient(),
         .scatteringAlbedo = config.scatteringAlbedo(),
         .maxDistance = config.maxDistance,
@@ -416,6 +417,7 @@ void Renderer::updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& 
         .boundsMin = glm::vec4(config.boundsMin, config.bounded ? 1.0f : 0.0f),
         .boundsMax = glm::vec4(config.boundsMax, 0.0f),
         .stepCount = config.steps,
+        .shadowBias = shadowSettings(light)->shadowBias,
     };
     mVolumetricPipeline->update(mFrameIndex, ubo);
 }

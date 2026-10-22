@@ -74,7 +74,6 @@ void validateSpotLightShadow(SpotLight const& light, std::string const& path) {
 
 void validateLights(Scene const& scene, std::string const& path) {
     int shadowCastingLightCount = 0;
-    int shadowCastingDirectionalLightCount = 0;
     for (auto const& light: scene.lights) {
         if (auto const* spot = std::get_if<SpotLight>(&light)) {
             validateSpotLightShadow(*spot, path);
@@ -84,9 +83,6 @@ void validateLights(Scene const& scene, std::string const& path) {
             continue;
         }
         ++shadowCastingLightCount;
-        if (std::holds_alternative<DirectionalLight>(light)) {
-            ++shadowCastingDirectionalLightCount;
-        }
     }
     if (shadowCastingLightCount > 1) {
         throw std::runtime_error(
@@ -94,8 +90,9 @@ void validateLights(Scene const& scene, std::string const& path) {
                 " shadow-casting lights — only one directional or spot light is supported: " +
                 path);
     }
-    if (scene.volumetric && shadowCastingDirectionalLightCount != 1) {
-        throw std::runtime_error("volumetric requires a shadow-casting directional light: " + path);
+    if (scene.volumetric && shadowCastingLightCount != 1) {
+        throw std::runtime_error(
+                "volumetric requires a shadow-casting directional or spot light: " + path);
     }
 }
 

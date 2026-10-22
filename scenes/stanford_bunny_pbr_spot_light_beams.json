@@ -1,0 +1,68 @@
+{
+    "lights": [
+        {
+            "type": "ambient",
+            "intensity": 0.03
+        },
+        {
+            "type": "spot",
+            "position": [0.03, 3.0, -0.28],
+            "direction": [0.0, -1.0, 0.0],
+            "color": [1.0, 1.0, 1.0],
+            "intensity": 500000.0,
+            "innerConeAngle": 15.0,
+            "outerConeAngle": 25.0,
+            "range": 6.0,
+            "castShadow": true,
+            "shadowType": "pcf"
+        }
+    ],
+    "volumetric": {
+        "density": 0.25,
+        "absorption": 0.1,
+        "scattering": 0.9,
+        "anisotropy": 0.0,
+        "maxDistance": 12.0,
+        "steps": 64,
+        "bounds": {
+            "min": [-2.9, -0.85, -3.28],
+            "max": [3.0, 2.7, 2.8]
+        }
+    },
+    "camera": {
+        "target": [0.0, 0.0, 0.0],
+        "azimuth": 45.0,
+        "elevation": 30.0,
+        "radius": 3.5,
+        "fov": 45.0,
+        "near": 0.1,
+        "far": 100.0,
+        "aperture": 4.0
+    },
+    "meshInstances": [
+        {
+            "gltf": "models/stanford_bunny.glb",
+            "vertexShader": "standard",
+            "fragmentShader": "pbr",
+            "baseColor": [0.8, 0.7, 0.6, 1.0],
+            "metallic": 0.0,
+            "roughness": 0.4,
+            "castShadows": true,
+            "receiveShadows": true,
+            "position": [0.03, -1.19, -0.28],
+            "rotation": [-90.0, 0.0, 45.0],
+            "scale": [10.0, 10.0, 10.0]
+        },
+        {
+            "gltf": "models/plane.glb",
+            "vertexShader": "standard",
+            "fragmentShader": "pbr",
+            "baseColor": [0.6, 0.6, 0.6, 1.0],
+            "metallic": 0.0,
+            "roughness": 0.8,
+            "receiveShadows": true,
+            "position": [0.03, -0.857, -0.28],
+            "scale": [3.0, 3.0, 3.0]
+        }
+    ]
+}
