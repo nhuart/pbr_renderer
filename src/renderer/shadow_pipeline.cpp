@@ -26,7 +26,7 @@ constexpr float SHADOW_BOUNDS_MARGIN = 0.25f;
 constexpr float MIN_SHADOW_NEAR_DISTANCE = 0.1f;
 constexpr float MIN_SHADOW_DEPTH_RANGE = 1.0f;
 constexpr float LIGHT_CAMERA_OFFSET = 2.0f;
-constexpr float LIGHT_UP_ALIGNMENT_THRESHOLD = 0.99f;
+constexpr float MAX_VIEW_UP_ABS_DOT = 0.99f;
 constexpr float FALLBACK_BOUNDS_HALF_EXTENT = 1.0f;
 constexpr float SHADOW_CONSTANT_DEPTH_BIAS = 1.0f;
 constexpr float SHADOW_SLOPE_DEPTH_BIAS = 0.75f;
@@ -86,6 +86,18 @@ ShadowBounds calculateBounds(std::vector<glm::vec3> const& corners,
         bounds.expandToInclude(glm::vec3(worldToTargetSpace * glm::vec4(worldCorner, 1.0f)));
     }
     return bounds;
+}
+
+glm::vec3 chooseNonParallelUpVector(glm::vec3 const& normalizedViewDirection) {
+    glm::vec3 const worldUp{ 0.0f, 1.0f, 0.0f };
+    glm::vec3 const fallbackUp{ 1.0f, 0.0f, 0.0f };
+    float alignmentWithWorldUp = std::abs(glm::dot(normalizedViewDirection, worldUp));
+
+    // lookAt() cannot form a stable camera basis when the view and up vectors are nearly parallel.
+    if (alignmentWithWorldUp > MAX_VIEW_UP_ABS_DOT) {
+        return fallbackUp;
+    }
+    return worldUp;
 }
 
 glm::mat4 createFittedShadowProjection(ShadowBounds const& bounds) {
@@ -338,13 +350,25 @@ void ShadowPipeline::updateLightSpaceMatrix(DirectionalLight const& light, Scene
     auto corners = collectShadowWorldCorners(scene, meshBuffer, gameObjects);
     auto worldBounds = calculateBounds(corners);
     glm::vec3 direction = glm::normalize(light.direction);
-    bool isAlignedWithWorldUp = std::abs(direction.y) > LIGHT_UP_ALIGNMENT_THRESHOLD;
-    glm::vec3 up = isAlignedWithWorldUp ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
     glm::vec3 center = worldBounds.center();
     float distanceToCenter = worldBounds.enclosingRadius() + LIGHT_CAMERA_OFFSET;
-    glm::mat4 lightView = glm::lookAt(center + direction * distanceToCenter, center, up);
+    glm::mat4 lightView = glm::lookAt(center + direction * distanceToCenter, center,
+            chooseNonParallelUpVector(direction));
     auto viewBounds = calculateBounds(corners, lightView);
     lightSpaceMatrix = createFittedShadowProjection(viewBounds) * lightView;
+}
+
+void ShadowPipeline::updateLightSpaceMatrix(SpotLight const& light) {
+    glm::vec3 direction = glm::normalize(light.direction);
+    glm::mat4 lightView = glm::lookAt(light.position, light.position + direction,
+            chooseNonParallelUpVector(direction));
+    float nearPlane = SPOT_SHADOW_NEAR_DISTANCE;
+    // Cone angles are half-angles; the square shadow map covers the entire outer cone.
+    glm::mat4 projection = glm::perspective(glm::radians(2.0f * light.outerConeAngle), 1.0f,
+            nearPlane, light.range);
+    // Flip GLM's projected Y axis for Vulkan's positive-height viewport and our face winding.
+    projection[1][1] *= -1.0f;
+    lightSpaceMatrix = projection * lightView;
 }
 
 void ShadowPipeline::updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex,

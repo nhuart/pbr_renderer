@@ -11,9 +11,9 @@ constexpr uint32_t MAX_LIGHTS = 8;
 // Packed GPU representation of one light.
 // std140 requires 16-byte alignment per field, so data is packed into vec4s.
 struct GpuLight {
-    alignas(16) glm::vec4 colorAndType;        // xyz=RGB intensity, w=lightType (1/2/3)
-    alignas(16) glm::vec4 positionAndInvRange; // xyz=world position, w=1/range (spot/point)
-    alignas(16) glm::vec4 direction;       // xyz=normalized direction (directional/spot), w=unused
+    alignas(16) glm::vec4 colorAndType;           // xyz=RGB intensity, w=lightType (1/2/3)
+    alignas(16) glm::vec4 positionAndInvRange;    // xyz=world position, w=1/range (spot/point)
+    alignas(16) glm::vec4 directionAndShadowFlag; // xyz=normalized direction, w=castsShadow
     alignas(16) glm::vec4 coneScaleOffset; // x=scale, y=offset for cone attenuation (spot only)
 
     static GpuLight from(AmbientLight const&, float) { return {}; }
@@ -21,7 +21,8 @@ struct GpuLight {
     static GpuLight from(DirectionalLight const& light, float exposure) {
         GpuLight gpuLight{};
         gpuLight.colorAndType = glm::vec4(light.color * light.intensity * exposure, 1.0f);
-        gpuLight.direction = glm::vec4(glm::normalize(light.direction), 0.0f);
+        gpuLight.directionAndShadowFlag =
+                glm::vec4(glm::normalize(light.direction), light.shadows.castShadow ? 1.0f : 0.0f);
         return gpuLight;
     }
 
@@ -34,7 +35,8 @@ struct GpuLight {
         GpuLight gpuLight{};
         gpuLight.colorAndType = glm::vec4(light.color * luminousIntensity * exposure, 2.0f);
         gpuLight.positionAndInvRange = glm::vec4(light.position, inverseRange(light.range));
-        gpuLight.direction = glm::vec4(glm::normalize(light.direction), 0.0f);
+        gpuLight.directionAndShadowFlag =
+                glm::vec4(glm::normalize(light.direction), light.shadows.castShadow ? 1.0f : 0.0f);
         gpuLight.coneScaleOffset = glm::vec4(coneScale, -cosOuter * coneScale, 0.0f, 0.0f);
         return gpuLight;
     }

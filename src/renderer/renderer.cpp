@@ -24,11 +24,10 @@ static std::string materialKey(MeshInstance const& instance, bool doubleSided) {
     return instance.vertexShader + "+" + instance.resolvedFragShader + (doubleSided ? "+ds" : "");
 }
 
-static DirectionalLight const* shadowCastingDirectionalLight(Scene const& scene) {
+static Light const* shadowCastingLight(Scene const& scene) {
     for (auto const& light: scene.lights) {
-        if (auto const* directional = std::get_if<DirectionalLight>(&light);
-                directional && directional->castShadow) {
-            return directional;
+        if (auto const* shadows = shadowSettings(light); shadows && shadows->castShadow) {
+            return &light;
         }
     }
     return nullptr;
@@ -130,15 +129,21 @@ void Renderer::createEnvironment() {
 }
 
 void Renderer::createShadowPipeline() {
-    if (auto const* shadowCastingLight = shadowCastingDirectionalLight(mScene)) {
-        uint32_t shadowCasterCount = static_cast<uint32_t>(
-                std::count_if(mScene.meshInstances.begin(), mScene.meshInstances.end(),
-                        [](MeshInstance const& inst) { return inst.castShadows; }));
-        mShadowPipeline.emplace(*mCtx, *mCmds, shadowCasterCount);
-        mShadowPipeline->shadowType = shadowCastingLight->shadowType;
-        mShadowPipeline->shadowBias = shadowCastingLight->shadowBias;
-        mShadowPipeline->updateLightSpaceMatrix(*shadowCastingLight, mScene, *mMeshBuffer,
-                mGameObjects);
+    auto const* light = shadowCastingLight(mScene);
+    if (!light) {
+        return;
+    }
+    auto const& shadows = *shadowSettings(*light);
+    uint32_t shadowCasterCount = static_cast<uint32_t>(
+            std::count_if(mScene.meshInstances.begin(), mScene.meshInstances.end(),
+                    [](MeshInstance const& instance) { return instance.castShadows; }));
+    mShadowPipeline.emplace(*mCtx, *mCmds, shadowCasterCount);
+    mShadowPipeline->shadowType = shadows.shadowType;
+    mShadowPipeline->shadowBias = shadows.shadowBias;
+    if (auto const* directional = std::get_if<DirectionalLight>(light)) {
+        mShadowPipeline->updateLightSpaceMatrix(*directional, mScene, *mMeshBuffer, mGameObjects);
+    } else {
+        mShadowPipeline->updateLightSpaceMatrix(std::get<SpotLight>(*light));
     }
 }
 
@@ -397,13 +402,14 @@ void Renderer::updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& 
         return;
     }
     auto const& config = *mScene.volumetric;
-    auto const& light = *shadowCastingDirectionalLight(mScene);
+    auto const& light = *shadowCastingLight(mScene);
+    auto gpuLight = std::visit(
+            [exposure](auto const& source) { return GpuLight::from(source, exposure); }, light);
     VolumetricUBO ubo{
         .invViewProj = glm::inverse(projection * view),
         .lightSpaceMatrix = mShadowPipeline->lightSpaceMatrix,
         .cameraPos = glm::vec4(cameraPosition, 1.0f),
-        .lightDirection = glm::vec4(glm::normalize(light.direction), light.shadowBias),
-        .lightColor = glm::vec4(light.color * light.intensity * exposure, 1.0f),
+        .light = gpuLight,
         .extinctionCoefficient = config.extinctionCoefficient(),
         .scatteringAlbedo = config.scatteringAlbedo(),
         .maxDistance = config.maxDistance,
@@ -411,6 +417,7 @@ void Renderer::updateVolumetricUniforms(glm::mat4 const& view, glm::mat4 const& 
         .boundsMin = glm::vec4(config.boundsMin, config.bounded ? 1.0f : 0.0f),
         .boundsMax = glm::vec4(config.boundsMax, 0.0f),
         .stepCount = config.steps,
+        .shadowBias = shadowSettings(light)->shadowBias,
     };
     mVolumetricPipeline->update(mFrameIndex, ubo);
 }

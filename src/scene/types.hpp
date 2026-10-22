@@ -59,14 +59,20 @@ struct AmbientLight {
 enum class ShadowType { Hard, PCF };
 enum class ToneMapping { Reinhard, None };
 
-struct DirectionalLight {
-    glm::vec3 direction;
-    glm::vec3 color;
-    float intensity = 1.0f; // illuminance in lux = lm/m2
+struct ShadowSettings {
     bool castShadow = false;
     ShadowType shadowType = ShadowType::Hard;
     float shadowBias = 0.005f;
 };
+
+struct DirectionalLight {
+    glm::vec3 direction;
+    glm::vec3 color;
+    float intensity = 1.0f; // illuminance in lux = lm/m2
+    ShadowSettings shadows;
+};
+
+constexpr float SPOT_SHADOW_NEAR_DISTANCE = 0.01f;
 
 struct SpotLight {
     glm::vec3 position;
@@ -76,6 +82,7 @@ struct SpotLight {
     float innerConeAngle;   // degrees
     float outerConeAngle;   // degrees
     float range;
+    ShadowSettings shadows{ .shadowBias = 0.00005f };
 };
 
 struct PointLight {
@@ -86,6 +93,18 @@ struct PointLight {
 };
 
 using Light = std::variant<AmbientLight, DirectionalLight, SpotLight, PointLight>;
+
+inline ShadowSettings const* shadowSettings(Light const& light) {
+    return std::visit(
+            [](auto const& source) -> ShadowSettings const* {
+                if constexpr (requires { source.shadows; }) {
+                    return &source.shadows;
+                } else {
+                    return nullptr;
+                }
+            },
+            light);
+}
 
 struct SaoConfig {
     float radius = 1.0f;

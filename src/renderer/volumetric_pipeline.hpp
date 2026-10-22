@@ -6,6 +6,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include "core/config.hpp"
+#include "renderer/gpu_types.hpp"
 
 struct VulkanContext;
 struct GeometryPrepass;
@@ -15,8 +16,7 @@ struct VolumetricUBO {
     alignas(16) glm::mat4 invViewProj;
     alignas(16) glm::mat4 lightSpaceMatrix;
     alignas(16) glm::vec4 cameraPos;
-    alignas(16) glm::vec4 lightDirection; // xyz = toward light, w = shadow bias
-    alignas(16) glm::vec4 lightColor;
+    GpuLight light;
     alignas(16) float extinctionCoefficient;
     float scatteringAlbedo;
     float maxDistance;
@@ -24,6 +24,7 @@ struct VolumetricUBO {
     alignas(16) glm::vec4 boundsMin; // w = 1 if the participating medium is bounded
     alignas(16) glm::vec4 boundsMax;
     alignas(16) int stepCount;
+    float shadowBias;
 };
 
 struct VolumetricPipeline {

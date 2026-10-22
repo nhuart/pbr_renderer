@@ -39,7 +39,9 @@ function(add_shader_output shader_source output_name)
     set(output_path "${CMAKE_BINARY_DIR}/shaders/${output_name}.spv")
     set(shader_dependencies "${CMAKE_SOURCE_DIR}/${shader_source}")
     if(shader_source STREQUAL "shaders/pbr.frag" OR shader_source STREQUAL "shaders/volumetric.frag")
-        list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/medium.glsl")
+        list(APPEND shader_dependencies
+            "${CMAKE_SOURCE_DIR}/shaders/medium.glsl"
+            "${CMAKE_SOURCE_DIR}/shaders/lighting.glsl")
     endif()
     add_custom_command(
         OUTPUT "${output_path}"

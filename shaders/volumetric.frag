@@ -2,13 +2,13 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "medium.glsl"
+#include "lighting.glsl"
 
 layout(std140, binding = 0) uniform VolumetricUBO {
     mat4 invViewProj;
     mat4 lightSpaceMatrix;
     vec4 cameraPos;
-    vec4 lightDirection; // xyz = toward light, w = shadow-map depth bias
-    vec4 lightColor;
+    GpuLight light;
     float extinctionCoefficient;
     float scatteringAlbedo;
     float maxDistance;
@@ -16,6 +16,7 @@ layout(std140, binding = 0) uniform VolumetricUBO {
     vec4 boundsMin; // w = 1 for a bounded participating medium
     vec4 boundsMax;
     int stepCount;
+    float shadowBias;
 } ubo;
 
 layout(binding = 1) uniform sampler2D sceneDepth;
@@ -69,24 +70,25 @@ bool isInsideShadowCoverage(vec3 lightNdcPosition) {
 
 bool isVisibleToLight(vec3 worldPosition) {
     vec4 lightClipPosition = ubo.lightSpaceMatrix * vec4(worldPosition, 1.0);
+    if (lightClipPosition.w <= 0.0) {
+        return true;
+    }
     vec3 lightNdcPosition = lightClipPosition.xyz / lightClipPosition.w;
     if (!isInsideShadowCoverage(lightNdcPosition)) {
         return true; // Outside shadow coverage, no occluder is known; medium bounds are separate.
     }
     vec2 shadowUv = lightNdcPosition.xy * 0.5 + 0.5;
     float closestOccluderDepth = texture(shadowMap, shadowUv).r;
-    float shadowBias = ubo.lightDirection.w;
-    return lightNdcPosition.z - shadowBias <= closestOccluderDepth;
+    return lightNdcPosition.z - ubo.shadowBias <= closestOccluderDepth;
 }
 
-float transmittanceFromLight(vec3 worldPosition) {
-    // The unbounded model assumes unattenuated incident directional light.
+float transmittanceFromLight(vec3 worldPosition, LightSample light) {
+    // Match the surface pass's unattenuated incident-light model for unbounded fog.
     if (!isBoundedMedium()) {
         return 1.0;
     }
     // The source outside the bounded medium is assumed to have unit medium transmittance.
-    RaySegment lightRay = RaySegment(worldPosition, ubo.lightDirection.xyz, 0.0,
-            MEDIUM_MAX_RAY_DISTANCE);
+    RaySegment lightRay = RaySegment(worldPosition, light.L, 0.0, light.distance);
     return boundedMediumTransmittance(lightRay, ubo.boundsMin.xyz, ubo.boundsMax.xyz,
             ubo.extinctionCoefficient);
 }
@@ -108,6 +110,16 @@ float calculateSampleJitter(vec2 pixelCoordinates) {
     return fract(sin(dot(floor(pixelCoordinates), JITTER_HASH_WEIGHTS)) * JITTER_HASH_SCALE);
 }
 
+float sampleScatteringWeight(vec3 worldPosition, vec3 viewDirection) {
+    LightSample light = sampleLight(ubo.light, worldPosition);
+    if (light.attenuation <= 0.0 || !isVisibleToLight(worldPosition)) {
+        return 0.0;
+    }
+    // A spotlight's direction to the source, falloff and phase vary along the view ray.
+    float phase = evaluateHenyeyGreensteinPhase(dot(viewDirection, light.L), ubo.anisotropy);
+    return light.attenuation * phase * transmittanceFromLight(worldPosition, light);
+}
+
 MediumIntegration integrateMedium(RaySegment ray) {
     float pathLength = ray.endDistance - ray.startDistance;
     float stepLength = pathLength / float(ubo.stepCount);
@@ -121,9 +133,9 @@ MediumIntegration integrateMedium(RaySegment ray) {
         vec3 samplePosition = ray.origin + ray.direction * distanceAlongRay;
         // Weight scattering by transmittance after attenuation through this segment.
         transmittance *= segmentTransmittance;
-        if (ubo.scatteringAlbedo > 0.0 && isVisibleToLight(samplePosition)) {
+        if (ubo.scatteringAlbedo > 0.0) {
             scattering += transmittance * segmentOpticalDepth *
-                          transmittanceFromLight(samplePosition);
+                          sampleScatteringWeight(samplePosition, ray.direction);
         }
         if (transmittance < MIN_TRANSMITTANCE) {
             break;
@@ -142,8 +154,6 @@ void main() {
     }
 
     MediumIntegration medium = integrateMedium(viewRay);
-    float phase = evaluateHenyeyGreensteinPhase(dot(viewRay.direction, ubo.lightDirection.xyz),
-            ubo.anisotropy);
-    outColor = vec4(ubo.lightColor.rgb * (ubo.scatteringAlbedo * phase * medium.scattering),
+    outColor = vec4(ubo.light.colorAndType.rgb * (ubo.scatteringAlbedo * medium.scattering),
             medium.transmittance);
 }
