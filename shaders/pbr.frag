@@ -54,7 +54,8 @@ layout(location = 2) in vec3 fragNormal;
 layout(location = 3) in vec4 fragBaseColor;
 layout(location = 4) in vec3 fragWorldPos;
 #ifdef USE_NORMAL_MAP
-layout(location = 5) in vec3 fragTangent;
+layout(location = 5) in vec4 fragTangent;
+layout(location = 6) in vec2 fragNormalTexCoord;
 #endif
 
 layout(location = 0) out vec4 outColor;
@@ -171,15 +172,18 @@ vec3 iblAmbient(PbrShadingData surface) {
 #endif
 
 vec3 resolveNormal() {
-#ifdef USE_NORMAL_MAP
-    vec3 T = normalize(fragTangent);
     vec3 N = normalize(fragNormal);
-    T = normalize(T - dot(T, N) * N); // Gram-Schmidt re-orthogonalization
-    vec3 B = cross(N, T);
-    vec3 tsNormal = texture(normalMapSampler, fragTexCoord).rgb * 2.0 - 1.0;
+#ifdef USE_NORMAL_MAP
+    vec3 tsNormal = texture(normalMapSampler, fragNormalTexCoord).rgb * 2.0 - 1.0;
+    vec3 tangent = fragTangent.xyz - dot(fragTangent.xyz, N) * N;
+    if (dot(tangent, tangent) == 0.0 || fragTangent.w == 0.0) {
+        return N;
+    }
+    vec3 T = normalize(tangent);
+    vec3 B = cross(N, T) * sign(fragTangent.w);
     return normalize(mat3(T, B, N) * tsNormal);
 #else
-    return normalize(fragNormal);
+    return N;
 #endif
 }
 

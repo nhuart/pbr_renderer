@@ -16,12 +16,7 @@ import vulkan_hpp;
 namespace tinygltf {
 struct Model;
 struct Primitive;
-struct Accessor;
 } // namespace tinygltf
-
-namespace gltf {
-class VertexTransform;
-}
 
 struct VulkanContext;
 struct CommandService;
@@ -58,11 +53,8 @@ private:
     void loadModel(std::string const& gltfPath);
     void loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
             glm::mat4 const& transform, std::unordered_map<Vertex, uint32_t>& uniqueVertices);
-    std::vector<uint32_t> loadPrimitiveVertices(tinygltf::Model const& model,
-            tinygltf::Primitive const& primitive, gltf::VertexTransform const& transform,
+    uint32_t appendVertex(Vertex const& vertex,
             std::unordered_map<Vertex, uint32_t>& uniqueVertices);
-    void appendPrimitiveIndices(tinygltf::Model const& model, tinygltf::Accessor const& accessor,
-            std::vector<uint32_t> const& vertexRemap, bool reverseWinding);
     MeshIndexRange calculateMeshRange(uint32_t firstIndex, bool doubleSided) const;
     void loadEmbeddedTextures(tinygltf::Model const& model, std::string const& gltfPath);
     void uploadBuffers(VulkanContext const& ctx, CommandService const& cmds);

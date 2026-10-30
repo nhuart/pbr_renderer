@@ -16,7 +16,7 @@ This project is still in progress and the end goal is to render a visually appea
 - Vulkan SDK 1.4+ at `~/vulkansdk/1.4.x/`
 - `clang-format`, `clang-tidy` (`sudo apt install clang-format clang-tidy`)
 - `glfw3`, `glm`, `libtinygltf-dev` (`sudo apt install libglfw3-dev libglm-dev libtinygltf-dev`)
-- KTX-Software and nlohmann/json are fetched automatically by CMake via FetchContent
+- KTX-Software, nlohmann/json, and MikkTSpace are fetched automatically by CMake via FetchContent
 
 ### First-time setup
 
