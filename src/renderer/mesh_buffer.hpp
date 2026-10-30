@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstring>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +18,10 @@ struct Model;
 struct Primitive;
 struct Accessor;
 } // namespace tinygltf
+
+namespace gltf {
+class VertexTransform;
+}
 
 struct VulkanContext;
 struct CommandService;
@@ -52,14 +55,15 @@ struct MeshBuffer {
 
 private:
     void loadMeshes(Scene const& scene);
+    void loadModel(std::string const& gltfPath);
     void loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
+            glm::mat4 const& transform, std::unordered_map<Vertex, uint32_t>& uniqueVertices);
+    std::vector<uint32_t> loadPrimitiveVertices(tinygltf::Model const& model,
+            tinygltf::Primitive const& primitive, gltf::VertexTransform const& transform,
             std::unordered_map<Vertex, uint32_t>& uniqueVertices);
+    void appendPrimitiveIndices(tinygltf::Model const& model, tinygltf::Accessor const& accessor,
+            std::vector<uint32_t> const& vertexRemap, bool reverseWinding);
+    MeshIndexRange calculateMeshRange(uint32_t firstIndex, bool doubleSided) const;
+    void loadEmbeddedTextures(tinygltf::Model const& model, std::string const& gltfPath);
     void uploadBuffers(VulkanContext const& ctx, CommandService const& cmds);
-    static uint8_t const* accessorData(tinygltf::Model const& model, tinygltf::Accessor const& acc);
-    template<typename T>
-    static T readAt(uint8_t const* ptr, size_t index) {
-        T val{};
-        memcpy(&val, ptr + index * sizeof(T), sizeof(T));
-        return val;
-    }
 };
