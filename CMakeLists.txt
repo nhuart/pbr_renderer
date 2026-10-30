@@ -33,6 +33,14 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
+FetchContent_Declare(mikktspace
+    GIT_REPOSITORY https://github.com/mmikk/MikkTSpace.git
+    GIT_TAG 3e895b49d05ea07e4c2133156cfa94369e19e409
+)
+FetchContent_MakeAvailable(mikktspace)
+add_library(mikktspace STATIC "${mikktspace_SOURCE_DIR}/mikktspace.c")
+target_include_directories(mikktspace PUBLIC "${mikktspace_SOURCE_DIR}")
+
 find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 
 function(add_shader_output shader_source output_name)
@@ -144,6 +152,8 @@ add_executable(pbr_renderer
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
+    src/renderer/gltf_primitive.cpp
+    src/renderer/gltf_tangents.cpp
     src/renderer/light_buffer.cpp
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
@@ -182,7 +192,7 @@ target_include_directories(pbr_renderer PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
 )
-target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm ktx nlohmann_json::nlohmann_json)
+target_link_libraries(pbr_renderer PRIVATE Vulkan::Vulkan glfw glm::glm ktx nlohmann_json::nlohmann_json mikktspace)
 
 foreach(asset_dir IN ITEMS textures models scenes)
     add_custom_command(TARGET pbr_renderer POST_BUILD

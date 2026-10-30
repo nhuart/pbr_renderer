@@ -6,6 +6,7 @@
 #include "core/command_service.hpp"
 #include "core/context.hpp"
 #include "core/resource_allocator.hpp"
+#include "renderer/gltf_primitive.hpp"
 #include "renderer/mesh_buffer.hpp"
 
 #include <cstring>
@@ -16,51 +17,6 @@
 #include <utility>
 
 namespace {
-
-uint8_t const* accessorData(tinygltf::Model const& model, tinygltf::Accessor const& accessor) {
-    auto const& bufferView = model.bufferViews[accessor.bufferView];
-    return model.buffers[bufferView.buffer].data.data() + bufferView.byteOffset +
-           accessor.byteOffset;
-}
-
-template<typename T>
-T readAt(uint8_t const* bytes, size_t index) {
-    T value{};
-    memcpy(&value, bytes + index * sizeof(T), sizeof(T));
-    return value;
-}
-
-template<glm::length_t Components>
-class FloatAttribute {
-public:
-    FloatAttribute(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
-            char const* name) {
-        auto attribute = primitive.attributes.find(name);
-        if (attribute == primitive.attributes.end()) {
-            return;
-        }
-        auto const& accessor = model.accessors[attribute->second];
-        auto const& bufferView = model.bufferViews[accessor.bufferView];
-        mBytes = accessorData(model, accessor);
-        mStride = bufferView.byteStride ? bufferView.byteStride : Components * sizeof(float);
-    }
-
-    bool hasValues() const { return mBytes != nullptr; }
-
-    glm::vec<Components, float> read(size_t index) const {
-        glm::vec<Components, float> value(0.0f);
-        if (hasValues()) {
-            for (glm::length_t component = 0; component < Components; ++component) {
-                value[component] = readAt<float>(mBytes + index * mStride, component);
-            }
-        }
-        return value;
-    }
-
-private:
-    uint8_t const* mBytes = nullptr;
-    size_t mStride = 0;
-};
 
 tinygltf::Model loadGltfModel(std::string const& gltfPath) {
     tinygltf::Model model;
@@ -125,63 +81,29 @@ MeshBuffer::MeshBuffer(VulkanContext const& ctx, CommandService const& cmds, Sce
 
 void MeshBuffer::loadPrimitive(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
         glm::mat4 const& transform, std::unordered_map<Vertex, uint32_t>& uniqueVertices) {
+    gltf::PrimitiveGeometry geometry(model, primitive);
     gltf::VertexTransform vertexTransform(transform);
-    auto vertexRemap = loadPrimitiveVertices(model, primitive, vertexTransform, uniqueVertices);
-    appendPrimitiveIndices(model, model.accessors[primitive.indices], vertexRemap,
-            vertexTransform.reversesWinding());
-}
-
-std::vector<uint32_t> MeshBuffer::loadPrimitiveVertices(tinygltf::Model const& model,
-        tinygltf::Primitive const& primitive, gltf::VertexTransform const& transform,
-        std::unordered_map<Vertex, uint32_t>& uniqueVertices) {
-    size_t vertexCount = model.accessors[primitive.attributes.at("POSITION")].count;
-    FloatAttribute<3> positions(model, primitive, "POSITION");
-    FloatAttribute<2> texCoords(model, primitive, "TEXCOORD_0");
-    FloatAttribute<3> normals(model, primitive, "NORMAL");
-    FloatAttribute<4> tangents(model, primitive, "TANGENT");
-    std::vector<uint32_t> vertexRemap(vertexCount);
-    for (size_t i = 0; i < vertexCount; ++i) {
-        Vertex vertex{};
-        vertex.pos = positions.read(i);
-        vertex.color = { 1.0f, 1.0f, 1.0f };
-        vertex.texCoord = texCoords.read(i);
-        if (texCoords.hasValues()) {
-            vertex.texCoord.y = 1.0f - vertex.texCoord.y;
-        }
-        vertex.normal = normals.read(i);
-        vertex.tangent = tangents.read(i);
-        transform.apply(vertex);
-        auto [entry, inserted] =
-                uniqueVertices.insert({ vertex, static_cast<uint32_t>(vertices.size()) });
-        if (inserted) {
-            vertices.push_back(vertex);
-        }
-        vertexRemap[i] = entry->second;
-    }
-    return vertexRemap;
-}
-
-void MeshBuffer::appendPrimitiveIndices(tinygltf::Model const& model,
-        tinygltf::Accessor const& accessor, std::vector<uint32_t> const& vertexRemap,
-        bool reverseWinding) {
     size_t firstIndex = indices.size();
-    uint8_t const* indexBytes = accessorData(model, accessor);
-    for (size_t i = 0; i < accessor.count; ++i) {
-        uint32_t rawIndex = 0;
-        if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-            rawIndex = readAt<uint16_t>(indexBytes, i);
-        } else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-            rawIndex = readAt<uint32_t>(indexBytes, i);
-        } else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
-            rawIndex = readAt<uint8_t>(indexBytes, i);
-        }
-        indices.push_back(vertexRemap[rawIndex]);
+    for (size_t corner = 0; corner < geometry.indexCount(); ++corner) {
+        Vertex vertex = geometry.vertexAtCorner(corner);
+        vertexTransform.apply(vertex);
+        indices.push_back(appendVertex(vertex, uniqueVertices));
     }
-    if (reverseWinding) {
+    if (vertexTransform.reversesWinding()) {
         for (size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
             std::swap(indices[i + 1], indices[i + 2]);
         }
     }
+}
+
+uint32_t MeshBuffer::appendVertex(Vertex const& vertex,
+        std::unordered_map<Vertex, uint32_t>& uniqueVertices) {
+    auto [entry, inserted] =
+            uniqueVertices.insert({ vertex, static_cast<uint32_t>(vertices.size()) });
+    if (inserted) {
+        vertices.push_back(vertex);
+    }
+    return entry->second;
 }
 
 void MeshBuffer::loadMeshes(Scene const& scene) {

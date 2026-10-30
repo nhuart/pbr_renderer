@@ -15,10 +15,12 @@ struct Vertex {
     glm::vec2 texCoord;
     glm::vec3 normal;
     glm::vec4 tangent; // xyz = tangent direction, w = handedness (+1 or -1)
+    glm::vec2 normalTexCoord;
 
     bool operator==(Vertex const& other) const {
         return pos == other.pos && color == other.color && texCoord == other.texCoord &&
-               normal == other.normal && tangent == other.tangent;
+               normal == other.normal && tangent == other.tangent &&
+               normalTexCoord == other.normalTexCoord;
     }
 
     static vk::VertexInputBindingDescription getBindingDescription() {
@@ -27,7 +29,7 @@ struct Vertex {
             .inputRate = vk::VertexInputRate::eVertex };
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 5> getAttributeDescriptions() {
+    static std::array<vk::VertexInputAttributeDescription, 6> getAttributeDescriptions() {
         return { { { .location = 0,
                        .binding = 0,
                        .format = vk::Format::eR32G32B32Sfloat,
@@ -47,7 +49,11 @@ struct Vertex {
             { .location = 4,
                 .binding = 0,
                 .format = vk::Format::eR32G32B32A32Sfloat,
-                .offset = offsetof(Vertex, tangent) } } };
+                .offset = offsetof(Vertex, tangent) },
+            { .location = 5,
+                .binding = 0,
+                .format = vk::Format::eR32G32Sfloat,
+                .offset = offsetof(Vertex, normalTexCoord) } } };
     }
 };
 
@@ -59,6 +65,8 @@ struct hash<Vertex> {
         hashValue = (hashValue ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1;
         hashValue = (hashValue ^ (hash<glm::vec2>()(vertex.texCoord) << 1)) >> 1;
         hashValue = (hashValue ^ (hash<glm::vec3>()(vertex.normal) << 1)) >> 1;
+        hashValue = (hashValue ^ (hash<glm::vec4>()(vertex.tangent) << 1)) >> 1;
+        hashValue = (hashValue ^ (hash<glm::vec2>()(vertex.normalTexCoord) << 1)) >> 1;
         return hashValue;
     }
 };
