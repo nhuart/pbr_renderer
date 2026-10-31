@@ -36,7 +36,7 @@ struct ResourceManager {
         }
         LoadingTimer timer;
         auto const& definition = model.textures.at(reference.texture);
-        auto const& image = model.images.at(definition.image);
+        auto const& image = model.images.at(definition.image).decode();
         auto const& texture =
                 cacheTexture(key, std::make_unique<TextureAtlas>(ctx, cmds, image.pixels.data(),
                                           image.width, image.height, usage, definition.sampler));

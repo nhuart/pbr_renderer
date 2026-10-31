@@ -13,7 +13,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -23,33 +22,30 @@
 
 namespace {
 
-struct EmbeddedUriImage {
-    int index;
-    std::vector<uint8_t> bytes;
-};
-
-bool loadImagePreservingEncodedData(tinygltf::Image* image, int index, std::string* error,
-        std::string* warning, int width, int height, unsigned char const* bytes, int size,
-        void* userData) {
-    // TinyGLTF discards data URIs after decoding, so retain their original encoded bytes.
-    if (image->bufferView < 0 && image->uri.empty()) {
-        auto& images = *static_cast<std::vector<EmbeddedUriImage>*>(userData);
-        images.push_back({ index, std::vector<uint8_t>(bytes, bytes + size) });
+bool retainEncodedImage(tinygltf::Image* image, int, std::string*, std::string*, int, int,
+        unsigned char const* bytes, int size, void*) {
+    image->as_is = true;
+    // GLB images already live in the binary buffer. Only URI images need another copy.
+    if (image->bufferView < 0) {
+        image->image.assign(bytes, bytes + size);
     }
-    return tinygltf::LoadImageData(image, index, error, warning, width, height, bytes, size,
-            nullptr);
+    return true;
 }
 
-void embedUriImages(tinygltf::Model& model, std::vector<EmbeddedUriImage> const& images) {
-    for (auto const& image: images) {
+void embedUriImages(tinygltf::Model& model) {
+    for (auto& image: model.images) {
+        if (image.bufferView >= 0 || !image.uri.empty()) {
+            continue;
+        }
+        // TinyGLTF discards data URIs; embed their retained compressed bytes before writing.
         auto& buffer = model.buffers.at(0).data;
         buffer.resize((buffer.size() + 3) & ~size_t{ 3 });
         tinygltf::BufferView view;
         view.buffer = 0;
         view.byteOffset = buffer.size();
-        view.byteLength = image.bytes.size();
-        buffer.insert(buffer.end(), image.bytes.begin(), image.bytes.end());
-        model.images.at(image.index).bufferView = static_cast<int>(model.bufferViews.size());
+        view.byteLength = image.image.size();
+        buffer.insert(buffer.end(), image.image.begin(), image.image.end());
+        image.bufferView = static_cast<int>(model.bufferViews.size());
         model.bufferViews.push_back(std::move(view));
     }
 }
@@ -91,20 +87,26 @@ MaterialDefinition readMaterial(tinygltf::Material const& material) {
         .normalTexture = { material.normalTexture.index, material.normalTexture.texCoord } };
 }
 
-EmbeddedImage readImage(tinygltf::Image const& image) {
+EmbeddedImage readImage(tinygltf::Model const& model, int index) {
+    auto const& image = model.images.at(index);
+    if (image.as_is) {
+        if (image.bufferView < 0) {
+            return EmbeddedImage(image.image);
+        }
+        auto const& view = model.bufferViews.at(image.bufferView);
+        auto const& buffer = model.buffers.at(view.buffer).data;
+        if (view.byteOffset > buffer.size() || view.byteLength > buffer.size() - view.byteOffset) {
+            throw std::runtime_error("embedded glTF image buffer view is out of bounds");
+        }
+        return EmbeddedImage(std::vector<uint8_t>(buffer.begin() + view.byteOffset,
+                buffer.begin() + view.byteOffset + view.byteLength));
+    }
     if (image.bits != 8 || image.component != 4 || image.width <= 0 || image.height <= 0 ||
             image.image.size() != static_cast<size_t>(image.width) * image.height * 4) {
         throw std::runtime_error("embedded glTF textures require decoded RGBA8 images");
     }
-    EmbeddedImage output{ .pixels = std::vector<uint8_t>(image.image.size()),
-        .width = static_cast<uint32_t>(image.width),
-        .height = static_cast<uint32_t>(image.height) };
-    size_t rowBytes = output.width * 4;
-    for (uint32_t row = 0; row < output.height; ++row) {
-        memcpy(output.pixels.data() + row * rowBytes,
-                image.image.data() + (output.height - 1 - row) * rowBytes, rowBytes);
-    }
-    return output;
+    return EmbeddedImage::fromPixels(image.image, static_cast<uint32_t>(image.width),
+            static_cast<uint32_t>(image.height));
 }
 
 void readMaterials(tinygltf::Model const& model, ModelAsset& asset) {
@@ -132,8 +134,8 @@ void readImages(tinygltf::Model const& model, ModelAsset& asset) {
             }
             int imageIndex = asset.textures.at(reference.texture).image;
             auto& image = asset.images.at(imageIndex);
-            if (image.pixels.empty()) {
-                image = readImage(model.images.at(imageIndex));
+            if (image.empty()) {
+                image = readImage(model, imageIndex);
             }
         }
     }
@@ -275,8 +277,7 @@ gltf::ImportedModel gltf::importModel(tinygltf::Model const& model) {
 gltf::ImportedModel gltf::loadModel(std::string const& path) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
-    std::vector<EmbeddedUriImage> embeddedUriImages;
-    loader.SetImageLoader(loadImagePreservingEncodedData, &embeddedUriImages);
+    loader.SetImageLoader(retainEncodedImage, nullptr);
     std::string warning;
     std::string error;
     bool loaded = loader.LoadBinaryFromFile(&model, &error, &warning, path);
@@ -289,7 +290,7 @@ gltf::ImportedModel gltf::loadModel(std::string const& path) {
     bool baked = bakeMissingTangents(model);
     auto imported = importModel(model);
     if (baked) {
-        embedUriImages(model, embeddedUriImages);
+        embedUriImages(model);
         saveBakedTangents(model, path);
     }
     return imported;

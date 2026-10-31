@@ -1,5 +1,7 @@
 #pragma once
 
+#include "renderer/embedded_image.hpp"
+
 #include <cstdint>
 #include <vector>
 
@@ -22,12 +24,6 @@ struct TextureSampler {
     vk::SamplerMipmapMode mipmapMode = vk::SamplerMipmapMode::eLinear;
     vk::SamplerAddressMode wrapU = vk::SamplerAddressMode::eRepeat;
     vk::SamplerAddressMode wrapV = vk::SamplerAddressMode::eRepeat;
-};
-
-struct EmbeddedImage {
-    std::vector<uint8_t> pixels; // RGBA8, vertically flipped to match imported UVs.
-    uint32_t width = 0;
-    uint32_t height = 0;
 };
 
 struct TextureDefinition {

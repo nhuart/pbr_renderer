@@ -153,9 +153,11 @@ add_executable(pbr_renderer
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
+    src/renderer/embedded_image.cpp
     src/renderer/gltf_model.cpp
     src/renderer/gltf_primitive.cpp
     src/renderer/gltf_tangents.cpp
+    src/renderer/gltf_tangent_baker.cpp
     src/renderer/light_buffer.cpp
     src/renderer/cubemap_atlas.cpp
     src/renderer/skybox_pipeline.cpp
