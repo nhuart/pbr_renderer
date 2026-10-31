@@ -40,6 +40,7 @@ struct GeometryPrepass {
     vk::raii::PipelineLayout normalsPipeLayout{ nullptr };
     vk::raii::DescriptorPool normalsDescPool{ nullptr };
     vk::raii::Pipeline normalsPipeline{ nullptr };
+    vk::raii::Pipeline doubleSidedNormalsPipeline{ nullptr };
 
     struct NormalsObject {
         std::array<vk::raii::Buffer, MAX_FRAMES_IN_FLIGHT> uboBuffers{ nullptr, nullptr };

@@ -11,7 +11,7 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 normalMatrix;
     vec4 baseColor;
     vec4 cameraPos;
-    vec4 pbrParams; // x=metallic, y=roughness, z=ambientIntensity
+    vec4 pbrParams; // x=metallic, y=roughness, z=ambientIntensity, w=normalScale
 } ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
@@ -175,6 +175,7 @@ vec3 resolveNormal() {
     vec3 N = normalize(fragNormal);
 #ifdef USE_NORMAL_MAP
     vec3 tsNormal = texture(normalMapSampler, fragNormalTexCoord).rgb * 2.0 - 1.0;
+    tsNormal.xy *= ubo.pbrParams.w;
     vec3 tangent = fragTangent.xyz - dot(fragTangent.xyz, N) * N;
     if (dot(tangent, tangent) == 0.0 || fragTangent.w == 0.0) {
         return N;

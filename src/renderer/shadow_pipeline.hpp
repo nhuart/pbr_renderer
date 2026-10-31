@@ -38,6 +38,7 @@ struct ShadowPipeline {
     vk::raii::PipelineLayout pipelineLayout{ nullptr };
     vk::raii::DescriptorPool descriptorPool{ nullptr };
     vk::raii::Pipeline pipeline{ nullptr };
+    vk::raii::Pipeline doubleSidedPipeline{ nullptr };
 
     // Per-object data (one entry per render object that castShadows)
     std::vector<ShadowObjectData> objects;

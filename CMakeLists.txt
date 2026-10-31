@@ -92,7 +92,7 @@ endforeach()
 add_shader_output("shaders/tonemap.frag" "tonemap.frag")
 add_shader_output("shaders/tonemap.frag" "tonemap_none.frag" -DNO_TONEMAP)
 
-# Keep suffix order in sync with Renderer::resolveShaderVariants().
+# Keep suffix order in sync with Renderer::resolveMaterialPipeline().
 function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
     set(variant_name pbr)
     set(define_flags)
@@ -147,11 +147,13 @@ add_executable(pbr_renderer
     src/core/resource_allocator.cpp
     src/core/sync.cpp
     src/renderer/renderer.cpp
+    src/renderer/renderer_materials.cpp
     src/renderer/renderer_capture.cpp
     src/renderer/renderer_graph.cpp
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
+    src/renderer/gltf_model.cpp
     src/renderer/gltf_primitive.cpp
     src/renderer/gltf_tangents.cpp
     src/renderer/light_buffer.cpp
