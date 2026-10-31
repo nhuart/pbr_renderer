@@ -403,6 +403,10 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 }
 
 void Renderer::drawFrame() {
+    // Finish the previous use of this frame slot before overwriting its mapped uniforms.
+    std::ignore = mCtx->device.waitForFences(*mSync->inFlightFences[mFrameIndex], vk::True,
+            std::numeric_limits<uint64_t>::max());
+
     if (mScene.particles) {
         std::ignore = mCtx->device.waitForFences(*mSync->computeInFlightFences[mFrameIndex],
                 vk::True, std::numeric_limits<uint64_t>::max());
@@ -424,9 +428,6 @@ void Renderer::drawFrame() {
         };
         mCtx->computeQueue.submit(computeSubmitInfo, *mSync->computeInFlightFences[mFrameIndex]);
     }
-
-    std::ignore = mCtx->device.waitForFences(*mSync->inFlightFences[mFrameIndex], vk::True,
-            std::numeric_limits<uint64_t>::max());
 
     auto [acquireResult, imageIndex] =
             mSwapchain->swapChain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
