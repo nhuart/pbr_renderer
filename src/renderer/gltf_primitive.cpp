@@ -4,6 +4,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <tiny_gltf.h>
 
@@ -167,4 +168,20 @@ Vertex gltf::PrimitiveGeometry::vertexAtCorner(size_t corner) const {
         vertex.tangent = mCornerTangents.at(corner);
     }
     return vertex;
+}
+
+void gltf::PrimitiveGeometry::indexGeneratedTangents() {
+    if (mCornerTangents.empty()) {
+        return;
+    }
+    auto remap = splitTangentSeams(mVertices.size(), mIndices, mCornerTangents);
+    mVertices.reserve(remap.sources.size());
+    for (size_t i = mVertices.size(); i < remap.sources.size(); ++i) {
+        mVertices.push_back(mVertices.at(remap.sources[i]));
+    }
+    for (size_t i = 0; i < mVertices.size(); ++i) {
+        mVertices[i].tangent = remap.tangents[i];
+    }
+    mIndices = std::move(remap.indices);
+    mCornerTangents.clear();
 }

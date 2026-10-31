@@ -19,6 +19,8 @@ public:
 
     size_t indexCount() const { return mIndices.size(); }
     Vertex vertexAtCorner(size_t corner) const;
+    void indexGeneratedTangents();
+    std::span<Vertex const> vertices() const { return mVertices; }
     std::span<uint32_t const> indices() const { return mIndices; }
     std::span<glm::vec4 const> generatedTangents() const { return mCornerTangents; }
 

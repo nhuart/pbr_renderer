@@ -11,6 +11,7 @@
 #include "renderer/gltf_tangent_baker.hpp"
 #include "renderer/gltf_transform.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -18,7 +19,6 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
-#include <unordered_map>
 #include <utility>
 
 namespace {
@@ -156,10 +156,11 @@ public:
     void append(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
             glm::mat4 const& transform) {
         gltf::PrimitiveGeometry geometry(model, primitive);
+        geometry.indexGeneratedTangents();
         gltf::VertexTransform vertexTransform(transform);
         IndexRange range{ static_cast<uint32_t>(mOutput.indices.size()),
             static_cast<uint32_t>(geometry.indexCount()) };
-        appendCorners(geometry, vertexTransform);
+        appendIndexedVertices(geometry, vertexTransform);
         if (vertexTransform.reversesWinding()) {
             reverseWinding(range);
         }
@@ -167,17 +168,19 @@ public:
     }
 
 private:
-    void appendCorners(gltf::PrimitiveGeometry const& geometry,
+    void appendIndexedVertices(gltf::PrimitiveGeometry const& geometry,
             gltf::VertexTransform const& transform) {
-        for (size_t corner = 0; corner < geometry.indexCount(); ++corner) {
-            auto vertex = geometry.vertexAtCorner(corner);
-            transform.apply(vertex);
-            auto [entry, inserted] =
-                    mUniqueVertices.emplace(vertex, static_cast<uint32_t>(mOutput.vertices.size()));
-            if (inserted) {
+        constexpr uint32_t unmapped = std::numeric_limits<uint32_t>::max();
+        std::vector<uint32_t> remap(geometry.vertices().size(), unmapped);
+        for (uint32_t source: geometry.indices()) {
+            auto& index = remap.at(source);
+            if (index == unmapped) {
+                auto vertex = geometry.vertices()[source];
+                transform.apply(vertex);
+                index = static_cast<uint32_t>(mOutput.vertices.size());
                 mOutput.vertices.push_back(vertex);
             }
-            mOutput.indices.push_back(entry->second);
+            mOutput.indices.push_back(index);
         }
     }
 
@@ -189,8 +192,24 @@ private:
     }
 
     gltf::ImportedModel& mOutput;
-    std::unordered_map<Vertex, uint32_t> mUniqueVertices;
 };
+
+void reserveGeometry(tinygltf::Model const& model, std::vector<gltf::MeshInstance> const& instances,
+        gltf::ImportedModel& output) {
+    size_t vertices = 0;
+    size_t indices = 0;
+    for (auto const& instance: instances) {
+        for (auto const& primitive: model.meshes.at(instance.mesh).primitives) {
+            size_t vertexCount = model.accessors.at(primitive.attributes.at("POSITION")).count;
+            size_t indexCount = primitive.indices < 0 ? vertexCount
+                                                      : model.accessors.at(primitive.indices).count;
+            vertices += std::min(vertexCount, indexCount);
+            indices += indexCount;
+        }
+    }
+    output.vertices.reserve(vertices);
+    output.indices.reserve(indices);
+}
 
 void calculateBounds(gltf::ImportedModel& model) {
     if (model.vertices.empty()) {
@@ -240,8 +259,10 @@ gltf::ImportedModel gltf::importModel(tinygltf::Model const& model) {
     readMaterials(model, output.asset);
     readTextures(model, output.asset);
     readImages(model, output.asset);
+    auto instances = meshInstances(model);
+    reserveGeometry(model, instances, output);
     ModelGeometryBuilder geometry(output);
-    for (auto const& instance: meshInstances(model)) {
+    for (auto const& instance: instances) {
         for (auto const& primitive: model.meshes.at(instance.mesh).primitives) {
             geometry.append(model, primitive, instance.transform);
         }

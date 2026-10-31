@@ -1,12 +1,28 @@
 #include "renderer/gltf_tangents.hpp"
 
 #include <limits>
+#include <numeric>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
+#include <glm/gtx/hash.hpp>
 #include <mikktspace.h>
 
 namespace {
+
+struct TangentVertex {
+    uint32_t source;
+    glm::vec4 tangent;
+
+    bool operator==(TangentVertex const&) const = default;
+};
+
+struct TangentVertexHash {
+    size_t operator()(TangentVertex const& vertex) const {
+        return std::hash<uint32_t>{}(vertex.source) ^ (std::hash<glm::vec4>{}(vertex.tangent) << 1);
+    }
+};
 
 struct TangentMesh {
     std::span<Vertex const> vertices;
@@ -81,6 +97,36 @@ SMikkTSpaceInterface tangentCallbacks() {
 }
 
 } // namespace
+
+gltf::TangentVertexRemap gltf::splitTangentSeams(size_t vertexCount,
+        std::span<uint32_t const> indices, std::span<glm::vec4 const> cornerTangents) {
+    TangentVertexRemap remap;
+    remap.sources.resize(vertexCount);
+    std::iota(remap.sources.begin(), remap.sources.end(), 0);
+    remap.tangents.resize(vertexCount, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    remap.indices.reserve(indices.size());
+    std::vector<bool> assigned(vertexCount, false);
+    std::unordered_map<TangentVertex, uint32_t, TangentVertexHash> splitVertices;
+    for (size_t corner = 0; corner < indices.size(); ++corner) {
+        uint32_t source = indices[corner];
+        auto const& tangent = cornerTangents[corner];
+        uint32_t index = source;
+        if (!assigned.at(source)) {
+            remap.tangents[source] = tangent;
+            assigned[source] = true;
+        } else if (remap.tangents[source] != tangent) {
+            auto [entry, inserted] = splitVertices.try_emplace(TangentVertex{ source, tangent },
+                    static_cast<uint32_t>(remap.sources.size()));
+            index = entry->second;
+            if (inserted) {
+                remap.sources.push_back(source);
+                remap.tangents.push_back(tangent);
+            }
+        }
+        remap.indices.push_back(index);
+    }
+    return remap;
+}
 
 std::vector<glm::vec4> gltf::generateTangents(std::span<Vertex const> vertices,
         std::span<uint32_t const> indices) {

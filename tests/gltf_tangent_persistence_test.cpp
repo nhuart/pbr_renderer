@@ -121,6 +121,66 @@ void compareGeometry(gltf::ImportedModel const& original, gltf::ImportedModel co
     }
 }
 
+void checkIndexedGeometry() {
+    auto imported = gltf::importModel(makeModel());
+    auto const& primitives = imported.asset.primitives;
+    require(primitives.size() == 8, "node instances lost primitive ranges");
+    auto const& generated = primitives[0].range;
+    auto a = imported.indices.at(generated.firstIndex);
+    auto b = imported.indices.at(generated.firstIndex + 3);
+    require(a != b && imported.vertices[a].pos == imported.vertices[b].pos &&
+                    imported.vertices[a].tangent.w == -imported.vertices[b].tangent.w,
+            "mirrored UV seam merged conflicting tangent handedness");
+    for (size_t primitive: { 1, 2 }) {
+        auto first = primitives[primitive].range.firstIndex;
+        require(imported.indices.at(first) == imported.indices.at(first + 3) &&
+                        imported.indices.at(first + 2) == imported.indices.at(first + 4),
+                "shared source indices were expanded into separate vertices");
+    }
+    require(imported.asset.boundsMin == glm::vec3(-1, 0, 0) &&
+                    imported.asset.boundsMax == glm::vec3(4, 1, 0),
+            "node instances lost their transformed bounds");
+    for (auto const& primitive: primitives) {
+        auto first = primitive.range.firstIndex;
+        auto const& v0 = imported.vertices.at(imported.indices.at(first));
+        auto const& v1 = imported.vertices.at(imported.indices.at(first + 1));
+        auto const& v2 = imported.vertices.at(imported.indices.at(first + 2));
+        require(glm::cross(v1.pos - v0.pos, v2.pos - v0.pos).z > 0,
+                "mirrored node transform reversed triangle winding");
+    }
+}
+
+void checkUnreferencedVertices() {
+    auto model = makeModel();
+    model.meshes[0].primitives = { model.meshes[0].primitives[1] };
+    model.scenes[0].nodes = { 0 };
+    auto const& primitive = model.meshes[0].primitives[0];
+    auto const& position = model.accessors.at(primitive.attributes.at("POSITION"));
+    auto positionOffset = model.bufferViews.at(position.bufferView).byteOffset;
+    float unreferenced[] = { 1000, 2000, 3000 };
+    memcpy(model.buffers[0].data.data() + positionOffset + 9 * sizeof(float), unreferenced,
+            sizeof(unreferenced));
+    auto const& indices = model.accessors.at(primitive.indices);
+    auto indexOffset = model.bufferViews.at(indices.bufferView).byteOffset;
+    uint32_t corners[] = { 0, 1, 2, 0, 1, 2 };
+    memcpy(model.buffers[0].data.data() + indexOffset, corners, sizeof(corners));
+    auto imported = gltf::importModel(model);
+    require(imported.vertices.size() == 3 && imported.indices.size() == 6,
+            "unreferenced vertices were imported or shared indices were expanded");
+    require(imported.asset.boundsMin == glm::vec3(0) &&
+                    imported.asset.boundsMax == glm::vec3(1, 1, 0),
+            "unreferenced positions affected model bounds");
+    corners[5] = 4;
+    memcpy(model.buffers[0].data.data() + indexOffset, corners, sizeof(corners));
+    bool rejected = false;
+    try {
+        gltf::importModel(model);
+    } catch (std::out_of_range const&) {
+        rejected = true;
+    }
+    require(rejected, "out-of-range source index was not rejected");
+}
+
 tinygltf::Model readModel(std::filesystem::path const& path) {
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
@@ -208,11 +268,13 @@ int main() {
                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     try {
         std::filesystem::create_directory(directory);
+        checkIndexedGeometry();
+        checkUnreferencedVertices();
         checkPersistence(directory);
         checkUnmappedModel(directory);
         checkWriteFailure(directory);
         std::filesystem::remove_all(directory);
-        std::cout << "Tangent persistence regression checks passed\n";
+        std::cout << "Indexed import and tangent persistence regression checks passed\n";
     } catch (std::exception const& error) {
         std::error_code ignored;
         std::filesystem::remove_all(directory, ignored);

@@ -1,63 +1,14 @@
 #include "renderer/gltf_tangent_baker.hpp"
 
 #include "renderer/gltf_primitive.hpp"
+#include "renderer/gltf_tangents.hpp"
 #include "renderer/gltf_transform.hpp"
 
 #include <cstring>
-#include <numeric>
 #include <stdexcept>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace {
-
-struct TangentVertex {
-    uint32_t source;
-    glm::vec4 tangent;
-
-    bool operator==(TangentVertex const&) const = default;
-};
-
-struct TangentVertexHash {
-    size_t operator()(TangentVertex const& vertex) const {
-        return std::hash<uint32_t>{}(vertex.source) ^ (std::hash<glm::vec4>{}(vertex.tangent) << 1);
-    }
-};
-
-struct BakedVertices {
-    std::vector<uint32_t> sources;
-    std::vector<uint32_t> indices;
-    std::vector<glm::vec4> tangents;
-};
-
-BakedVertices splitTangentSeams(gltf::PrimitiveGeometry const& geometry, size_t vertexCount) {
-    BakedVertices baked;
-    baked.sources.resize(vertexCount);
-    std::iota(baked.sources.begin(), baked.sources.end(), 0);
-    baked.tangents.resize(vertexCount, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
-    baked.indices.reserve(geometry.indexCount());
-    std::vector<bool> assigned(vertexCount, false);
-    std::unordered_map<TangentVertex, uint32_t, TangentVertexHash> splitVertices;
-    for (size_t corner = 0; corner < geometry.indexCount(); ++corner) {
-        uint32_t source = geometry.indices()[corner];
-        auto const& tangent = geometry.generatedTangents()[corner];
-        uint32_t index = source;
-        if (!assigned.at(source)) {
-            baked.tangents[source] = tangent;
-            assigned[source] = true;
-        } else if (baked.tangents[source] != tangent) {
-            auto [entry, inserted] = splitVertices.try_emplace(TangentVertex{ source, tangent },
-                    static_cast<uint32_t>(baked.sources.size()));
-            index = entry->second;
-            if (inserted) {
-                baked.sources.push_back(source);
-                baked.tangents.push_back(tangent);
-            }
-        }
-        baked.indices.push_back(index);
-    }
-    return baked;
-}
 
 int appendBufferView(tinygltf::Model& model, std::span<uint8_t const> bytes, int target) {
     auto& buffer = model.buffers.at(0).data;
@@ -116,7 +67,8 @@ std::span<uint8_t const> bytesOf(std::vector<T> const& values) {
 void storeTangents(tinygltf::Model& model, tinygltf::Primitive& primitive,
         gltf::PrimitiveGeometry const& geometry) {
     size_t vertexCount = model.accessors.at(primitive.attributes.at("POSITION")).count;
-    auto baked = splitTangentSeams(geometry, vertexCount);
+    auto baked =
+            gltf::splitTangentSeams(vertexCount, geometry.indices(), geometry.generatedTangents());
     if (baked.sources.size() != vertexCount) {
         // Keep every attribute and morph target aligned with the split source vertices.
         for (auto& [name, accessor]: primitive.attributes) {
