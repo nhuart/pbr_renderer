@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <vector>
 
 #include "renderer/vertex.hpp"
@@ -18,6 +19,8 @@ public:
 
     size_t indexCount() const { return mIndices.size(); }
     Vertex vertexAtCorner(size_t corner) const;
+    std::span<uint32_t const> indices() const { return mIndices; }
+    std::span<glm::vec4 const> generatedTangents() const { return mCornerTangents; }
 
 private:
     void generateMissingTangents(tinygltf::Model const& model,

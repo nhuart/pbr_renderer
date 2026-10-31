@@ -8,9 +8,13 @@
 
 #include "renderer/gltf_model.hpp"
 #include "renderer/gltf_primitive.hpp"
+#include "renderer/gltf_tangent_baker.hpp"
 #include "renderer/gltf_transform.hpp"
 
+#include <chrono>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -18,6 +22,37 @@
 #include <utility>
 
 namespace {
+
+struct EmbeddedUriImage {
+    int index;
+    std::vector<uint8_t> bytes;
+};
+
+bool loadImagePreservingEncodedData(tinygltf::Image* image, int index, std::string* error,
+        std::string* warning, int width, int height, unsigned char const* bytes, int size,
+        void* userData) {
+    // TinyGLTF discards data URIs after decoding, so retain their original encoded bytes.
+    if (image->bufferView < 0 && image->uri.empty()) {
+        auto& images = *static_cast<std::vector<EmbeddedUriImage>*>(userData);
+        images.push_back({ index, std::vector<uint8_t>(bytes, bytes + size) });
+    }
+    return tinygltf::LoadImageData(image, index, error, warning, width, height, bytes, size,
+            nullptr);
+}
+
+void embedUriImages(tinygltf::Model& model, std::vector<EmbeddedUriImage> const& images) {
+    for (auto const& image: images) {
+        auto& buffer = model.buffers.at(0).data;
+        buffer.resize((buffer.size() + 3) & ~size_t{ 3 });
+        tinygltf::BufferView view;
+        view.buffer = 0;
+        view.byteOffset = buffer.size();
+        view.byteLength = image.bytes.size();
+        buffer.insert(buffer.end(), image.bytes.begin(), image.bytes.end());
+        model.images.at(image.index).bufferView = static_cast<int>(model.bufferViews.size());
+        model.bufferViews.push_back(std::move(view));
+    }
+}
 
 vk::SamplerAddressMode wrapMode(int mode) {
     switch (mode) {
@@ -169,6 +204,35 @@ void calculateBounds(gltf::ImportedModel& model) {
     }
 }
 
+void saveBakedTangents(tinygltf::Model const& model, std::string const& path) {
+    namespace fs = std::filesystem;
+    auto temporary = fs::path(
+            path + ".tangents-" +
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".tmp");
+    try {
+        std::ofstream stream(temporary, std::ios::binary);
+        tinygltf::TinyGLTF writer;
+        // Preserve image URIs and original compressed bytes rather than re-encoding decoded pixels.
+        writer.SetImageWriter(nullptr, nullptr);
+        if (!stream || !writer.WriteGltfSceneToStream(&model, stream, false, true)) {
+            throw std::runtime_error("could not serialize the tangent-enriched GLB");
+        }
+        stream.close();
+        if (!stream) {
+            throw std::runtime_error("could not finish writing the tangent-enriched GLB");
+        }
+        fs::permissions(temporary, fs::status(path).permissions());
+        // Replace only after a complete write, keeping the original intact on write failure.
+        fs::rename(temporary, path);
+        std::cout << "Generated tangents saved (" << path << ")\n";
+    } catch (std::exception const& error) {
+        std::error_code ignored;
+        fs::remove(temporary, ignored);
+        std::cerr << "glTF warning: could not save generated tangents (" << path
+                  << "): " << error.what() << '\n';
+    }
+}
+
 } // namespace
 
 gltf::ImportedModel gltf::importModel(tinygltf::Model const& model) {
@@ -190,6 +254,8 @@ gltf::ImportedModel gltf::importModel(tinygltf::Model const& model) {
 gltf::ImportedModel gltf::loadModel(std::string const& path) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
+    std::vector<EmbeddedUriImage> embeddedUriImages;
+    loader.SetImageLoader(loadImagePreservingEncodedData, &embeddedUriImages);
     std::string warning;
     std::string error;
     bool loaded = loader.LoadBinaryFromFile(&model, &error, &warning, path);
@@ -199,5 +265,11 @@ gltf::ImportedModel gltf::loadModel(std::string const& path) {
     if (!loaded) {
         throw std::runtime_error("failed to load glTF model (" + path + "): " + error);
     }
-    return importModel(model);
+    bool baked = bakeMissingTangents(model);
+    auto imported = importModel(model);
+    if (baked) {
+        embedUriImages(model, embeddedUriImages);
+        saveBakedTangents(model, path);
+    }
+    return imported;
 }
