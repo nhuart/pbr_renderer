@@ -1,5 +1,7 @@
 #include "renderer/renderer.hpp"
 
+#include "core/loading_timer.hpp"
+
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -46,10 +48,12 @@ Renderer::Renderer(std::string scenePath, std::string screenshotPath, bool exitA
           mExitAfterScreenshot(exitAfterScreenshot) {}
 
 void Renderer::run() {
+    LoadingTimer timer;
     mScene = loadScene(mScenePath);
     mCamera = mScene.camera;
     initWindow();
     initVulkan();
+    timer.log("Total loading time");
     mainLoop();
     cleanup();
 }
@@ -110,9 +114,11 @@ void Renderer::createSceneObjects() {
 
 void Renderer::createEnvironment() {
     if (mScene.iblPath) {
+        LoadingTimer timer;
         auto iblName = std::filesystem::path(*mScene.iblPath).filename().string();
         mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "/" + iblName + "_ibl.ktx",
                 *mScene.iblPath + "/sh.txt");
+        timer.log("Environment loading time (" + *mScene.iblPath + ")");
         if (mScene.skybox) {
             mSkyboxPipeline.emplace(*mCtx, *mIblEnvironment);
         }

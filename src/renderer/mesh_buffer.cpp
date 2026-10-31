@@ -2,6 +2,7 @@
 
 #include "core/command_service.hpp"
 #include "core/context.hpp"
+#include "core/loading_timer.hpp"
 #include "core/resource_allocator.hpp"
 #include "renderer/gltf_model.hpp"
 
@@ -40,6 +41,7 @@ MeshBuffer::MeshBuffer(VulkanContext const& ctx, CommandService const& cmds, Sce
 }
 
 void MeshBuffer::loadModel(std::string const& path) {
+    LoadingTimer timer;
     auto imported = gltf::loadModel(path);
     uint32_t firstVertex = static_cast<uint32_t>(vertices.size());
     uint32_t firstIndex = static_cast<uint32_t>(indices.size());
@@ -54,6 +56,7 @@ void MeshBuffer::loadModel(std::string const& path) {
     std::cout << "Model loaded (" << path << "): " << imported.vertices.size() << " vertices, "
               << imported.asset.primitives.size() << " primitives\n";
     models.emplace(path, std::move(imported.asset));
+    timer.log("Model loading time (" + path + ")");
 }
 
 void MeshBuffer::uploadBuffers(VulkanContext const& ctx, CommandService const& cmds) {
