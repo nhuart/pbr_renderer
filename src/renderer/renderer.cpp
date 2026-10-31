@@ -20,10 +20,6 @@ static AmbientLight const* ambientLightFromLights(std::vector<Light> const& ligh
     return nullptr;
 }
 
-static std::string materialKey(MeshInstance const& instance, bool doubleSided) {
-    return instance.vertexShader + "+" + instance.resolvedFragShader + (doubleSided ? "+ds" : "");
-}
-
 static Light const* shadowCastingLight(Scene const& scene) {
     for (auto const& light: scene.lights) {
         if (auto const* shadows = shadowSettings(light); shadows && shadows->castShadow) {
@@ -86,9 +82,9 @@ void Renderer::initVulkan() {
     createAoPipeline();
     createVolumetricPipeline();
     createTonemapPipeline();
-    resolveShaderVariants();
-    createMaterials();
-    createRenderObjects();
+    prepareRenderObjects();
+    createMaterialPipelines();
+    createMaterialBindings();
 
     if (mScene.particles) {
         mParticlePipeline.emplace(*mCtx, *mCmds, *mScene.particles);
@@ -102,17 +98,12 @@ void Renderer::initVulkan() {
 }
 
 void Renderer::createSceneObjects() {
-    for (uint32_t i = 0; i < mScene.meshInstances.size(); ++i) {
-        auto const& instance = mScene.meshInstances[i];
+    for (auto const& instance: mScene.meshInstances) {
         GameObject object;
         object.position = instance.position;
         object.rotation = glm::radians(instance.rotation);
         object.scale = instance.scale;
         mGameObjects.push_back(std::move(object));
-
-        RenderObject renderObject;
-        renderObject.gameObjectIndex = i;
-        mRenderObjects.push_back(std::move(renderObject));
     }
     std::cout << "Game objects: " << mGameObjects.size() << " created\n";
 }
@@ -167,60 +158,6 @@ void Renderer::createAoPipeline() {
 void Renderer::createVolumetricPipeline() {
     if (mScene.volumetric) {
         mVolumetricPipeline.emplace(*mCtx, *mGeometryPrepass, *mShadowPipeline);
-    }
-}
-
-void Renderer::createMaterials() {
-    for (auto const& instance: mScene.meshInstances) {
-        bool doubleSided = mMeshBuffer->meshRanges.at(instance.gltfPath).doubleSided;
-        auto key = materialKey(instance, doubleSided);
-        if (!mMaterials.contains(key)) {
-            mMaterials.emplace(key,
-                    Material(*mCtx, instance.vertexShader, instance.resolvedFragShader,
-                            instance.shaderFeatures, doubleSided));
-        }
-    }
-}
-
-void Renderer::createRenderObjects() {
-    for (auto& renderObject: mRenderObjects) {
-        auto const& instance = mScene.meshInstances[renderObject.gameObjectIndex];
-        renderObject.range = mMeshBuffer->meshRanges.at(instance.gltfPath);
-        renderObject.texture = &mResources->getTexture(*mCtx, *mCmds, instance.texturePath,
-                instance.gltfPath, &*mMeshBuffer);
-        renderObject.normalMap =
-                &mResources->getNormalMap(*mCtx, *mCmds, instance.gltfPath, *mMeshBuffer);
-        auto key = materialKey(instance, renderObject.range.doubleSided);
-        renderObject.material = &mMaterials.at(key);
-        createMaterialInstance(renderObject);
-    }
-}
-
-void Renderer::createMaterialInstance(RenderObject& renderObject) {
-    auto features = mScene.meshInstances[renderObject.gameObjectIndex].shaderFeatures;
-    bool hasShadow = hasFeature(features, ShaderFeatures::HardShadow) ||
-                     hasFeature(features, ShaderFeatures::PcfShadow);
-    MaterialResources resources{
-        .texture = *renderObject.texture,
-        .lightBuffer = mLightBuffer->buffer,
-        .ibl = hasFeature(features, ShaderFeatures::Ibl) ? &*mIblEnvironment : nullptr,
-        .brdfLut = hasFeature(features, ShaderFeatures::BrdfLut)
-                           ? &mResources->getTexture(*mCtx, *mCmds, "textures/ibl/brdf_lut.ktx2")
-                           : nullptr,
-        .normalMap =
-                hasFeature(features, ShaderFeatures::NormalMap) ? renderObject.normalMap : nullptr,
-        .shadowMap = hasShadow ? &*mShadowPipeline : nullptr,
-        .aoPipeline = hasFeature(features, ShaderFeatures::Ao) ? &*mAoPipeline : nullptr,
-    };
-    renderObject.materialInstance = renderObject.material->createInstance(*mCtx, resources);
-}
-
-void Renderer::recreateAoMaterialInstances() {
-    for (auto& renderObject: mRenderObjects) {
-        auto features = mScene.meshInstances[renderObject.gameObjectIndex].shaderFeatures;
-        if (hasFeature(features, ShaderFeatures::Ao)) {
-            createMaterialInstance(renderObject);
-        }
     }
 }
 
@@ -350,18 +287,24 @@ void Renderer::updateMaterialUniforms(glm::mat4 const& view, glm::mat4 const& pr
     for (auto& renderObject: mRenderObjects) {
         auto const& object = mGameObjects[renderObject.gameObjectIndex];
         glm::mat4 model = object.getModelMatrix();
+        glm::mat4 normalMatrix = glm::transpose(glm::inverse(model));
         auto const& instance = mScene.meshInstances[renderObject.gameObjectIndex];
 
-        UniformBufferObject ubo{
-            .model = model,
-            .view = view,
-            .proj = projection,
-            .normalMatrix = glm::transpose(glm::inverse(model)),
-            .baseColor = instance.baseColor,
-            .cameraPos = glm::vec4(cameraPosition, 0.0f),
-            .pbrParams = glm::vec4(instance.metallic, instance.roughness, iblLuminance, 0.0f),
-        };
-        renderObject.materialInstance.updateUBO(mFrameIndex, ubo);
+        for (auto& [index, binding]: renderObject.materialBindings) {
+            auto const& definition = renderObject.model->materials.at(index);
+            UniformBufferObject ubo{
+                .model = model,
+                .view = view,
+                .proj = projection,
+                .normalMatrix = normalMatrix,
+                .baseColor = instance.baseColor.value_or(definition.baseColor),
+                .cameraPos = glm::vec4(cameraPosition, 0.0f),
+                .pbrParams = glm::vec4(instance.metallic.value_or(definition.metallic),
+                        instance.roughness.value_or(definition.roughness), iblLuminance,
+                        definition.normalScale),
+            };
+            binding.materialInstance.updateUBO(mFrameIndex, ubo);
+        }
     }
 }
 
@@ -440,47 +383,6 @@ void Renderer::recordComputeCommandBuffer(uint32_t frameIdx) {
         cmd.dispatch(mScene.particles->count / 256, 1, 1);
     }
     cmd.end();
-}
-
-void Renderer::resolveShaderVariants() {
-    for (auto& inst: mScene.meshInstances) {
-        if (inst.fragmentShader != "pbr") {
-            inst.resolvedFragShader = inst.fragmentShader;
-            continue;
-        }
-
-        bool hasNormalMap = inst.useNormalMap && mMeshBuffer->normalMaps.contains(inst.gltfPath);
-        bool hasShadow = inst.receiveShadows && mShadowPipeline.has_value();
-        bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
-        bool hasAo = mScene.sao.has_value() || mScene.gtao.has_value();
-
-        ShaderFeatures features = ShaderFeatures::BrdfLut;
-        std::string frag = "pbr";
-
-        if (mIblEnvironment) {
-            features = features | ShaderFeatures::Ibl;
-            frag += "_ibl";
-        }
-        if (hasNormalMap) {
-            features = features | ShaderFeatures::NormalMap;
-            frag += "_normal";
-        }
-        if (hasPcf) {
-            features = features | ShaderFeatures::PcfShadow;
-            frag += "_pcf";
-        } else if (hasShadow) {
-            features = features | ShaderFeatures::HardShadow;
-            frag += "_shadow";
-        }
-        if (hasAo) {
-            // The PBR AO sampler/variant is shared by SAO and GTAO.
-            features = features | ShaderFeatures::Ao;
-            frag += "_sao";
-        }
-
-        inst.resolvedFragShader = frag;
-        inst.shaderFeatures = features;
-    }
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex) {

@@ -34,15 +34,12 @@ struct MeshInstance {
     std::string texturePath;
     std::string vertexShader;
     std::string fragmentShader;
-    // Resolved at renderer init time — do not set in JSON
-    std::string resolvedFragShader;
-    ShaderFeatures shaderFeatures = ShaderFeatures::None;
-    glm::vec4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    std::optional<glm::vec4> baseColor;
     glm::vec3 position = { 0.0f, 0.0f, 0.0f };
     glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
     glm::vec3 scale = { 1.0f, 1.0f, 1.0f };
-    float metallic = 0.0f;
-    float roughness = 0.5f;
+    std::optional<float> metallic;
+    std::optional<float> roughness;
     bool useNormalMap = true;
     bool castShadows = false;
     bool receiveShadows = false;

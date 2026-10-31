@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,15 @@ struct TextureAtlas;
 struct IblEnvironment;
 struct ShadowPipeline;
 struct AoPipeline;
+
+struct MaterialPipelineKey {
+    std::string vertexShader;
+    std::string fragmentShader;
+    ShaderFeatures features = ShaderFeatures::None;
+    bool doubleSided = false;
+
+    auto operator<=>(MaterialPipelineKey const&) const = default;
+};
 
 struct MaterialResources {
     TextureAtlas const& texture;
@@ -50,9 +60,7 @@ struct Material {
     vk::raii::DescriptorPool descriptorPool{ nullptr };
     vk::raii::Pipeline pipeline{ nullptr };
 
-    Material(VulkanContext const& ctx, std::string const& vertexShaderFilename,
-            std::string const& fragmentShaderFilename,
-            ShaderFeatures features = ShaderFeatures::None, bool doubleSided = false);
+    Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             MaterialResources const& resources) const;

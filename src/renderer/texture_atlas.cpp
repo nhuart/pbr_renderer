@@ -167,21 +167,24 @@ void TextureAtlas::uploadPixels(VulkanContext const& ctx, CommandService const& 
 }
 
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
-        uint8_t const* pixels, uint32_t width, uint32_t height, bool linear) {
+        uint8_t const* pixels, uint32_t width, uint32_t height, TextureUsage usage,
+        TextureSampler const& settings) {
     mipLevels = 1;
-    format = linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb;
+    format = usage == TextureUsage::NormalMap ? vk::Format::eR8G8B8A8Unorm
+                                              : vk::Format::eR8G8B8A8Srgb;
     uploadPixels(ctx, cmds, pixels, width, height);
 
     vk::PhysicalDeviceProperties properties = ctx.physicalDevice.getProperties();
     sampler = vk::raii::Sampler(ctx.device,
             vk::SamplerCreateInfo{
-                .magFilter = vk::Filter::eLinear,
-                .minFilter = vk::Filter::eLinear,
-                .mipmapMode = vk::SamplerMipmapMode::eLinear,
-                .addressModeU = vk::SamplerAddressMode::eRepeat,
-                .addressModeV = vk::SamplerAddressMode::eRepeat,
+                .magFilter = settings.magFilter,
+                .minFilter = settings.minFilter,
+                .mipmapMode = settings.mipmapMode,
+                .addressModeU = settings.wrapU,
+                .addressModeV = settings.wrapV,
                 .addressModeW = vk::SamplerAddressMode::eRepeat,
-                .anisotropyEnable = vk::True,
+                .anisotropyEnable = settings.minFilter == vk::Filter::eLinear &&
+                                    settings.magFilter == vk::Filter::eLinear,
                 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
                 .compareEnable = vk::False,
                 .compareOp = vk::CompareOp::eAlways,
@@ -191,8 +194,9 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
             });
 
     if (vkutil::vulkanLoggingEnabled) {
-        std::cout << (linear ? "Normal map" : "Embedded texture") << ": " << width << "x" << height
-                  << " (raw pixels, " << vk::to_string(format) << ") loaded\n";
+        std::cout << (usage == TextureUsage::NormalMap ? "Normal map" : "Embedded texture") << ": "
+                  << width << "x" << height << " (raw pixels, " << vk::to_string(format)
+                  << ") loaded\n";
     }
 }
 

@@ -30,10 +30,10 @@ build-debug:
 build-release:
 	cmake --build build/release -- --no-print-directory
 
-run-debug:
+run-debug: build-debug
 	./build/debug/pbr_renderer $(SCENE) $(ARGS)
 
-run-release:
+run-release: build-release
 	./build/release/pbr_renderer $(SCENE) $(ARGS)
 
 screenshots-bunny: build-debug
