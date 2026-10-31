@@ -72,10 +72,19 @@ std::vector<Vertex> readPrimitiveVertices(tinygltf::Model const& model,
     std::string normalUVAttribute =
             "TEXCOORD_" + std::to_string(normalMap ? normalMap->texCoord : 0);
     FloatAttribute<3> positions(model, primitive, "POSITION");
-    FloatAttribute<2> texCoords(model, primitive, "TEXCOORD_0");
+    auto const* baseColorMap =
+            primitive.material >= 0
+                    ? &model.materials.at(primitive.material).pbrMetallicRoughness.baseColorTexture
+                    : nullptr;
+    int baseColorUV = baseColorMap ? baseColorMap->texCoord : 0;
+    std::string baseColorUVAttribute = "TEXCOORD_" + std::to_string(baseColorUV);
+    FloatAttribute<2> texCoords(model, primitive, baseColorUVAttribute.c_str());
     FloatAttribute<2> normalTexCoords(model, primitive, normalUVAttribute.c_str());
     FloatAttribute<3> normals(model, primitive, "NORMAL");
     FloatAttribute<4> tangents(model, primitive, "TANGENT");
+    if (baseColorMap && baseColorMap->index >= 0 && !texCoords.hasValues()) {
+        throw std::runtime_error("base-color mapping requires " + baseColorUVAttribute);
+    }
     if (normalMap && (!normalTexCoords.hasValues() || !normals.hasValues())) {
         throw std::runtime_error("normal mapping requires normals and " + normalUVAttribute);
     }
@@ -133,7 +142,7 @@ gltf::PrimitiveGeometry::PrimitiveGeometry(tinygltf::Model const& model,
     mIndices = readPrimitiveIndices(model, primitive);
     // MikkTSpace must see the original glTF geometry and UVs, before sampling flips or transforms.
     generateMissingTangents(model, primitive);
-    flipTextureCoordinates(primitive.attributes.contains("TEXCOORD_0"));
+    flipTextureCoordinates();
 }
 
 void gltf::PrimitiveGeometry::generateMissingTangents(tinygltf::Model const& model,
@@ -144,11 +153,9 @@ void gltf::PrimitiveGeometry::generateMissingTangents(tinygltf::Model const& mod
     mCornerTangents = generateTangents(mVertices, mIndices);
 }
 
-void gltf::PrimitiveGeometry::flipTextureCoordinates(bool hasBaseColorUVs) {
+void gltf::PrimitiveGeometry::flipTextureCoordinates() {
     for (auto& vertex: mVertices) {
-        if (hasBaseColorUVs) {
-            vertex.texCoord.y = 1.0f - vertex.texCoord.y;
-        }
+        vertex.texCoord.y = 1.0f - vertex.texCoord.y;
         vertex.normalTexCoord.y = 1.0f - vertex.normalTexCoord.y;
     }
 }

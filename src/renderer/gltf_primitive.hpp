@@ -22,7 +22,7 @@ public:
 private:
     void generateMissingTangents(tinygltf::Model const& model,
             tinygltf::Primitive const& primitive);
-    void flipTextureCoordinates(bool hasBaseColorUVs);
+    void flipTextureCoordinates();
 
     std::vector<Vertex> mVertices;
     std::vector<uint32_t> mIndices;

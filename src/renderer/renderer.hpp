@@ -60,7 +60,7 @@ private:
     std::optional<SyncObjects> mSync;
     std::optional<ResourceManager> mResources;
     std::optional<MeshBuffer> mMeshBuffer;
-    std::map<std::string, Material> mMaterials;
+    std::map<MaterialPipelineKey, Material> mMaterialPipelines;
     std::optional<LightBuffer> mLightBuffer;
     std::optional<IblEnvironment> mIblEnvironment;
     std::optional<ShadowPipeline> mShadowPipeline;
@@ -88,11 +88,13 @@ private:
     void createAoPipeline();
     void createVolumetricPipeline();
     void createTonemapPipeline();
-    void createMaterials();
-    void createRenderObjects();
-    void createMaterialInstance(RenderObject& renderObject);
+    void prepareRenderObjects();
+    void createMaterialPipelines();
+    void createMaterialBindings();
+    void createMaterialInstance(MaterialBinding& binding);
     void recreateAoMaterialInstances();
-    void resolveShaderVariants();
+    MaterialPipelineKey resolveMaterialPipeline(MeshInstance const& instance,
+            MaterialDefinition const& definition) const;
     void mainLoop();
     void cleanup();
     void drawFrame();

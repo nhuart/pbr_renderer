@@ -112,7 +112,7 @@ void GeometryPrepass::createNormalsPass(VulkanContext const& ctx) {
     vk::PipelineViewportStateCreateInfo vpInfo{ .viewportCount = 1, .scissorCount = 1 };
     vk::PipelineRasterizationStateCreateInfo rsInfo{
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eNone,
+        .cullMode = vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
         .lineWidth = 1.0f,
     };
@@ -158,6 +158,9 @@ void GeometryPrepass::createNormalsPass(VulkanContext const& ctx) {
         },
     };
     normalsPipeline =
+            vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+    rsInfo.cullMode = vk::CullModeFlagBits::eNone;
+    doubleSidedNormalsPipeline =
             vk::raii::Pipeline(ctx.device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
     if (vkutil::vulkanLoggingEnabled) {
         std::cout << "Geometry prepass pipeline: created\n";

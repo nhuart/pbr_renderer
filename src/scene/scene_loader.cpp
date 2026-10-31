@@ -211,7 +211,7 @@ MeshInstance parseMeshInstance(json const& instanceJson) {
     instance.fragmentShader = instanceJson.at("fragmentShader").get<std::string>();
     if (instanceJson.contains("baseColor")) {
         auto const& baseColorJson = instanceJson["baseColor"];
-        instance.baseColor = { vec3FromJson(baseColorJson),
+        instance.baseColor = glm::vec4{ vec3FromJson(baseColorJson),
             baseColorJson.size() > 3 ? baseColorJson[3].get<float>() : 1.0f };
     }
     if (instanceJson.contains("position")) {
@@ -223,8 +223,12 @@ MeshInstance parseMeshInstance(json const& instanceJson) {
     if (instanceJson.contains("scale")) {
         instance.scale = vec3FromJson(instanceJson["scale"]);
     }
-    instance.metallic = instanceJson.value("metallic", instance.metallic);
-    instance.roughness = instanceJson.value("roughness", instance.roughness);
+    if (instanceJson.contains("metallic")) {
+        instance.metallic = instanceJson.at("metallic").get<float>();
+    }
+    if (instanceJson.contains("roughness")) {
+        instance.roughness = instanceJson.at("roughness").get<float>();
+    }
     instance.useNormalMap = instanceJson.value("useNormalMap", instance.useNormalMap);
     instance.castShadows = instanceJson.value("castShadows", instance.castShadows);
     instance.receiveShadows = instanceJson.value("receiveShadows", instance.receiveShadows);

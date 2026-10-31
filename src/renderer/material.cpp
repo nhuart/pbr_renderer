@@ -9,9 +9,9 @@
 #include <array>
 #include <iostream>
 
-Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFilename,
-        std::string const& fragmentShaderFilename, ShaderFeatures features, bool doubleSided) {
-    constexpr uint32_t maxInstances = 64;
+Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key,
+        uint32_t instanceCount) {
+    auto features = key.features;
 
     // Build descriptor set layout from active features only
     std::vector<vk::DescriptorSetLayoutBinding> bindings;
@@ -58,7 +58,7 @@ Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFile
             });
 
     // Pool sized for active bindings only
-    auto setCount = maxInstances * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    auto setCount = instanceCount * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     uint32_t uboCount = 2;     // binding 0 + binding 2 always present
     uint32_t samplerCount = 1; // binding 1 always present
     if (hasFeature(features, ShaderFeatures::Ibl)) {
@@ -93,8 +93,8 @@ Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFile
             });
 
     // Graphics pipeline
-    auto vertCode = vkutil::readSpirv("shaders/compiled/" + vertexShaderFilename + ".vert.spv");
-    auto fragCode = vkutil::readSpirv("shaders/compiled/" + fragmentShaderFilename + ".frag.spv");
+    auto vertCode = vkutil::readSpirv("shaders/compiled/" + key.vertexShader + ".vert.spv");
+    auto fragCode = vkutil::readSpirv("shaders/compiled/" + key.fragmentShader + ".frag.spv");
     vk::raii::ShaderModule vertModule = vkutil::createShaderModule(ctx, vertCode);
     vk::raii::ShaderModule fragModule = vkutil::createShaderModule(ctx, fragCode);
 
@@ -139,7 +139,7 @@ Material::Material(VulkanContext const& ctx, std::string const& vertexShaderFile
         .depthClampEnable = vk::False,
         .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = doubleSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack,
+        .cullMode = key.doubleSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = vk::False,
         .lineWidth = 1.0f,

@@ -62,11 +62,11 @@ std::vector<glm::vec3> collectShadowWorldCorners(Scene const& scene, MeshBuffer 
         if (!instance.castShadows && !instance.receiveShadows) {
             continue;
         }
-        auto const& meshRange = meshBuffer.meshRanges.at(instance.gltfPath);
-        if (meshRange.indexCount == 0) {
+        auto const& model = meshBuffer.models.at(instance.gltfPath);
+        if (model.range.indexCount == 0) {
             continue;
         }
-        appendBoxCorners(corners, meshRange.boundsMin, meshRange.boundsMax,
+        appendBoxCorners(corners, model.boundsMin, model.boundsMax,
                 gameObjects[instanceIndex].getModelMatrix());
     }
     if (scene.volumetric && scene.volumetric->bounded) {
@@ -312,6 +312,9 @@ void ShadowPipeline::createGraphicsPipeline(VulkanContext const& ctx) {
             };
 
     pipeline = vk::raii::Pipeline(ctx.device, nullptr,
+            pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
+    state.rasterization.cullMode = vk::CullModeFlagBits::eNone;
+    doubleSidedPipeline = vk::raii::Pipeline(ctx.device, nullptr,
             pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
     if (vkutil::vulkanLoggingEnabled) {
         std::cout << "Shadow pipeline: created\n";
