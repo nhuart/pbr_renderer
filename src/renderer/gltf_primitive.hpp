@@ -18,7 +18,6 @@ public:
     PrimitiveGeometry(tinygltf::Model const& model, tinygltf::Primitive const& primitive);
 
     size_t indexCount() const { return mIndices.size(); }
-    Vertex vertexAtCorner(size_t corner) const;
     void indexGeneratedTangents();
     std::span<Vertex const> vertices() const { return mVertices; }
     std::span<uint32_t const> indices() const { return mIndices; }

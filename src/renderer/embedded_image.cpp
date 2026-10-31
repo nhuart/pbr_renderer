@@ -26,7 +26,7 @@ DecodedImage flipPixels(std::span<uint8_t const> pixels, uint32_t width, uint32_
     return output;
 }
 
-DecodedImage decodeImage(std::span<uint8_t const> encoded) {
+void validateEncodedImage(std::span<uint8_t const> encoded) {
     if (encoded.empty() || encoded.size() > size_t(std::numeric_limits<int>::max())) {
         throw std::runtime_error("embedded glTF image has no data or exceeds decoder size limits");
     }
@@ -34,18 +34,33 @@ DecodedImage decodeImage(std::span<uint8_t const> encoded) {
     if (stbi_is_16_bit_from_memory(encoded.data(), size)) {
         throw std::runtime_error("embedded glTF textures require decoded RGBA8 images");
     }
-    int width = 0, height = 0, components = 0;
-    std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels(
-            stbi_load_from_memory(encoded.data(), size, &width, &height, &components,
-                    STBI_rgb_alpha),
-            stbi_image_free);
-    if (!pixels) {
+}
+
+struct LoadedImage {
+    std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels{ nullptr, stbi_image_free };
+    int width = 0;
+    int height = 0;
+};
+
+LoadedImage loadRgbaPixels(std::span<uint8_t const> encoded) {
+    LoadedImage image;
+    int channels = 0;
+    image.pixels.reset(stbi_load_from_memory(encoded.data(), static_cast<int>(encoded.size()),
+            &image.width, &image.height, &channels, STBI_rgb_alpha));
+    if (!image.pixels) {
         auto reason = stbi_failure_reason();
         throw std::runtime_error(std::string("could not decode embedded glTF image: ") +
                                  (reason ? reason : "unknown image format"));
     }
-    return flipPixels({ pixels.get(), size_t(width) * height * STBI_rgb_alpha },
-            static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    return image;
+}
+
+DecodedImage decodeImage(std::span<uint8_t const> encoded) {
+    validateEncodedImage(encoded);
+    auto image = loadRgbaPixels(encoded);
+    size_t byteCount = size_t(image.width) * image.height * STBI_rgb_alpha;
+    return flipPixels({ image.pixels.get(), byteCount }, static_cast<uint32_t>(image.width),
+            static_cast<uint32_t>(image.height));
 }
 
 } // namespace

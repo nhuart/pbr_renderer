@@ -154,7 +154,9 @@ add_executable(pbr_renderer
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
     src/renderer/embedded_image.cpp
+    src/renderer/gltf_buffer.cpp
     src/renderer/gltf_model.cpp
+    src/renderer/gltf_model_io.cpp
     src/renderer/gltf_primitive.cpp
     src/renderer/gltf_tangents.cpp
     src/renderer/gltf_tangent_baker.cpp

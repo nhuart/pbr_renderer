@@ -161,15 +161,6 @@ void gltf::PrimitiveGeometry::flipTextureCoordinates() {
     }
 }
 
-Vertex gltf::PrimitiveGeometry::vertexAtCorner(size_t corner) const {
-    Vertex vertex = mVertices.at(mIndices.at(corner));
-    // Tangents belong to corners, not source indices: mirrored UV seams must remain distinct.
-    if (!mCornerTangents.empty()) {
-        vertex.tangent = mCornerTangents.at(corner);
-    }
-    return vertex;
-}
-
 void gltf::PrimitiveGeometry::indexGeneratedTangents() {
     if (mCornerTangents.empty()) {
         return;
