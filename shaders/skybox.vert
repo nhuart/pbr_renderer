@@ -19,7 +19,7 @@ void main() {
     vec4 viewPos = ubo.invProj * vec4(pos, 1.0, 1.0);
     viewPos /= viewPos.w;
 
-    // Transform to world space, ignore translation (w=0)
+    // Ignore camera translation so the environment remains infinitely distant.
     fragDir = (ubo.invView * vec4(viewPos.xyz, 0.0)).xyz;
 
     // Put vertex at far plane (z=w so NDC z=1.0)

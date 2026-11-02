@@ -26,6 +26,7 @@ layout(binding = 2) uniform LightUBO {
 #ifdef USE_IBL
 layout(binding = 3) uniform IblSHUBO {
     vec4 sh[9];
+    mat4 worldToEnvironment;
 } iblSH;
 layout(binding = 4) uniform samplerCube prefilterMap;
 #endif
@@ -154,12 +155,14 @@ vec3 iblAmbient(PbrShadingData surface) {
     vec3 kS = fresnelSchlickRoughness(surface.NdotV, surface.F0, surface.roughness);
     vec3 kD = (1.0 - kS) * (1.0 - surface.metallic);
 
-    vec3 diffuse = kD * max(shIrradiance(surface.normal), vec3(0.0)) * surface.albedo;
+    mat3 worldToEnvironment = mat3(iblSH.worldToEnvironment);
+    vec3 environmentNormal = worldToEnvironment * surface.normal;
+    vec3 diffuse = kD * max(shIrradiance(environmentNormal), vec3(0.0)) * surface.albedo;
 
-    vec3 R = reflect(-surface.viewDirection, surface.normal);
+    vec3 environmentReflection = worldToEnvironment * reflect(-surface.viewDirection, surface.normal);
     // perceptualRoughnessToLod from filament/shaders/src/surface_light_indirect.fs
     float lod = 4.0 * surface.roughness * (2.0 - surface.roughness);
-    vec3 prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
+    vec3 prefilteredColor = textureLod(prefilterMap, environmentReflection, lod).rgb;
     vec2 brdf = preintegratedBrdf(surface);
     vec3 Fr = prefilteredColor * (kS * brdf.x + brdf.y);
     // Energy compensation (Karis 2017): corrects single-scattering energy loss at high roughness.

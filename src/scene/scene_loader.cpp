@@ -145,7 +145,19 @@ void validateVolumetric(Scene const& scene, std::string const& path) {
     }
 }
 
+void validateIblRotation(glm::vec3 const& rotation, std::string const& path) {
+    for (float angle: { rotation.x, rotation.y, rotation.z }) {
+        if (!std::isfinite(angle)) {
+            throw std::runtime_error("iblRotation angles must be finite: " + path);
+        }
+    }
+}
+
 void validateScene(Scene const& scene, std::string const& path) {
+    if (scene.resolution.x <= 0 || scene.resolution.y <= 0) {
+        throw std::runtime_error("scene resolution must have positive width and height: " + path);
+    }
+    validateIblRotation(scene.iblRotation, path);
     validateAo(scene, path);
     validateCamera(scene.camera, path);
     validateVolumetric(scene, path);
@@ -345,6 +357,13 @@ void parseCamera(json const& cameraJson, Camera& camera) {
     camera.sensitivity = cameraJson.value("sensitivity", camera.sensitivity);
 }
 
+glm::vec3 parseIblRotation(json const& rotation, std::string const& path) {
+    if (!rotation.is_array() || rotation.size() != 3) {
+        throw std::runtime_error("iblRotation must contain three angles [x, y, z]: " + path);
+    }
+    return vec3FromJson(rotation);
+}
+
 ToneMapping parseToneMapping(json const& value, std::string const& path) {
     std::string mode = value.get<std::string>();
     if (mode == "reinhard") {
@@ -365,6 +384,10 @@ Scene loadScene(std::string const& path) {
     }
     json j = json::parse(file);
     Scene scene;
+    if (j.contains("resolution")) {
+        scene.resolution = { j.at("resolution").at(0).get<int>(),
+            j.at("resolution").at(1).get<int>() };
+    }
     if (j.contains("toneMapping")) {
         scene.toneMapping = parseToneMapping(j.at("toneMapping"), path);
     }
@@ -372,6 +395,9 @@ Scene loadScene(std::string const& path) {
         scene.iblPath = j["ibl"].get<std::string>();
     }
     scene.skybox = j.value("skybox", scene.skybox);
+    if (j.contains("iblRotation")) {
+        scene.iblRotation = parseIblRotation(j.at("iblRotation"), path);
+    }
     if (j.contains("sao")) {
         scene.sao = parseSao(j["sao"]);
     }

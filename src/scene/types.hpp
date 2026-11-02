@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "core/camera.hpp"
+#include "core/config.hpp"
 
 enum class ShaderFeatures : uint8_t {
     None = 0,
@@ -146,12 +147,14 @@ struct VolumetricConfig {
 };
 
 struct Scene {
+    glm::ivec2 resolution{ WIDTH, HEIGHT };
     std::vector<MeshInstance> meshInstances;
     std::optional<ParticleSystem> particles;
     std::vector<Light> lights;
     Camera camera;
     ToneMapping toneMapping = ToneMapping::Reinhard;
     std::optional<std::string> iblPath;
+    glm::vec3 iblRotation{ 0.0f };
     bool skybox = false;
     std::optional<SaoConfig> sao;
     std::optional<GtaoConfig> gtao;
