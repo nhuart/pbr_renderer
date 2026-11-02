@@ -4,6 +4,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <tiny_gltf.h>
 
@@ -160,11 +161,18 @@ void gltf::PrimitiveGeometry::flipTextureCoordinates() {
     }
 }
 
-Vertex gltf::PrimitiveGeometry::vertexAtCorner(size_t corner) const {
-    Vertex vertex = mVertices.at(mIndices.at(corner));
-    // Tangents belong to corners, not source indices: mirrored UV seams must remain distinct.
-    if (!mCornerTangents.empty()) {
-        vertex.tangent = mCornerTangents.at(corner);
+void gltf::PrimitiveGeometry::indexGeneratedTangents() {
+    if (mCornerTangents.empty()) {
+        return;
     }
-    return vertex;
+    auto remap = splitTangentSeams(mVertices.size(), mIndices, mCornerTangents);
+    mVertices.reserve(remap.sources.size());
+    for (size_t i = mVertices.size(); i < remap.sources.size(); ++i) {
+        mVertices.push_back(mVertices.at(remap.sources[i]));
+    }
+    for (size_t i = 0; i < mVertices.size(); ++i) {
+        mVertices[i].tangent = remap.tangents[i];
+    }
+    mIndices = std::move(remap.indices);
+    mCornerTangents.clear();
 }

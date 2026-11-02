@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "core/loading_timer.hpp"
 #include "renderer/model_asset.hpp"
 #include "renderer/texture_atlas.hpp"
 
@@ -16,7 +17,10 @@ struct ResourceManager {
         if (auto it = mTextures.find(path); it != mTextures.end()) {
             return *it->second;
         }
-        return cacheTexture(path, std::make_unique<TextureAtlas>(ctx, cmds, path));
+        LoadingTimer timer;
+        auto const& texture = cacheTexture(path, std::make_unique<TextureAtlas>(ctx, cmds, path));
+        timer.log("Texture loading time (" + path + ")");
+        return texture;
     }
 
     TextureAtlas const& getEmbeddedTexture(VulkanContext const& ctx, CommandService const& cmds,
@@ -30,10 +34,14 @@ struct ResourceManager {
         if (auto it = mTextures.find(key); it != mTextures.end()) {
             return *it->second;
         }
+        LoadingTimer timer;
         auto const& definition = model.textures.at(reference.texture);
-        auto const& image = model.images.at(definition.image);
-        return cacheTexture(key, std::make_unique<TextureAtlas>(ctx, cmds, image.pixels.data(),
-                                         image.width, image.height, usage, definition.sampler));
+        auto const& image = model.images.at(definition.image).decode();
+        auto const& texture =
+                cacheTexture(key, std::make_unique<TextureAtlas>(ctx, cmds, image.pixels.data(),
+                                          image.width, image.height, usage, definition.sampler));
+        timer.log("Texture loading time (" + key + ")");
+        return texture;
     }
 
 private:

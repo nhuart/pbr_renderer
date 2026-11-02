@@ -3,10 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 
 #include <glm/glm.hpp>
-#include <glm/gtx/hash.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 struct Vertex {
@@ -56,21 +54,6 @@ struct Vertex {
                 .offset = offsetof(Vertex, normalTexCoord) } } };
     }
 };
-
-namespace std {
-template<>
-struct hash<Vertex> {
-    size_t operator()(Vertex const& vertex) const {
-        size_t hashValue = hash<glm::vec3>()(vertex.pos);
-        hashValue = (hashValue ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1;
-        hashValue = (hashValue ^ (hash<glm::vec2>()(vertex.texCoord) << 1)) >> 1;
-        hashValue = (hashValue ^ (hash<glm::vec3>()(vertex.normal) << 1)) >> 1;
-        hashValue = (hashValue ^ (hash<glm::vec4>()(vertex.tangent) << 1)) >> 1;
-        hashValue = (hashValue ^ (hash<glm::vec2>()(vertex.normalTexCoord) << 1)) >> 1;
-        return hashValue;
-    }
-};
-} // namespace std
 
 struct Particle {
     glm::vec2 position;

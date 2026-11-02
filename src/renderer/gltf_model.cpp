@@ -1,21 +1,15 @@
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tiny_gltf.h>
-#undef TINYGLTF_IMPLEMENTATION
-#undef STB_IMAGE_IMPLEMENTATION
-#undef STB_IMAGE_WRITE_IMPLEMENTATION
-
 #include "renderer/gltf_model.hpp"
+#include "renderer/gltf_buffer.hpp"
+#include "renderer/gltf_model_io.hpp"
 #include "renderer/gltf_primitive.hpp"
+#include "renderer/gltf_tangent_baker.hpp"
 #include "renderer/gltf_transform.hpp"
 
-#include <cstring>
-#include <iostream>
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
-#include <unordered_map>
-#include <utility>
+
+#include <tiny_gltf.h>
 
 namespace {
 
@@ -56,20 +50,26 @@ MaterialDefinition readMaterial(tinygltf::Material const& material) {
         .normalTexture = { material.normalTexture.index, material.normalTexture.texCoord } };
 }
 
-EmbeddedImage readImage(tinygltf::Image const& image) {
+EmbeddedImage readEncodedImage(tinygltf::Model const& model, tinygltf::Image const& image) {
+    if (image.bufferView < 0) {
+        return EmbeddedImage(image.image);
+    }
+    auto bytes = gltf::bufferViewData(model, model.bufferViews.at(image.bufferView));
+    return EmbeddedImage(std::vector<uint8_t>(bytes.begin(), bytes.end()));
+}
+
+EmbeddedImage readDecodedImage(tinygltf::Image const& image) {
     if (image.bits != 8 || image.component != 4 || image.width <= 0 || image.height <= 0 ||
             image.image.size() != static_cast<size_t>(image.width) * image.height * 4) {
         throw std::runtime_error("embedded glTF textures require decoded RGBA8 images");
     }
-    EmbeddedImage output{ .pixels = std::vector<uint8_t>(image.image.size()),
-        .width = static_cast<uint32_t>(image.width),
-        .height = static_cast<uint32_t>(image.height) };
-    size_t rowBytes = output.width * 4;
-    for (uint32_t row = 0; row < output.height; ++row) {
-        memcpy(output.pixels.data() + row * rowBytes,
-                image.image.data() + (output.height - 1 - row) * rowBytes, rowBytes);
-    }
-    return output;
+    return EmbeddedImage::fromPixels(image.image, static_cast<uint32_t>(image.width),
+            static_cast<uint32_t>(image.height));
+}
+
+EmbeddedImage readImage(tinygltf::Model const& model, int imageIndex) {
+    auto const& image = model.images.at(imageIndex);
+    return image.as_is ? readEncodedImage(model, image) : readDecodedImage(image);
 }
 
 void readMaterials(tinygltf::Model const& model, ModelAsset& asset) {
@@ -88,19 +88,23 @@ void readTextures(tinygltf::Model const& model, ModelAsset& asset) {
     }
 }
 
+void readReferencedImage(tinygltf::Model const& model, ModelAsset& asset,
+        TextureReference reference) {
+    if (!reference.hasTexture()) {
+        return;
+    }
+    int imageIndex = asset.textures.at(reference.texture).image;
+    auto& image = asset.images.at(imageIndex);
+    if (image.empty()) {
+        image = readImage(model, imageIndex);
+    }
+}
+
 void readImages(tinygltf::Model const& model, ModelAsset& asset) {
     asset.images.resize(model.images.size());
     for (auto const& material: asset.materials) {
-        for (auto reference: { material.baseColorTexture, material.normalTexture }) {
-            if (!reference.hasTexture()) {
-                continue;
-            }
-            int imageIndex = asset.textures.at(reference.texture).image;
-            auto& image = asset.images.at(imageIndex);
-            if (image.pixels.empty()) {
-                image = readImage(model.images.at(imageIndex));
-            }
-        }
+        readReferencedImage(model, asset, material.baseColorTexture);
+        readReferencedImage(model, asset, material.normalTexture);
     }
 }
 
@@ -121,10 +125,11 @@ public:
     void append(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
             glm::mat4 const& transform) {
         gltf::PrimitiveGeometry geometry(model, primitive);
+        geometry.indexGeneratedTangents();
         gltf::VertexTransform vertexTransform(transform);
         IndexRange range{ static_cast<uint32_t>(mOutput.indices.size()),
             static_cast<uint32_t>(geometry.indexCount()) };
-        appendCorners(geometry, vertexTransform);
+        appendIndexedVertices(geometry, vertexTransform);
         if (vertexTransform.reversesWinding()) {
             reverseWinding(range);
         }
@@ -132,17 +137,19 @@ public:
     }
 
 private:
-    void appendCorners(gltf::PrimitiveGeometry const& geometry,
+    void appendIndexedVertices(gltf::PrimitiveGeometry const& geometry,
             gltf::VertexTransform const& transform) {
-        for (size_t corner = 0; corner < geometry.indexCount(); ++corner) {
-            auto vertex = geometry.vertexAtCorner(corner);
-            transform.apply(vertex);
-            auto [entry, inserted] =
-                    mUniqueVertices.emplace(vertex, static_cast<uint32_t>(mOutput.vertices.size()));
-            if (inserted) {
+        constexpr uint32_t UNMAPPED_VERTEX = std::numeric_limits<uint32_t>::max();
+        std::vector<uint32_t> remap(geometry.vertices().size(), UNMAPPED_VERTEX);
+        for (uint32_t sourceIndex: geometry.indices()) {
+            auto& index = remap.at(sourceIndex);
+            if (index == UNMAPPED_VERTEX) {
+                auto vertex = geometry.vertices()[sourceIndex];
+                transform.apply(vertex);
+                index = static_cast<uint32_t>(mOutput.vertices.size());
                 mOutput.vertices.push_back(vertex);
             }
-            mOutput.indices.push_back(entry->second);
+            mOutput.indices.push_back(index);
         }
     }
 
@@ -154,8 +161,24 @@ private:
     }
 
     gltf::ImportedModel& mOutput;
-    std::unordered_map<Vertex, uint32_t> mUniqueVertices;
 };
+
+void reserveGeometry(tinygltf::Model const& model, std::vector<gltf::MeshInstance> const& instances,
+        gltf::ImportedModel& output) {
+    size_t vertexCapacity = 0;
+    size_t indexCapacity = 0;
+    for (auto const& instance: instances) {
+        for (auto const& primitive: model.meshes.at(instance.mesh).primitives) {
+            size_t vertexCount = model.accessors.at(primitive.attributes.at("POSITION")).count;
+            size_t indexCount = primitive.indices < 0 ? vertexCount
+                                                      : model.accessors.at(primitive.indices).count;
+            vertexCapacity += std::min(vertexCount, indexCount);
+            indexCapacity += indexCount;
+        }
+    }
+    output.vertices.reserve(vertexCapacity);
+    output.indices.reserve(indexCapacity);
+}
 
 void calculateBounds(gltf::ImportedModel& model) {
     if (model.vertices.empty()) {
@@ -176,8 +199,10 @@ gltf::ImportedModel gltf::importModel(tinygltf::Model const& model) {
     readMaterials(model, output.asset);
     readTextures(model, output.asset);
     readImages(model, output.asset);
+    auto instances = meshInstances(model);
+    reserveGeometry(model, instances, output);
     ModelGeometryBuilder geometry(output);
-    for (auto const& instance: meshInstances(model)) {
+    for (auto const& instance: instances) {
         for (auto const& primitive: model.meshes.at(instance.mesh).primitives) {
             geometry.append(model, primitive, instance.transform);
         }
@@ -188,16 +213,11 @@ gltf::ImportedModel gltf::importModel(tinygltf::Model const& model) {
 }
 
 gltf::ImportedModel gltf::loadModel(std::string const& path) {
-    tinygltf::Model model;
-    tinygltf::TinyGLTF loader;
-    std::string warning;
-    std::string error;
-    bool loaded = loader.LoadBinaryFromFile(&model, &error, &warning, path);
-    if (!warning.empty()) {
-        std::cerr << "glTF warning: " << warning << '\n';
+    auto model = readBinaryModel(path);
+    bool hasGeneratedTangents = bakeMissingTangents(model);
+    auto imported = importModel(model);
+    if (hasGeneratedTangents) {
+        saveGeneratedTangents(model, path);
     }
-    if (!loaded) {
-        throw std::runtime_error("failed to load glTF model (" + path + "): " + error);
-    }
-    return importModel(model);
+    return imported;
 }

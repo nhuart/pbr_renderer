@@ -1,12 +1,75 @@
 #include "renderer/gltf_tangents.hpp"
 
 #include <limits>
+#include <numeric>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
+#include <glm/gtx/hash.hpp>
 #include <mikktspace.h>
 
 namespace {
+
+struct TangentVertex {
+    uint32_t sourceIndex;
+    glm::vec4 tangent;
+
+    bool operator==(TangentVertex const&) const = default;
+};
+
+struct TangentVertexHash {
+    size_t operator()(TangentVertex const& vertex) const {
+        return std::hash<uint32_t>{}(vertex.sourceIndex) ^
+               (std::hash<glm::vec4>{}(vertex.tangent) << 1);
+    }
+};
+
+class TangentSeamBuilder {
+public:
+    explicit TangentSeamBuilder(size_t vertexCount)
+            : mHasTangent(vertexCount, false) {
+        mRemap.sources.resize(vertexCount);
+        std::iota(mRemap.sources.begin(), mRemap.sources.end(), 0);
+        mRemap.tangents.resize(vertexCount, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    }
+
+    gltf::TangentVertexRemap build(std::span<uint32_t const> indices,
+            std::span<glm::vec4 const> cornerTangents) {
+        mRemap.indices.reserve(indices.size());
+        for (size_t corner = 0; corner < indices.size(); ++corner) {
+            mRemap.indices.push_back(indexFor(indices[corner], cornerTangents[corner]));
+        }
+        return std::move(mRemap);
+    }
+
+private:
+    uint32_t indexFor(uint32_t sourceIndex, glm::vec4 const& tangent) {
+        if (!mHasTangent.at(sourceIndex)) {
+            mRemap.tangents[sourceIndex] = tangent;
+            mHasTangent[sourceIndex] = true;
+            return sourceIndex;
+        }
+        if (mRemap.tangents[sourceIndex] == tangent) {
+            return sourceIndex;
+        }
+        return splitIndexFor(sourceIndex, tangent);
+    }
+
+    uint32_t splitIndexFor(uint32_t sourceIndex, glm::vec4 const& tangent) {
+        auto [entry, inserted] = mSplitVertices.try_emplace(TangentVertex{ sourceIndex, tangent },
+                static_cast<uint32_t>(mRemap.sources.size()));
+        if (inserted) {
+            mRemap.sources.push_back(sourceIndex);
+            mRemap.tangents.push_back(tangent);
+        }
+        return entry->second;
+    }
+
+    gltf::TangentVertexRemap mRemap;
+    std::vector<bool> mHasTangent;
+    std::unordered_map<TangentVertex, uint32_t, TangentVertexHash> mSplitVertices;
+};
 
 struct TangentMesh {
     std::span<Vertex const> vertices;
@@ -81,6 +144,11 @@ SMikkTSpaceInterface tangentCallbacks() {
 }
 
 } // namespace
+
+gltf::TangentVertexRemap gltf::splitTangentSeams(size_t vertexCount,
+        std::span<uint32_t const> indices, std::span<glm::vec4 const> cornerTangents) {
+    return TangentSeamBuilder(vertexCount).build(indices, cornerTangents);
+}
 
 std::vector<glm::vec4> gltf::generateTangents(std::span<Vertex const> vertices,
         std::span<uint32_t const> indices) {
