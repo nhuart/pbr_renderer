@@ -1,6 +1,7 @@
 {
+    "resolution": [1440, 960],
     "ibl": "ibl/sky",
-    "iblRotation": [-38.2906, 135.0465, 0.0],
+    "iblRotation": [-42, 125, 0.0],
     "skybox": true,
     "lights": [
         {

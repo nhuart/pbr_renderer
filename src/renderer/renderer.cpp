@@ -63,7 +63,8 @@ void Renderer::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    mWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    mWindow =
+            glfwCreateWindow(mScene.resolution.x, mScene.resolution.y, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(mWindow, this);
     glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
     glfwSetMouseButtonCallback(mWindow, mouseButtonCallback);

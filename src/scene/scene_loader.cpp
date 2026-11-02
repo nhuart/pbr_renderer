@@ -154,6 +154,9 @@ void validateIblRotation(glm::vec3 const& rotation, std::string const& path) {
 }
 
 void validateScene(Scene const& scene, std::string const& path) {
+    if (scene.resolution.x <= 0 || scene.resolution.y <= 0) {
+        throw std::runtime_error("scene resolution must have positive width and height: " + path);
+    }
     validateIblRotation(scene.iblRotation, path);
     validateAo(scene, path);
     validateCamera(scene.camera, path);
@@ -381,6 +384,10 @@ Scene loadScene(std::string const& path) {
     }
     json j = json::parse(file);
     Scene scene;
+    if (j.contains("resolution")) {
+        scene.resolution = { j.at("resolution").at(0).get<int>(),
+            j.at("resolution").at(1).get<int>() };
+    }
     if (j.contains("toneMapping")) {
         scene.toneMapping = parseToneMapping(j.at("toneMapping"), path);
     }
