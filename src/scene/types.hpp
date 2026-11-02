@@ -152,6 +152,7 @@ struct Scene {
     Camera camera;
     ToneMapping toneMapping = ToneMapping::Reinhard;
     std::optional<std::string> iblPath;
+    glm::vec3 iblRotation{ 0.0f };
     bool skybox = false;
     std::optional<SaoConfig> sao;
     std::optional<GtaoConfig> gtao;

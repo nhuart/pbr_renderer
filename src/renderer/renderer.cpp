@@ -12,6 +12,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 static AmbientLight const* ambientLightFromLights(std::vector<Light> const& lights) {
     for (auto const& light: lights) {
@@ -113,15 +114,19 @@ void Renderer::createSceneObjects() {
 }
 
 void Renderer::createEnvironment() {
-    if (mScene.iblPath) {
-        LoadingTimer timer;
-        auto iblName = std::filesystem::path(*mScene.iblPath).filename().string();
-        mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "/" + iblName + "_ibl.ktx",
-                *mScene.iblPath + "/sh.txt");
-        timer.log("Environment loading time (" + *mScene.iblPath + ")");
-        if (mScene.skybox) {
-            mSkyboxPipeline.emplace(*mCtx, *mIblEnvironment);
-        }
+    if (!mScene.iblPath) {
+        return;
+    }
+    LoadingTimer timer;
+    auto iblName = std::filesystem::path(*mScene.iblPath).filename().string();
+    mIblEnvironment.emplace(*mCtx, *mCmds, *mScene.iblPath + "/" + iblName + "_ibl.ktx",
+            *mScene.iblPath + "/sh.txt");
+    auto rotationRadians = glm::radians(mScene.iblRotation);
+    mIblEnvironment->sh.worldToEnvironment = glm::transpose(
+            glm::eulerAngleXYZ(rotationRadians.x, rotationRadians.y, rotationRadians.z));
+    timer.log("Environment loading time (" + *mScene.iblPath + ")");
+    if (mScene.skybox) {
+        mSkyboxPipeline.emplace(*mCtx, *mIblEnvironment);
     }
 }
 
@@ -246,7 +251,7 @@ void Renderer::updateUniforms() {
     if (mSkyboxPipeline) {
         SkyboxUBO skyboxUbo{
             .invProj = glm::inverse(projection),
-            .invView = glm::inverse(view),
+            .invView = mIblEnvironment->sh.worldToEnvironment * glm::inverse(view),
         };
         mSkyboxPipeline->updateUBO(mFrameIndex, skyboxUbo);
     }

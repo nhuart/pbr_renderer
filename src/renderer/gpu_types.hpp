@@ -74,6 +74,7 @@ struct UniformBufferObject {
 
 struct IblSHUBO {
     alignas(16) glm::vec4 sh[9]; // L0..L2 SH coefficients (RGB in xyz, w unused)
+    alignas(16) glm::mat4 worldToEnvironment{ 1.0f };
 };
 
 struct ShadowUBO {
