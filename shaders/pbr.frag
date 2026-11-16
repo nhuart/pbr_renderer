@@ -161,7 +161,8 @@ vec3 iblAmbient(PbrShadingData surface) {
 
     vec3 environmentReflection = worldToEnvironment * reflect(-surface.viewDirection, surface.normal);
     // perceptualRoughnessToLod from filament/shaders/src/surface_light_indirect.fs
-    float lod = 4.0 * surface.roughness * (2.0 - surface.roughness);
+    float maxLod = float(textureQueryLevels(prefilterMap) - 1);
+    float lod = maxLod * surface.roughness * (2.0 - surface.roughness);
     vec3 prefilteredColor = textureLod(prefilterMap, environmentReflection, lod).rgb;
     vec2 brdf = preintegratedBrdf(surface);
     vec3 Fr = prefilteredColor * (kS * brdf.x + brdf.y);

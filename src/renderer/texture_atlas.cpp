@@ -5,11 +5,66 @@
 #include "core/vulkan_logging.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <iostream>
 #include <stdexcept>
 
 #include <ktx.h>
 #include <ktxvulkan.h>
+
+namespace {
+
+void prepareMipSource(vk::raii::CommandBuffer const& cmd, vk::Image image, uint32_t level) {
+    vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = { vk::ImageAspectFlagBits::eColor, level, 1, 0, 1 },
+    };
+    cmd.pipelineBarrier2(
+            vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
+}
+
+vk::Extent2D blitNextMip(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::Extent2D extent,
+        uint32_t level) {
+    vk::Extent2D nextExtent{ std::max(1u, extent.width / 2), std::max(1u, extent.height / 2) };
+    vk::ImageBlit blit{
+        .srcSubresource = { vk::ImageAspectFlagBits::eColor, level, 0, 1 },
+        .dstSubresource = { vk::ImageAspectFlagBits::eColor, level + 1, 0, 1 },
+    };
+    blit.srcOffsets[1] = vk::Offset3D{ static_cast<int32_t>(extent.width),
+        static_cast<int32_t>(extent.height), 1 };
+    blit.dstOffsets[1] = vk::Offset3D{ static_cast<int32_t>(nextExtent.width),
+        static_cast<int32_t>(nextExtent.height), 1 };
+    cmd.blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image,
+            vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear);
+    return nextExtent;
+}
+
+void generateMipmaps(vk::raii::CommandBuffer const& cmd, vk::Image image, vk::Extent2D extent,
+        uint32_t mipLevels) {
+    for (uint32_t level = 0; level < mipLevels; ++level) {
+        prepareMipSource(cmd, image, level);
+        if (level + 1 == mipLevels) {
+            break;
+        }
+        extent = blitNextMip(cmd, image, extent, level);
+    }
+    vkutil::transitionImageLayout(cmd, image, vk::ImageLayout::eTransferSrcOptimal,
+            vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite,
+            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::ImageAspectFlagBits::eColor,
+            mipLevels);
+}
+
+} // namespace
 
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
         std::string const& path) {
@@ -128,6 +183,7 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
 
 void TextureAtlas::uploadPixels(VulkanContext const& ctx, CommandService const& cmds,
         void const* pixels, uint32_t width, uint32_t height) {
+    mipLevels = std::bit_width(std::max(width, height));
     vk::DeviceSize size = vk::DeviceSize(width) * height * 4;
 
     auto [stagingBuffer, stagingMemory] = vkutil::createBuffer(ctx, size,
@@ -137,9 +193,10 @@ void TextureAtlas::uploadPixels(VulkanContext const& ctx, CommandService const& 
     memcpy(data, pixels, static_cast<size_t>(size));
     stagingMemory.unmapMemory();
 
-    auto [img, imgMem] = vkutil::createImage(ctx, width, height, 1, vk::SampleCountFlagBits::e1,
-            format, vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+    auto [img, imgMem] = vkutil::createImage(ctx, width, height, mipLevels,
+            vk::SampleCountFlagBits::e1, format, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc |
+                    vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
     image = std::move(img);
     imageMemory = std::move(imgMem);
@@ -147,7 +204,8 @@ void TextureAtlas::uploadPixels(VulkanContext const& ctx, CommandService const& 
     vk::raii::CommandBuffer cmd = cmds.beginSingleTimeCommands();
     vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eUndefined,
             vk::ImageLayout::eTransferDstOptimal, {}, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eTopOfPipe, vk::PipelineStageFlagBits2::eTransfer);
+            vk::PipelineStageFlagBits2::eTopOfPipe, vk::PipelineStageFlagBits2::eTransfer,
+            vk::ImageAspectFlagBits::eColor, mipLevels);
     vk::BufferImageCopy region{
         .bufferOffset = 0,
         .bufferRowLength = 0,
@@ -157,13 +215,11 @@ void TextureAtlas::uploadPixels(VulkanContext const& ctx, CommandService const& 
         .imageExtent = { width, height, 1 },
     };
     cmd.copyBufferToImage(*stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, region);
-    vkutil::transitionImageLayout(cmd, *image, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eTransferWrite,
-            vk::AccessFlagBits2::eShaderRead, vk::PipelineStageFlagBits2::eTransfer,
-            vk::PipelineStageFlagBits2::eFragmentShader);
+    generateMipmaps(cmd, *image, { width, height }, mipLevels);
     cmds.endSingleTimeCommands(std::move(cmd));
 
-    imageView = vkutil::createImageView(ctx, *image, format);
+    imageView = vkutil::createImageView(ctx, *image, format, vk::ImageAspectFlagBits::eColor,
+            mipLevels);
 }
 
 TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
@@ -189,7 +245,7 @@ TextureAtlas::TextureAtlas(VulkanContext const& ctx, CommandService const& cmds,
                 .compareEnable = vk::False,
                 .compareOp = vk::CompareOp::eAlways,
                 .minLod = 0.0f,
-                .maxLod = 0.0f,
+                .maxLod = settings.useMipmaps ? static_cast<float>(mipLevels - 1) : 0.0f,
                 .borderColor = vk::BorderColor::eIntOpaqueBlack,
             });
 

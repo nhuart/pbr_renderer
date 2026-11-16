@@ -24,6 +24,7 @@ struct TextureSampler {
     vk::SamplerMipmapMode mipmapMode = vk::SamplerMipmapMode::eLinear;
     vk::SamplerAddressMode wrapU = vk::SamplerAddressMode::eRepeat;
     vk::SamplerAddressMode wrapV = vk::SamplerAddressMode::eRepeat;
+    bool useMipmaps = true;
 };
 
 struct TextureDefinition {

@@ -35,7 +35,9 @@ TextureSampler readSampler(tinygltf::Sampler const& sampler) {
                                                                           : vk::Filter::eLinear,
         .mipmapMode = nearestMip ? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear,
         .wrapU = wrapMode(sampler.wrapS),
-        .wrapV = wrapMode(sampler.wrapT) };
+        .wrapV = wrapMode(sampler.wrapT),
+        .useMipmaps = sampler.minFilter != TINYGLTF_TEXTURE_FILTER_NEAREST &&
+                      sampler.minFilter != TINYGLTF_TEXTURE_FILTER_LINEAR };
 }
 
 MaterialDefinition readMaterial(tinygltf::Material const& material) {
