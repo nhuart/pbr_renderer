@@ -1,0 +1,30 @@
+{
+  "source": "ibl/sky/sky.hdr",
+  "sunDirection": [
+    0.4,
+    0.45,
+    -1.0
+  ],
+  "rotation": [
+    [
+      -0.9250188713398311,
+      0.1865077304119929,
+      0.3309908671878312
+    ],
+    [
+      -0.005325196540938687,
+      0.8647587999552903,
+      -0.5021591980454871
+    ],
+    [
+      -0.37988383743848,
+      -0.4662693260299821,
+      -0.7989250187949811
+    ]
+  ],
+  "brightness": 3,
+  "solarRadianceCap": 4,
+  "canopyDiffuseTransmission": 0.08,
+  "cubemapSize": 512,
+  "description": "Photographic sky oriented to the directional sun; canopy-occluded diffuse illumination."
+}
