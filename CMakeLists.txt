@@ -71,6 +71,7 @@ set(SHADER_SOURCES
     shaders/phong.frag
     shaders/blinn_phong.frag
     shaders/shadow.vert
+    shaders/shadow.frag
     shaders/skybox.vert
     shaders/skybox.frag
     shaders/particle.vert

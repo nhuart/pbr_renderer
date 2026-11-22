@@ -27,6 +27,12 @@ void applyAlphaMask(float opacity) {
     if (surfaceMaterial.alphaMode == ALPHA_MASK && opacity < surfaceMaterial.alphaCutoff) discard;
 }
 
+void applyShadowCoverage(vec2 uv, float vertexAlpha) {
+    // Fractional BLEND shadow coverage is approximated by a binary alpha test.
+    if (surfaceMaterial.alphaMode != ALPHA_OPAQUE &&
+            materialOpacity(uv, vertexAlpha) < surfaceMaterial.alphaCutoff) discard;
+}
+
 float colorPassOpacity(float textureAlpha, float vertexAlpha) {
     float opacity = materialOpacity(textureAlpha, vertexAlpha);
     applyAlphaMask(opacity);

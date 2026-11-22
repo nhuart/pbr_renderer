@@ -139,11 +139,9 @@ struct ShadowGraphicsState {
     std::array<vk::DynamicState, 2> dynamicStates{ vk::DynamicState::eViewport,
         vk::DynamicState::eScissor };
     vk::VertexInputBindingDescription vertexBinding = Vertex::getBindingDescription();
-    vk::VertexInputAttributeDescription positionAttribute{
-        .location = 0,
-        .binding = 0,
-        .format = vk::Format::eR32G32B32Sfloat,
-        .offset = offsetof(Vertex, pos),
+    std::array<vk::VertexInputAttributeDescription, 3> attributes{
+        Vertex::getAttributeDescriptions()[0], Vertex::getAttributeDescriptions()[1],
+        Vertex::getAttributeDescriptions()[2]
     };
     vk::PipelineDynamicStateCreateInfo dynamicState{
         .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
@@ -152,8 +150,8 @@ struct ShadowGraphicsState {
     vk::PipelineVertexInputStateCreateInfo vertexInput{
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &vertexBinding,
-        .vertexAttributeDescriptionCount = 1,
-        .pVertexAttributeDescriptions = &positionAttribute,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
+        .pVertexAttributeDescriptions = attributes.data(),
     };
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
         .topology = vk::PrimitiveTopology::eTriangleList,
@@ -283,19 +281,24 @@ void ShadowPipeline::createDescriptorResources(VulkanContext const& ctx, uint32_
 void ShadowPipeline::createGraphicsPipeline(VulkanContext const& ctx) {
     auto vertexShader =
             vkutil::createShaderModule(ctx, vkutil::readSpirv("shaders/compiled/shadow.vert.spv"));
-    vk::PipelineShaderStageCreateInfo vertexStage{
-        .stage = vk::ShaderStageFlagBits::eVertex,
-        .module = *vertexShader,
-        .pName = "main",
-    };
+    auto fragmentShader =
+            vkutil::createShaderModule(ctx, vkutil::readSpirv("shaders/compiled/shadow.frag.spv"));
+    std::array stages{ vk::PipelineShaderStageCreateInfo{
+                           .stage = vk::ShaderStageFlagBits::eVertex,
+                           .module = *vertexShader,
+                           .pName = "main",
+                       },
+        vk::PipelineShaderStageCreateInfo{ .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = *fragmentShader,
+            .pName = "main" } };
 
     ShadowGraphicsState state;
     vk::Format shadowDepthFormat = vkutil::findDepthFormat(ctx);
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
             pipelineChain = {
                 {
-                    .stageCount = 1,
-                    .pStages = &vertexStage,
+                    .stageCount = stages.size(),
+                    .pStages = stages.data(),
                     .pVertexInputState = &state.vertexInput,
                     .pInputAssemblyState = &state.inputAssembly,
                     .pViewportState = &state.viewport,
