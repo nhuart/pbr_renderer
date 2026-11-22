@@ -11,6 +11,7 @@ import vulkan_hpp;
 #endif
 
 #include "renderer/gpu_types.hpp"
+#include "renderer/model_asset.hpp"
 
 struct VulkanContext;
 struct TextureAtlas;
@@ -23,6 +24,7 @@ struct MaterialPipelineKey {
     std::string fragmentShader;
     ShaderFeatures features = ShaderFeatures::None;
     bool doubleSided = false;
+    AlphaMode alphaMode = AlphaMode::Opaque;
 
     auto operator<=>(MaterialPipelineKey const&) const = default;
 };

@@ -3,6 +3,7 @@
 
 #include "medium.glsl"
 #include "lighting.glsl"
+#include "material_surface.glsl"
 
 layout(binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -267,6 +268,7 @@ vec3 ambientLighting(PbrShadingData surface) {
 
 void main() {
     vec4 texColor = texture(texSampler, fragTexCoord);
+    float opacity = colorPassOpacity(texColor.a, fragColor.a);
     vec3 albedo = texColor.rgb * fragBaseColor.rgb * fragColor.rgb;
     vec3 normal = resolveNormal();
     if (!gl_FrontFacing) normal = -normal;
@@ -278,5 +280,5 @@ void main() {
     vec3 direct = directLighting(surface);
     vec3 ambient = ambientLighting(surface);
     vec3 color = ambient + direct;
-    outColor = vec4(color, texColor.a * fragBaseColor.a * fragColor.a);
+    outColor = vec4(color, opacity);
 }

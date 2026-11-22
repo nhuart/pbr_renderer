@@ -52,6 +52,8 @@ struct MaterialDefinition {
     TextureReference baseColorTexture;
     TextureReference normalTexture;
     TextureReference specularGlossinessTexture;
+    AlphaMode alphaMode = AlphaMode::Opaque;
+    float alphaCutoff = 0.5f;
 };
 
 struct MeshPrimitive {

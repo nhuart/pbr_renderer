@@ -22,7 +22,8 @@ MaterialPipelineKey Renderer::resolveMaterialPipeline(MeshInstance const& instan
         MaterialDefinition const& definition) const {
     MaterialPipelineKey key{ .vertexShader = instance.vertexShader,
         .fragmentShader = instance.fragmentShader,
-        .doubleSided = definition.doubleSided };
+        .doubleSided = definition.doubleSided,
+        .alphaMode = definition.alphaMode };
     if (instance.fragmentShader != "pbr") {
         return key;
     }
@@ -93,7 +94,8 @@ void Renderer::createMaterialSurface(MaterialBinding& binding, MeshInstance cons
         ModelAsset const& model, MaterialDefinition const& definition) {
     auto const& specularTexture = mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
             model, TextureReference{}, TextureUsage::BaseColor);
-    SurfaceUniforms uniforms{
+    SurfaceUniforms uniforms{ .alphaCutoff = definition.alphaCutoff,
+        .alphaMode = static_cast<float>(definition.alphaMode),
         .opacityFactor = instance.baseColor.value_or(definition.baseColor).a };
     binding.surface = mMaterialSurfaces->create(*mCtx, uniforms,
             SurfaceTextures{ *binding.texture, specularTexture });
