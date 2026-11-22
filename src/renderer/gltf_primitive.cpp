@@ -59,6 +59,69 @@ private:
     size_t mStride = 0;
 };
 
+bool hasNormalizedColorComponents(tinygltf::Accessor const& accessor) {
+    return accessor.normalized &&
+           (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE ||
+                   accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT);
+}
+
+void validateColorAccessor(tinygltf::Accessor const& accessor) {
+    if (accessor.type != TINYGLTF_TYPE_VEC3 && accessor.type != TINYGLTF_TYPE_VEC4) {
+        throw std::runtime_error("vertex colors require VEC3 or VEC4");
+    }
+    if (accessor.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT &&
+            !hasNormalizedColorComponents(accessor)) {
+        throw std::runtime_error("vertex colors require floats or normalized unsigned integers");
+    }
+}
+
+float readColorComponent(uint8_t const* bytes, int component, int componentType) {
+    switch (componentType) {
+        case TINYGLTF_COMPONENT_TYPE_FLOAT:
+            return readAt<float>(bytes, component);
+        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+            return readAt<uint8_t>(bytes, component) / 255.0f;
+        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+            return readAt<uint16_t>(bytes, component) / 65535.0f;
+        default:
+            throw std::runtime_error("unsupported vertex color component type");
+    }
+}
+
+class ColorAttribute {
+public:
+    ColorAttribute(tinygltf::Model const& model, tinygltf::Primitive const& primitive) {
+        auto entry = primitive.attributes.find("COLOR_0");
+        if (entry == primitive.attributes.end()) {
+            return;
+        }
+        auto const& accessor = model.accessors.at(entry->second);
+        validateColorAccessor(accessor);
+        mComponentType = accessor.componentType;
+        mComponents = accessor.type == TINYGLTF_TYPE_VEC4 ? 4 : 3;
+        mBytes = accessorData(model, accessor);
+        mStride = accessor.ByteStride(model.bufferViews.at(accessor.bufferView));
+    }
+
+    glm::vec4 read(size_t index) const {
+        glm::vec4 color(1.0f);
+        if (!mBytes) {
+            return color;
+        }
+        auto const* bytes = mBytes + index * mStride;
+        for (int component = 0; component < mComponents; ++component) {
+            color[component] = readColorComponent(bytes, component, mComponentType);
+        }
+        return color;
+    }
+
+private:
+    uint8_t const* mBytes = nullptr;
+    size_t mStride = 0;
+    int mComponents = 0;
+    int mComponentType = 0;
+};
+
 tinygltf::NormalTextureInfo const* normalTexture(tinygltf::Model const& model,
         tinygltf::Primitive const& primitive) {
     if (primitive.material < 0) {
@@ -101,6 +164,7 @@ public:
             : mPositions(model, primitive, "POSITION"),
               mNormals(model, primitive, "NORMAL"),
               mTangents(model, primitive, "TANGENT"),
+              mColors(model, primitive),
               mBaseColorUVs(model, primitive, material.baseColorTexture),
               mNormalUVs(model, primitive, material.normalTexture),
               mSpecularGlossinessUVs(model, primitive, material.specularGlossinessTexture) {
@@ -112,7 +176,7 @@ public:
 
     Vertex read(size_t index) const {
         return { .pos = mPositions.read(index),
-            .color = glm::vec3(1.0f),
+            .color = mColors.read(index),
             .texCoord = mBaseColorUVs.read(index),
             .normal = mNormals.read(index),
             .tangent = mTangents.read(index),
@@ -124,6 +188,7 @@ private:
     FloatAttribute<3> mPositions;
     FloatAttribute<3> mNormals;
     FloatAttribute<4> mTangents;
+    ColorAttribute mColors;
     TextureCoordinates mBaseColorUVs;
     TextureCoordinates mNormalUVs;
     TextureCoordinates mSpecularGlossinessUVs;

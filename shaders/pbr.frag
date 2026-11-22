@@ -49,7 +49,7 @@ layout(binding = 8) uniform ShadowUBO {
 layout(binding = 9) uniform sampler2D aoMap;
 #endif
 
-layout(location = 0) in vec3 fragColor;
+layout(location = 0) in vec4 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragNormal;
 layout(location = 3) in vec4 fragBaseColor;
@@ -267,7 +267,7 @@ vec3 ambientLighting(PbrShadingData surface) {
 
 void main() {
     vec4 texColor = texture(texSampler, fragTexCoord);
-    vec3 albedo = texColor.rgb * fragBaseColor.rgb;
+    vec3 albedo = texColor.rgb * fragBaseColor.rgb * fragColor.rgb;
     vec3 normal = resolveNormal();
     if (!gl_FrontFacing) normal = -normal;
     vec3 viewDirection = normalize(ubo.cameraPos.xyz - fragWorldPos);
@@ -278,5 +278,5 @@ void main() {
     vec3 direct = directLighting(surface);
     vec3 ambient = ambientLighting(surface);
     vec3 color = ambient + direct;
-    outColor = vec4(color, texColor.a * fragBaseColor.a);
+    outColor = vec4(color, texColor.a * fragBaseColor.a * fragColor.a);
 }

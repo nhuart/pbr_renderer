@@ -9,7 +9,7 @@
 
 struct Vertex {
     glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec4 color{ 1.0f };
     glm::vec2 texCoord;
     glm::vec3 normal;
     glm::vec4 tangent; // xyz = tangent direction, w = handedness (+1 or -1)
@@ -35,7 +35,7 @@ struct Vertex {
                        .offset = offsetof(Vertex, pos) },
             { .location = 1,
                 .binding = 0,
-                .format = vk::Format::eR32G32B32Sfloat,
+                .format = vk::Format::eR32G32B32A32Sfloat,
                 .offset = offsetof(Vertex, color) },
             { .location = 2,
                 .binding = 0,
