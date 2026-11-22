@@ -46,10 +46,17 @@ find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 function(add_shader_output shader_source output_name)
     set(output_path "${CMAKE_BINARY_DIR}/shaders/${output_name}.spv")
     set(shader_dependencies "${CMAKE_SOURCE_DIR}/${shader_source}")
-    if(shader_source STREQUAL "shaders/pbr.frag" OR shader_source STREQUAL "shaders/volumetric.frag")
+    if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong|view_space_normals|shadow)[.]frag$")
+        list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/material_surface.glsl")
+    endif()
+    if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong|volumetric)[.]frag$")
         list(APPEND shader_dependencies
             "${CMAKE_SOURCE_DIR}/shaders/medium.glsl"
-            "${CMAKE_SOURCE_DIR}/shaders/lighting.glsl")
+            "${CMAKE_SOURCE_DIR}/shaders/lighting.glsl"
+            "${CMAKE_SOURCE_DIR}/shaders/volumetric_medium.glsl")
+    endif()
+    if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong)[.]frag$")
+        list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/surface_fog.glsl")
     endif()
     add_custom_command(
         OUTPUT "${output_path}"
@@ -68,6 +75,7 @@ set(SHADER_SOURCES
     shaders/phong.frag
     shaders/blinn_phong.frag
     shaders/shadow.vert
+    shaders/shadow.frag
     shaders/skybox.vert
     shaders/skybox.frag
     shaders/particle.vert
@@ -88,11 +96,15 @@ foreach(shader IN LISTS SHADER_SOURCES)
     add_shader_output("${shader}" "${shader_name}")
 endforeach()
 
+foreach(shader IN ITEMS lambertian phong blinn_phong)
+    add_shader_output("shaders/${shader}.frag" "${shader}_fog.frag" -DUSE_FOG)
+endforeach()
+
 # Compile both presentation modes from the same source.
 add_shader_output("shaders/tonemap.frag" "tonemap.frag")
 add_shader_output("shaders/tonemap.frag" "tonemap_none.frag" -DNO_TONEMAP)
 
-# Keep suffix order in sync with Renderer::resolveMaterialPipeline().
+# Keep suffix order in sync with Renderer material feature selection.
 function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
     set(variant_name pbr)
     set(define_flags)
@@ -117,6 +129,7 @@ function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
     endif()
 
     add_shader_output("shaders/pbr.frag" "${variant_name}.frag" ${define_flags})
+    add_shader_output("shaders/pbr.frag" "${variant_name}_fog.frag" ${define_flags} -DUSE_FOG)
     set(SHADER_SPIRV_OUTPUTS "${SHADER_SPIRV_OUTPUTS}" PARENT_SCOPE)
 endfunction()
 
@@ -150,12 +163,14 @@ add_executable(pbr_renderer
     src/renderer/renderer_materials.cpp
     src/renderer/renderer_capture.cpp
     src/renderer/renderer_graph.cpp
+    src/renderer/renderer_forward.cpp
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
     src/renderer/embedded_image.cpp
     src/renderer/gltf_buffer.cpp
     src/renderer/gltf_model.cpp
+    src/renderer/gltf_material.cpp
     src/renderer/gltf_model_io.cpp
     src/renderer/gltf_primitive.cpp
     src/renderer/gltf_tangents.cpp
@@ -165,6 +180,7 @@ add_executable(pbr_renderer
     src/renderer/skybox_pipeline.cpp
     src/renderer/tonemap_pipeline.cpp
     src/renderer/material.cpp
+    src/renderer/material_surface.cpp
     src/renderer/material_instance.cpp
     src/renderer/shadow_pipeline.cpp
     src/renderer/ao_pipeline.cpp

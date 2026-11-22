@@ -125,7 +125,7 @@ void VolumetricPipeline::createGraphicsPipeline(VulkanContext const& ctx) {
         .lineWidth = 1.0f,
     };
     vk::PipelineMultisampleStateCreateInfo multisample{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+        .rasterizationSamples = ctx.msaaSamples,
     };
     vk::PipelineColorBlendAttachmentState blendAttachment{
         .blendEnable = vk::True,

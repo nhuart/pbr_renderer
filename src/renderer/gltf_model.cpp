@@ -1,5 +1,6 @@
 #include "renderer/gltf_model.hpp"
 #include "renderer/gltf_buffer.hpp"
+#include "renderer/gltf_material.hpp"
 #include "renderer/gltf_model_io.hpp"
 #include "renderer/gltf_primitive.hpp"
 #include "renderer/gltf_tangent_baker.hpp"
@@ -40,18 +41,6 @@ TextureSampler readSampler(tinygltf::Sampler const& sampler) {
                       sampler.minFilter != TINYGLTF_TEXTURE_FILTER_LINEAR };
 }
 
-MaterialDefinition readMaterial(tinygltf::Material const& material) {
-    auto const& pbr = material.pbrMetallicRoughness;
-    return { .baseColor = glm::vec4(pbr.baseColorFactor[0], pbr.baseColorFactor[1],
-                     pbr.baseColorFactor[2], pbr.baseColorFactor[3]),
-        .metallic = static_cast<float>(pbr.metallicFactor),
-        .roughness = static_cast<float>(pbr.roughnessFactor),
-        .normalScale = static_cast<float>(material.normalTexture.scale),
-        .doubleSided = material.doubleSided,
-        .baseColorTexture = { pbr.baseColorTexture.index, pbr.baseColorTexture.texCoord },
-        .normalTexture = { material.normalTexture.index, material.normalTexture.texCoord } };
-}
-
 EmbeddedImage readEncodedImage(tinygltf::Model const& model, tinygltf::Image const& image) {
     if (image.bufferView < 0) {
         return EmbeddedImage(image.image);
@@ -76,7 +65,7 @@ EmbeddedImage readImage(tinygltf::Model const& model, int imageIndex) {
 
 void readMaterials(tinygltf::Model const& model, ModelAsset& asset) {
     for (auto const& material: model.materials) {
-        asset.materials.push_back(readMaterial(material));
+        asset.materials.push_back(gltf::readMaterial(material));
     }
     // Normalize omitted primitive materials to a valid, shared default entry.
     asset.materials.emplace_back();
@@ -107,6 +96,7 @@ void readImages(tinygltf::Model const& model, ModelAsset& asset) {
     for (auto const& material: asset.materials) {
         readReferencedImage(model, asset, material.baseColorTexture);
         readReferencedImage(model, asset, material.normalTexture);
+        readReferencedImage(model, asset, material.specularGlossinessTexture);
     }
 }
 
@@ -135,10 +125,26 @@ public:
         if (vertexTransform.reversesWinding()) {
             reverseWinding(range);
         }
-        mOutput.asset.primitives.push_back({ range, resolveMaterialIndex(model, primitive) });
+        mOutput.asset.primitives.push_back(
+                { range, resolveMaterialIndex(model, primitive), primitiveCenter(range) });
     }
 
 private:
+    glm::vec3 primitiveCenter(IndexRange range) const {
+        if (range.indexCount == 0) {
+            return glm::vec3(0.0f);
+        }
+        glm::vec3 boundsMin(std::numeric_limits<float>::max());
+        glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+        size_t end = size_t(range.firstIndex) + range.indexCount;
+        for (size_t index = range.firstIndex; index < end; ++index) {
+            auto const& position = mOutput.vertices[mOutput.indices[index]].pos;
+            boundsMin = glm::min(boundsMin, position);
+            boundsMax = glm::max(boundsMax, position);
+        }
+        return (boundsMin + boundsMax) * 0.5f;
+    }
+
     void appendIndexedVertices(gltf::PrimitiveGeometry const& geometry,
             gltf::VertexTransform const& transform) {
         constexpr uint32_t UNMAPPED_VERTEX = std::numeric_limits<uint32_t>::max();

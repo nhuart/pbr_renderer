@@ -36,9 +36,11 @@ void Renderer::buildRenderGraph() {
     addShadowPass();
     addDepthPrepass(depthFormat);
     addAmbientOcclusionPasses(depthFormat);
-    addForwardPass(multisampled ? msaaHdrImage : hdrImage, depthImage,
+    auto forwardColor = multisampled ? msaaHdrImage : hdrImage;
+    addOpaquePass(forwardColor, depthImage);
+    addVolumetricPass(forwardColor);
+    addTransparentPass(forwardColor, depthImage,
             multisampled ? hdrImage : RenderGraphImageHandle{});
-    addVolumetricPass(hdrImage);
     addTonemapPass(hdrImage);
     mRenderGraph.compile(*mCtx);
 }
@@ -76,6 +78,11 @@ void Renderer::addShadowPass() {
                                 *mShadowPipeline->objects[shadowObjIdx].descriptorSets[mFrameIndex],
                                 {});
                         for (auto const& primitive: object.model->primitives) {
+                            auto const& binding =
+                                    object.materialBindings.at(primitive.materialIndex);
+                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                    *mShadowPipeline->pipelineLayout, 1,
+                                    *binding.surface.descriptorSets[0], {});
                             bool doubleSided =
                                     object.model->materials[primitive.materialIndex].doubleSided;
                             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
@@ -129,6 +136,15 @@ void Renderer::addDepthPrepass(vk::Format depthFormat) {
                                 *mGeometryPrepass->normalsObjects[i].descriptorSets[mFrameIndex],
                                 {});
                         for (auto const& primitive: object.model->primitives) {
+                            auto const& binding =
+                                    object.materialBindings.at(primitive.materialIndex);
+                            // A single-layer AO/depth buffer cannot represent blended layers.
+                            if (binding.pipelineKey.alphaMode == AlphaMode::Blend) {
+                                continue;
+                            }
+                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                    *mGeometryPrepass->normalsPipeLayout, 1,
+                                    *binding.surface.descriptorSets[0], {});
                             bool doubleSided =
                                     object.model->materials[primitive.materialIndex].doubleSided;
                             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
@@ -247,52 +263,42 @@ void Renderer::addAoBlurPass(std::string name, RenderGraphImageHandle input,
             });
 }
 
-void Renderer::addForwardPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
-        RenderGraphImageHandle resolveTarget) {
-    auto& forwardPass = mRenderGraph.addPass("ForwardPass").writesColor(color).writesDepth(depth);
-    if (resolveTarget.isValid()) {
-        forwardPass.resolvesTo(resolveTarget);
-    }
+void Renderer::prepareForwardPass(vk::raii::CommandBuffer const& cmd) const {
+    cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
+    cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
+    setViewportAndScissor(cmd, mSwapchain->extent);
+}
+
+void Renderer::addOpaquePass(RenderGraphImageHandle color, RenderGraphImageHandle depth) {
+    auto& forwardPass = mRenderGraph.addPass("OpaquePass").writesColor(color).writesDepth(depth);
     if (mShadowMapImageHandle.isValid()) {
         forwardPass.reads(mShadowMapImageHandle);
     }
     if (mAoRawImageHandle.isValid()) {
         forwardPass.reads(mAoRawImageHandle);
     }
-    forwardPass.execute([this](vk::raii::CommandBuffer const& commandBuffer) {
-        commandBuffer.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
-        commandBuffer.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
-        setViewportAndScissor(commandBuffer, mSwapchain->extent);
+    forwardPass.execute([this](vk::raii::CommandBuffer const& cmd) {
+        prepareForwardPass(cmd);
+        drawOpaqueScene(cmd);
+    });
+}
 
-        for (auto const& renderObject: mRenderObjects) {
-            for (auto const& primitive: renderObject.model->primitives) {
-                auto const& binding = renderObject.materialBindings.at(primitive.materialIndex);
-                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                        *binding.pipeline->pipeline);
-                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                        *binding.pipeline->pipelineLayout, 0,
-                        *binding.materialInstance.descriptorSets[mFrameIndex], {});
-                commandBuffer.drawIndexed(primitive.range.indexCount, 1, primitive.range.firstIndex,
-                        0, 0);
-            }
-        }
-
-        if (mScene.particles) {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                    *mParticlePipeline->particlePipeline);
-            commandBuffer.bindVertexBuffers(0,
-                    *mParticlePipeline->shaderStorageBuffers[mFrameIndex], { vk::DeviceSize{ 0 } });
-            commandBuffer.draw(mScene.particles->count, 1, 0, 0);
-        }
-
-        if (mSkyboxPipeline) {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                    *mSkyboxPipeline->pipeline);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                    *mSkyboxPipeline->pipelineLayout, 0,
-                    *mSkyboxPipeline->descriptorSets[mFrameIndex], {});
-            commandBuffer.draw(3, 1, 0, 0);
-        }
+void Renderer::addTransparentPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
+        RenderGraphImageHandle resolveTarget) {
+    auto& pass = mRenderGraph.addPass("TransparentPass")
+                         .writesColor(color)
+                         .preservesColorContents(color)
+                         .writesDepth(depth)
+                         .preservesDepthContents();
+    if (resolveTarget.isValid()) {
+        pass.resolvesTo(resolveTarget);
+    }
+    if (mShadowMapImageHandle.isValid()) {
+        pass.reads(mShadowMapImageHandle);
+    }
+    pass.execute([this](vk::raii::CommandBuffer const& cmd) {
+        prepareForwardPass(cmd);
+        drawTransparentScene(cmd);
     });
 }
 

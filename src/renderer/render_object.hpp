@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include "renderer/material.hpp"
+#include "renderer/material_surface.hpp"
 #include "renderer/model_asset.hpp"
 
 struct TextureAtlas;
@@ -13,6 +14,7 @@ struct MaterialBinding {
     TextureAtlas const* normalMap = nullptr;
     Material const* pipeline = nullptr;
     MaterialInstance materialInstance;
+    MaterialSurface surface;
 };
 
 struct RenderObject {

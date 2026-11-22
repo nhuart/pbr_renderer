@@ -22,27 +22,30 @@ MaterialPipelineKey Renderer::resolveMaterialPipeline(MeshInstance const& instan
         MaterialDefinition const& definition) const {
     MaterialPipelineKey key{ .vertexShader = instance.vertexShader,
         .fragmentShader = instance.fragmentShader,
-        .doubleSided = definition.doubleSided };
-    if (instance.fragmentShader != "pbr") {
-        return key;
+        .doubleSided = definition.doubleSided,
+        .alphaMode = definition.alphaMode };
+    if (instance.fragmentShader == "pbr") {
+        configurePbrFeatures(key, instance, definition);
     }
+    bool usesFragmentFog =
+            definition.alphaMode == AlphaMode::Blend && mScene.volumetric.has_value();
+    key.enableFeatureIf(usesFragmentFog, ShaderFeatures::VolumetricFog, "_fog");
+    return key;
+}
+
+void Renderer::configurePbrFeatures(MaterialPipelineKey& key, MeshInstance const& instance,
+        MaterialDefinition const& definition) const {
     key.features = ShaderFeatures::BrdfLut;
-    auto enableFeature = [&key](bool enabled, ShaderFeatures feature, char const* suffix) {
-        if (enabled) {
-            key.features = key.features | feature;
-            key.fragmentShader += suffix;
-        }
-    };
     bool hasShadow = instance.receiveShadows && mShadowPipeline.has_value();
     bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
-    enableFeature(mIblEnvironment.has_value(), ShaderFeatures::Ibl, "_ibl");
-    enableFeature(instance.useNormalMap && definition.normalTexture.hasTexture(),
+    key.enableFeatureIf(mIblEnvironment.has_value(), ShaderFeatures::Ibl, "_ibl");
+    key.enableFeatureIf(instance.useNormalMap && definition.normalTexture.hasTexture(),
             ShaderFeatures::NormalMap, "_normal");
-    enableFeature(hasPcf, ShaderFeatures::PcfShadow, "_pcf");
-    enableFeature(hasShadow && !hasPcf, ShaderFeatures::HardShadow, "_shadow");
+    key.enableFeatureIf(hasPcf, ShaderFeatures::PcfShadow, "_pcf");
+    key.enableFeatureIf(hasShadow && !hasPcf, ShaderFeatures::HardShadow, "_shadow");
     // SAO and GTAO share the same surface-shader sampler and variant.
-    enableFeature(mScene.sao.has_value() || mScene.gtao.has_value(), ShaderFeatures::Ao, "_sao");
-    return key;
+    bool receivesAo = definition.alphaMode != AlphaMode::Blend && (mScene.sao || mScene.gtao);
+    key.enableFeatureIf(receivesAo, ShaderFeatures::Ao, "_sao");
 }
 
 void Renderer::createMaterialPipelines() {
@@ -52,31 +55,58 @@ void Renderer::createMaterialPipelines() {
             ++bindingCounts[binding.pipelineKey];
         }
     }
+    MaterialPassLayouts layouts{ .surface = *mMaterialSurfaces->layout,
+        .volumetric = mVolumetricPipeline ? mVolumetricPipeline->materialDescriptorLayout()
+                                          : vk::DescriptorSetLayout{} };
     for (auto const& [key, count]: bindingCounts) {
-        mMaterialPipelines.emplace(key, Material(*mCtx, key, count));
+        mMaterialPipelines.emplace(key, Material(*mCtx, key, count, layouts));
     }
 }
 
 void Renderer::createMaterialBindings() {
     for (auto& object: mRenderObjects) {
-        auto const& instance = mScene.meshInstances[object.gameObjectIndex];
         for (auto& [index, binding]: object.materialBindings) {
-            auto const& definition = object.model->materials.at(index);
-            binding.texture =
-                    instance.texturePath.empty()
-                            ? &mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
-                                      *object.model, definition.baseColorTexture,
-                                      TextureUsage::BaseColor)
-                            : &mResources->getTexture(*mCtx, *mCmds, instance.texturePath);
-            if (hasFeature(binding.pipelineKey.features, ShaderFeatures::NormalMap)) {
-                binding.normalMap =
-                        &mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
-                                *object.model, definition.normalTexture, TextureUsage::NormalMap);
-            }
-            binding.pipeline = &mMaterialPipelines.at(binding.pipelineKey);
-            createMaterialInstance(binding);
+            createMaterialBinding(object, index, binding);
         }
     }
+}
+
+TextureAtlas const& Renderer::resolveBaseColorTexture(MeshInstance const& instance,
+        ModelAsset const& model, TextureReference reference) {
+    if (!instance.texturePath.empty()) {
+        return mResources->getTexture(*mCtx, *mCmds, instance.texturePath);
+    }
+    return mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath, model, reference,
+            TextureUsage::BaseColor);
+}
+
+void Renderer::createMaterialBinding(RenderObject const& object, uint32_t materialIndex,
+        MaterialBinding& binding) {
+    auto const& instance = mScene.meshInstances[object.gameObjectIndex];
+    auto const& definition = object.model->materials.at(materialIndex);
+    binding.texture =
+            &resolveBaseColorTexture(instance, *object.model, definition.baseColorTexture);
+    if (hasFeature(binding.pipelineKey.features, ShaderFeatures::NormalMap)) {
+        binding.normalMap = &mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
+                *object.model, definition.normalTexture, TextureUsage::NormalMap);
+    }
+    binding.pipeline = &mMaterialPipelines.at(binding.pipelineKey);
+    createMaterialSurface(binding, instance, *object.model, definition);
+    createMaterialInstance(binding);
+}
+
+void Renderer::createMaterialSurface(MaterialBinding& binding, MeshInstance const& instance,
+        ModelAsset const& model, MaterialDefinition const& definition) {
+    auto const& specularTexture = mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
+            model, definition.specularGlossinessTexture, TextureUsage::SpecularGlossiness);
+    SurfaceUniforms uniforms{ .specularGlossiness =
+                                      glm::vec4(definition.specular, definition.glossiness),
+        .alphaCutoff = definition.alphaCutoff,
+        .alphaMode = static_cast<float>(definition.alphaMode),
+        .workflow = static_cast<float>(definition.workflow),
+        .opacityFactor = instance.baseColor.value_or(definition.baseColor).a };
+    binding.surface = mMaterialSurfaces->create(*mCtx, uniforms,
+            SurfaceTextures{ *binding.texture, specularTexture });
 }
 
 void Renderer::createMaterialInstance(MaterialBinding& binding) {

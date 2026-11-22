@@ -9,8 +9,8 @@
 #include <array>
 #include <iostream>
 
-Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key,
-        uint32_t instanceCount) {
+Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount,
+        MaterialPassLayouts const& passLayouts) {
     auto features = key.features;
 
     // Build descriptor set layout from active features only
@@ -150,7 +150,13 @@ Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key,
         .minSampleShading = 0.2f,
     };
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-        .blendEnable = vk::False,
+        .blendEnable = key.alphaMode == AlphaMode::Blend,
+        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+        .colorBlendOp = vk::BlendOp::eAdd,
+        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+        .dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+        .alphaBlendOp = vk::BlendOp::eAdd,
         .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
                           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
     };
@@ -161,18 +167,22 @@ Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key,
     };
     vk::PipelineDepthStencilStateCreateInfo depthStencilInfo{
         .depthTestEnable = vk::True,
-        .depthWriteEnable = vk::True,
+        .depthWriteEnable = key.alphaMode != AlphaMode::Blend,
         .depthCompareOp = vk::CompareOp::eLess,
         .depthBoundsTestEnable = vk::False,
         .stencilTestEnable = vk::False,
     };
 
-    vk::DescriptorSetLayout dslHandle = *descriptorSetLayout;
-    pipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                              .setLayoutCount = 1,
-                                                              .pSetLayouts = &dslHandle,
-                                                              .pushConstantRangeCount = 0,
-                                                          });
+    std::vector layouts{ *descriptorSetLayout, passLayouts.surface };
+    if (hasFeature(features, ShaderFeatures::VolumetricFog)) {
+        layouts.push_back(passLayouts.volumetric);
+    }
+    pipelineLayout = vk::raii::PipelineLayout(ctx.device,
+            vk::PipelineLayoutCreateInfo{
+                .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+                .pSetLayouts = layouts.data(),
+                .pushConstantRangeCount = 0,
+            });
 
     vk::Format colorFormat = Swapchain::HDR_COLOR_FORMAT;
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);

@@ -20,6 +20,15 @@ bool hasPreservedColorAttachment(RenderGraphPass const& pass, RenderGraphImageHa
             });
 }
 
+bool preservesAttachmentContents(RenderGraphPass const& pass, RenderGraphImageHandle handle,
+        vk::ImageLayout layout) {
+    if (layout == vk::ImageLayout::eColorAttachmentOptimal) {
+        return hasPreservedColorAttachment(pass, handle);
+    }
+    return layout == vk::ImageLayout::eDepthAttachmentOptimal && pass.preservesDepthContents &&
+           pass.depthWrite.index == handle.index;
+}
+
 } // namespace
 
 RenderGraphImageHandle RenderGraph::importImage(std::string /*name*/, vk::Image image,
@@ -62,6 +71,11 @@ RenderGraph& RenderGraph::preservesColorContents(RenderGraphImageHandle handle) 
 
 RenderGraph& RenderGraph::writesDepth(RenderGraphImageHandle handle) {
     mPasses.back().depthWrite = handle;
+    return *this;
+}
+
+RenderGraph& RenderGraph::preservesDepthContents() {
+    mPasses.back().preservesDepthContents = true;
     return *this;
 }
 
@@ -122,7 +136,8 @@ void RenderGraph::execute(vk::raii::CommandBuffer const& commandBuffer) {
             depthAttachmentInfo = {
                 .imageView = physicalImage.view(),
                 .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
+                .loadOp = pass.preservesDepthContents ? vk::AttachmentLoadOp::eLoad
+                                                      : vk::AttachmentLoadOp::eClear,
                 .storeOp =
                         isRead ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
                 .clearValue = vk::ClearDepthStencilValue{ 1.0f, 0 },
@@ -160,6 +175,9 @@ void RenderGraph::buildBarriers() {
         for (auto imageHandle: pass.preservedColorAttachments) {
             mSubsequentlyRead.insert(imageHandle.index);
         }
+        if (pass.preservesDepthContents) {
+            mSubsequentlyRead.insert(pass.depthWrite.index);
+        }
     }
 
     std::vector<vk::ImageLayout> layouts(mImages.size(), vk::ImageLayout::eUndefined);
@@ -178,9 +196,8 @@ void RenderGraph::buildBarriers() {
             }
             auto& physicalImage = mImages[imageHandle.index];
             vk::ImageLayout oldLayout = layouts[imageHandle.index];
-            bool preservesColorContents = newLayout == vk::ImageLayout::eColorAttachmentOptimal &&
-                                          hasPreservedColorAttachment(pass, imageHandle);
-            if (oldLayout == newLayout && !preservesColorContents) {
+            if (oldLayout == newLayout &&
+                    !preservesAttachmentContents(pass, imageHandle, newLayout)) {
                 return;
             }
             auto [srcAccess, srcStage] = accessForLayout(oldLayout);
@@ -214,7 +231,8 @@ void RenderGraph::buildBarriers() {
         }
         if (pass.depthWrite.isValid()) {
             addBarrier(pass.depthWrite, vk::ImageLayout::eDepthAttachmentOptimal,
-                    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                    vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
                     vk::PipelineStageFlagBits2::eEarlyFragmentTests |
                             vk::PipelineStageFlagBits2::eLateFragmentTests);
         }

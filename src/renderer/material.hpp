@@ -11,6 +11,7 @@ import vulkan_hpp;
 #endif
 
 #include "renderer/gpu_types.hpp"
+#include "renderer/model_asset.hpp"
 
 struct VulkanContext;
 struct TextureAtlas;
@@ -23,6 +24,15 @@ struct MaterialPipelineKey {
     std::string fragmentShader;
     ShaderFeatures features = ShaderFeatures::None;
     bool doubleSided = false;
+    AlphaMode alphaMode = AlphaMode::Opaque;
+
+    void enableFeatureIf(bool enabled, ShaderFeatures feature, char const* shaderSuffix) {
+        if (!enabled) {
+            return;
+        }
+        features = features | feature;
+        fragmentShader += shaderSuffix;
+    }
 
     auto operator<=>(MaterialPipelineKey const&) const = default;
 };
@@ -35,6 +45,11 @@ struct MaterialResources {
     TextureAtlas const* normalMap = nullptr;
     ShadowPipeline const* shadowMap = nullptr;
     AoPipeline const* aoPipeline = nullptr;
+};
+
+struct MaterialPassLayouts {
+    vk::DescriptorSetLayout surface;
+    vk::DescriptorSetLayout volumetric{};
 };
 
 struct MaterialInstance {
@@ -60,7 +75,8 @@ struct Material {
     vk::raii::DescriptorPool descriptorPool{ nullptr };
     vk::raii::Pipeline pipeline{ nullptr };
 
-    Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount);
+    Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount,
+            MaterialPassLayouts const& passLayouts);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             MaterialResources const& resources) const;

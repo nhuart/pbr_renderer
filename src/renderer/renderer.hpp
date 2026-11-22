@@ -59,6 +59,7 @@ private:
     std::optional<CommandService> mCmds;
     std::optional<SyncObjects> mSync;
     std::optional<ResourceManager> mResources;
+    std::optional<MaterialSurfacePool> mMaterialSurfaces;
     std::optional<MeshBuffer> mMeshBuffer;
     std::map<MaterialPipelineKey, Material> mMaterialPipelines;
     std::optional<LightBuffer> mLightBuffer;
@@ -91,9 +92,17 @@ private:
     void prepareRenderObjects();
     void createMaterialPipelines();
     void createMaterialBindings();
+    void createMaterialBinding(RenderObject const& object, uint32_t materialIndex,
+            MaterialBinding& binding);
+    TextureAtlas const& resolveBaseColorTexture(MeshInstance const& instance,
+            ModelAsset const& model, TextureReference reference);
+    void createMaterialSurface(MaterialBinding& binding, MeshInstance const& instance,
+            ModelAsset const& model, MaterialDefinition const& definition);
     void createMaterialInstance(MaterialBinding& binding);
     void recreateAoMaterialInstances();
     MaterialPipelineKey resolveMaterialPipeline(MeshInstance const& instance,
+            MaterialDefinition const& definition) const;
+    void configurePbrFeatures(MaterialPipelineKey& key, MeshInstance const& instance,
             MaterialDefinition const& definition) const;
     void mainLoop();
     void cleanup();
@@ -116,8 +125,16 @@ private:
     void addDepthMipPasses(vk::Format depthFormat);
     void addAoBlurPass(std::string name, RenderGraphImageHandle input,
             RenderGraphImageHandle output, uint32_t passIndex);
-    void addForwardPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
+    void addOpaquePass(RenderGraphImageHandle color, RenderGraphImageHandle depth);
+    void addTransparentPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
             RenderGraphImageHandle resolveTarget);
+    void prepareForwardPass(vk::raii::CommandBuffer const& cmd) const;
+    void drawOpaqueScene(vk::raii::CommandBuffer const& cmd) const;
+    void drawTransparentScene(vk::raii::CommandBuffer const& cmd) const;
+    void drawMesh(vk::raii::CommandBuffer const& cmd, MaterialBinding const& binding,
+            MeshPrimitive const& primitive) const;
+    void drawSkybox(vk::raii::CommandBuffer const& cmd) const;
+    void drawParticles(vk::raii::CommandBuffer const& cmd) const;
     [[nodiscard]] RenderGraphImageHandle importHdrColorImage();
     void importSwapchainImage();
     [[nodiscard]] RenderGraphImageHandle importMsaaHdrColorImage();

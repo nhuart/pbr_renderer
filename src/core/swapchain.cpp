@@ -138,9 +138,7 @@ void Swapchain::createColorResources(VulkanContext const& ctx) {
     if (ctx.msaaSamples != vk::SampleCountFlagBits::e1) {
         auto [image, memory] = vkutil::createImage(ctx, extent.width, extent.height, 1,
                 ctx.msaaSamples, HDR_COLOR_FORMAT, vk::ImageTiling::eOptimal,
-                vk::ImageUsageFlagBits::eTransientAttachment |
-                        vk::ImageUsageFlagBits::eColorAttachment,
-                vk::MemoryPropertyFlagBits::eDeviceLocal);
+                vk::ImageUsageFlagBits::eColorAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
         msaaHdrImage = std::move(image);
         msaaHdrImageMemory = std::move(memory);
         msaaHdrImageView = vkutil::createImageView(ctx, *msaaHdrImage, HDR_COLOR_FORMAT);
