@@ -69,6 +69,7 @@ void Renderer::drawParticles(vk::raii::CommandBuffer const& cmd) const {
     if (!mScene.particles) {
         return;
     }
+    // Particles retain their existing overlay ordering after transparent mesh surfaces.
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *mParticlePipeline->particlePipeline);
     cmd.bindVertexBuffers(0, *mParticlePipeline->shaderStorageBuffers[mFrameIndex],
             { vk::DeviceSize{ 0 } });
@@ -80,9 +81,9 @@ void Renderer::drawForwardScene(vk::raii::CommandBuffer const& cmd) const {
     for (auto const& draw: queues.opaque) {
         drawMesh(cmd, *draw.binding, *draw.primitive);
     }
+    drawSkybox(cmd);
     for (auto const& draw: queues.transparent) {
         drawMesh(cmd, *draw.binding, *draw.primitive);
     }
     drawParticles(cmd);
-    drawSkybox(cmd);
 }
