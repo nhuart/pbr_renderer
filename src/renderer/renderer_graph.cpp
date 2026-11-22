@@ -136,6 +136,10 @@ void Renderer::addDepthPrepass(vk::Format depthFormat) {
                         for (auto const& primitive: object.model->primitives) {
                             auto const& binding =
                                     object.materialBindings.at(primitive.materialIndex);
+                            // A single-layer AO/depth buffer cannot represent blended layers.
+                            if (binding.pipelineKey.alphaMode == AlphaMode::Blend) {
+                                continue;
+                            }
                             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                     *mGeometryPrepass->normalsPipeLayout, 1,
                                     *binding.surface.descriptorSets[0], {});
