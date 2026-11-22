@@ -21,5 +21,6 @@ layout(location = 0) out vec4 outNormal;
 void main() {
     applyAlphaMask(materialOpacity(fragTexCoord, fragColor.a));
     vec3 viewN = normalize(mat3(ubo.view) * fragNormal);
+    if (!gl_FrontFacing) viewN = -viewN;
     outNormal = vec4(viewN * 0.5 + 0.5, 1.0);
 }
