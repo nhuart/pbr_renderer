@@ -51,6 +51,9 @@ struct MaterialDefinition {
     bool doubleSided = false;
     TextureReference baseColorTexture;
     TextureReference normalTexture;
+    MaterialWorkflow workflow = MaterialWorkflow::MetallicRoughness;
+    glm::vec3 specular{ 1.0f };
+    float glossiness = 1.0f;
     TextureReference specularGlossinessTexture;
     AlphaMode alphaMode = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;

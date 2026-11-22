@@ -94,12 +94,18 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
 struct PbrShadingData {
     vec3 normal;
     vec3 viewDirection;
-    vec3 albedo;
+    vec3 diffuseColor;
     vec3 F0;
     float NdotV;
-    float metallic;
     float roughness;
 };
+
+vec3 diffuseReflectance(PbrShadingData surface, vec3 fresnel) {
+    // SG diffuseColor already includes the extension's (1 - max(F0)) energy reduction.
+    vec3 energyWeight = surfaceMaterial.workflow == WORKFLOW_SPECULAR_GLOSSINESS
+            ? vec3(1.0) : 1.0 - fresnel;
+    return surface.diffuseColor * energyWeight;
+}
 
 vec2 preintegratedBrdf(PbrShadingData surface) {
     return texture(brdfLut, vec2(surface.NdotV, 1.0 - surface.roughness)).rg;
@@ -128,8 +134,7 @@ vec3 lightContribution(GpuLight light, PbrShadingData surface) {
     vec3 F = fresnelSchlick(HdotV, surface.F0);
 
     vec3 specular = (D * G * F) / max(4.0 * surface.NdotV * NdotL, 0.0001);
-    vec3 kD = (vec3(1.0) - F) * (1.0 - surface.metallic);
-    vec3 diffuse = kD * surface.albedo / PI;
+    vec3 diffuse = diffuseReflectance(surface, F) / PI;
 
     return (diffuse + specular) * light.colorAndType.xyz * ls.attenuation * NdotL *
            surfaceLightTransmittance(ls);
@@ -155,11 +160,10 @@ vec3 shIrradiance(vec3 N) {
 
 vec3 iblAmbient(PbrShadingData surface) {
     vec3 kS = fresnelSchlickRoughness(surface.NdotV, surface.F0, surface.roughness);
-    vec3 kD = (1.0 - kS) * (1.0 - surface.metallic);
 
     mat3 worldToEnvironment = mat3(iblSH.worldToEnvironment);
     vec3 environmentNormal = worldToEnvironment * surface.normal;
-    vec3 diffuse = kD * max(shIrradiance(environmentNormal), vec3(0.0)) * surface.albedo;
+    vec3 diffuse = diffuseReflectance(surface, kS) * max(shIrradiance(environmentNormal), vec3(0.0));
 
     vec3 environmentReflection = worldToEnvironment * reflect(-surface.viewDirection, surface.normal);
     // perceptualRoughnessToLod from filament/shaders/src/surface_light_indirect.fs
@@ -255,8 +259,7 @@ vec3 ambientLighting(PbrShadingData surface) {
     vec2 brdf = preintegratedBrdf(surface);
     vec3 reflectedEnergy = surface.F0 * brdf.x + brdf.y;
     // Match Filament's indirect diffuse: energy reflected specularly cannot enter the diffuse layer.
-    vec3 diffuseColor = surface.albedo * (1.0 - surface.metallic);
-    vec3 ambient = ubo.pbrParams.z * diffuseColor * (1.0 - reflectedEnergy);
+    vec3 ambient = ubo.pbrParams.z * diffuseReflectance(surface, reflectedEnergy);
 #endif
 
 #ifdef USE_SAO
@@ -266,17 +269,29 @@ vec3 ambientLighting(PbrShadingData surface) {
     return ambient;
 }
 
+PbrShadingData resolveShadingData(vec3 albedo) {
+    vec3 normal = resolveNormal();
+    if (!gl_FrontFacing) normal = -normal;
+    vec3 viewDirection = normalize(ubo.cameraPos.xyz - fragWorldPos);
+    vec3 F0 = mix(vec3(0.04), albedo, ubo.pbrParams.x);
+    vec3 diffuseColor = albedo * (1.0 - ubo.pbrParams.x);
+    float roughness = ubo.pbrParams.y;
+    if (surfaceMaterial.workflow == WORKFLOW_SPECULAR_GLOSSINESS) {
+        vec4 specularGlossiness = texture(specularGlossinessTexture, fragSpecularTexCoord)
+                * surfaceMaterial.specularGlossiness;
+        F0 = specularGlossiness.rgb;
+        roughness = 1.0 - specularGlossiness.a;
+        diffuseColor = albedo * (1.0 - max(max(F0.r, F0.g), F0.b));
+    }
+    return PbrShadingData(normal, viewDirection, diffuseColor, F0,
+            max(dot(normal, viewDirection), 0.0001), clamp(roughness, 0.045, 1.0));
+}
+
 void main() {
     vec4 texColor = texture(texSampler, fragTexCoord);
     float opacity = colorPassOpacity(texColor.a, fragColor.a);
     vec3 albedo = texColor.rgb * fragBaseColor.rgb * fragColor.rgb;
-    vec3 normal = resolveNormal();
-    if (!gl_FrontFacing) normal = -normal;
-    vec3 viewDirection = normalize(ubo.cameraPos.xyz - fragWorldPos);
-    PbrShadingData surface = PbrShadingData(normal, viewDirection, albedo,
-            mix(vec3(0.04), albedo, ubo.pbrParams.x), max(dot(normal, viewDirection), 0.0001),
-            ubo.pbrParams.x, ubo.pbrParams.y);
-
+    PbrShadingData surface = resolveShadingData(albedo);
     vec3 direct = directLighting(surface);
     vec3 ambient = ambientLighting(surface);
     vec3 color = ambient + direct;

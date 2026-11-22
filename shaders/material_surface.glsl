@@ -14,6 +14,7 @@ layout(set = 1, binding = 2) uniform sampler2D specularGlossinessTexture;
 const float ALPHA_OPAQUE = 0.0;
 const float ALPHA_MASK = 1.0;
 const float ALPHA_BLEND = 2.0;
+const float WORKFLOW_SPECULAR_GLOSSINESS = 1.0;
 
 float materialOpacity(float textureAlpha, float vertexAlpha) {
     return textureAlpha * surfaceMaterial.opacityFactor * vertexAlpha;

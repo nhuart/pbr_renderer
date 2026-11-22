@@ -96,6 +96,7 @@ void readImages(tinygltf::Model const& model, ModelAsset& asset) {
     for (auto const& material: asset.materials) {
         readReferencedImage(model, asset, material.baseColorTexture);
         readReferencedImage(model, asset, material.normalTexture);
+        readReferencedImage(model, asset, material.specularGlossinessTexture);
     }
 }
 

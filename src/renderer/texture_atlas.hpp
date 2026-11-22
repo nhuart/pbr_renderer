@@ -12,7 +12,7 @@ import vulkan_hpp;
 struct VulkanContext;
 struct CommandService;
 
-enum class TextureUsage { BaseColor, NormalMap };
+enum class TextureUsage { BaseColor, NormalMap, SpecularGlossiness };
 
 struct TextureAtlas {
     uint32_t mipLevels = 0;

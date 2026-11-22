@@ -93,9 +93,12 @@ void Renderer::createMaterialBinding(RenderObject const& object, uint32_t materi
 void Renderer::createMaterialSurface(MaterialBinding& binding, MeshInstance const& instance,
         ModelAsset const& model, MaterialDefinition const& definition) {
     auto const& specularTexture = mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
-            model, TextureReference{}, TextureUsage::BaseColor);
-    SurfaceUniforms uniforms{ .alphaCutoff = definition.alphaCutoff,
+            model, definition.specularGlossinessTexture, TextureUsage::SpecularGlossiness);
+    SurfaceUniforms uniforms{ .specularGlossiness =
+                                      glm::vec4(definition.specular, definition.glossiness),
+        .alphaCutoff = definition.alphaCutoff,
         .alphaMode = static_cast<float>(definition.alphaMode),
+        .workflow = static_cast<float>(definition.workflow),
         .opacityFactor = instance.baseColor.value_or(definition.baseColor).a };
     binding.surface = mMaterialSurfaces->create(*mCtx, uniforms,
             SurfaceTextures{ *binding.texture, specularTexture });
