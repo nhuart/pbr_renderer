@@ -1,4 +1,5 @@
 #include "renderer/gltf_primitive.hpp"
+#include "renderer/gltf_material.hpp"
 
 #include <cstring>
 #include <numeric>
@@ -29,7 +30,7 @@ template<glm::length_t Components>
 class FloatAttribute {
 public:
     FloatAttribute(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
-            char const* name) {
+            std::string const& name) {
         auto attribute = primitive.attributes.find(name);
         if (attribute == primitive.attributes.end()) {
             return;
@@ -67,37 +68,77 @@ tinygltf::NormalTextureInfo const* normalTexture(tinygltf::Model const& model,
     return texture.index >= 0 ? &texture : nullptr;
 }
 
+class TextureCoordinates {
+public:
+    TextureCoordinates(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
+            TextureReference reference)
+            : mAttributeName("TEXCOORD_" + std::to_string(reference.texCoord)),
+              mValues(model, primitive, mAttributeName) {}
+
+    void requireValues(TextureReference reference, char const* purpose) const {
+        if (reference.hasTexture() && !mValues.hasValues()) {
+            throw std::runtime_error(std::string(purpose) + " mapping requires " + mAttributeName);
+        }
+    }
+
+    void requireNormalMapping(TextureReference reference, bool hasNormals) const {
+        if (reference.hasTexture() && (!mValues.hasValues() || !hasNormals)) {
+            throw std::runtime_error("normal mapping requires normals and " + mAttributeName);
+        }
+    }
+
+    glm::vec2 read(size_t index) const { return mValues.read(index); }
+
+private:
+    std::string mAttributeName;
+    FloatAttribute<2> mValues;
+};
+
+class PrimitiveVertexReader {
+public:
+    PrimitiveVertexReader(tinygltf::Model const& model, tinygltf::Primitive const& primitive,
+            MaterialDefinition const& material)
+            : mPositions(model, primitive, "POSITION"),
+              mNormals(model, primitive, "NORMAL"),
+              mTangents(model, primitive, "TANGENT"),
+              mBaseColorUVs(model, primitive, material.baseColorTexture),
+              mNormalUVs(model, primitive, material.normalTexture),
+              mSpecularGlossinessUVs(model, primitive, material.specularGlossinessTexture) {
+        mBaseColorUVs.requireValues(material.baseColorTexture, "base-color");
+        mSpecularGlossinessUVs.requireValues(material.specularGlossinessTexture,
+                "specular/glossiness");
+        mNormalUVs.requireNormalMapping(material.normalTexture, mNormals.hasValues());
+    }
+
+    Vertex read(size_t index) const {
+        return { .pos = mPositions.read(index),
+            .color = glm::vec3(1.0f),
+            .texCoord = mBaseColorUVs.read(index),
+            .normal = mNormals.read(index),
+            .tangent = mTangents.read(index),
+            .normalTexCoord = mNormalUVs.read(index),
+            .specularTexCoord = mSpecularGlossinessUVs.read(index) };
+    }
+
+private:
+    FloatAttribute<3> mPositions;
+    FloatAttribute<3> mNormals;
+    FloatAttribute<4> mTangents;
+    TextureCoordinates mBaseColorUVs;
+    TextureCoordinates mNormalUVs;
+    TextureCoordinates mSpecularGlossinessUVs;
+};
+
 std::vector<Vertex> readPrimitiveVertices(tinygltf::Model const& model,
         tinygltf::Primitive const& primitive) {
-    auto const* normalMap = normalTexture(model, primitive);
-    std::string normalUVAttribute =
-            "TEXCOORD_" + std::to_string(normalMap ? normalMap->texCoord : 0);
-    FloatAttribute<3> positions(model, primitive, "POSITION");
-    auto const* baseColorMap =
-            primitive.material >= 0
-                    ? &model.materials.at(primitive.material).pbrMetallicRoughness.baseColorTexture
-                    : nullptr;
-    int baseColorUV = baseColorMap ? baseColorMap->texCoord : 0;
-    std::string baseColorUVAttribute = "TEXCOORD_" + std::to_string(baseColorUV);
-    FloatAttribute<2> texCoords(model, primitive, baseColorUVAttribute.c_str());
-    FloatAttribute<2> normalTexCoords(model, primitive, normalUVAttribute.c_str());
-    FloatAttribute<3> normals(model, primitive, "NORMAL");
-    FloatAttribute<4> tangents(model, primitive, "TANGENT");
-    if (baseColorMap && baseColorMap->index >= 0 && !texCoords.hasValues()) {
-        throw std::runtime_error("base-color mapping requires " + baseColorUVAttribute);
-    }
-    if (normalMap && (!normalTexCoords.hasValues() || !normals.hasValues())) {
-        throw std::runtime_error("normal mapping requires normals and " + normalUVAttribute);
-    }
+    auto material = primitive.material >= 0
+                            ? gltf::readMaterial(model.materials.at(primitive.material))
+                            : MaterialDefinition{};
+    PrimitiveVertexReader reader(model, primitive, material);
     size_t vertexCount = model.accessors[primitive.attributes.at("POSITION")].count;
     std::vector<Vertex> vertices(vertexCount);
     for (size_t i = 0; i < vertexCount; ++i) {
-        vertices[i] = { .pos = positions.read(i),
-            .color = glm::vec3(1.0f),
-            .texCoord = texCoords.read(i),
-            .normal = normals.read(i),
-            .tangent = tangents.read(i),
-            .normalTexCoord = normalTexCoords.read(i) };
+        vertices[i] = reader.read(i);
     }
     return vertices;
 }
@@ -158,6 +199,7 @@ void gltf::PrimitiveGeometry::flipTextureCoordinates() {
     for (auto& vertex: mVertices) {
         vertex.texCoord.y = 1.0f - vertex.texCoord.y;
         vertex.normalTexCoord.y = 1.0f - vertex.normalTexCoord.y;
+        vertex.specularTexCoord.y = 1.0f - vertex.specularTexCoord.y;
     }
 }
 

@@ -54,6 +54,7 @@ layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragNormal;
 layout(location = 3) in vec4 fragBaseColor;
 layout(location = 4) in vec3 fragWorldPos;
+layout(location = 7) in vec2 fragSpecularTexCoord;
 #ifdef USE_NORMAL_MAP
 layout(location = 5) in vec4 fragTangent;
 layout(location = 6) in vec2 fragNormalTexCoord;

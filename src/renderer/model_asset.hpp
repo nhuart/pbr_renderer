@@ -51,6 +51,7 @@ struct MaterialDefinition {
     bool doubleSided = false;
     TextureReference baseColorTexture;
     TextureReference normalTexture;
+    TextureReference specularGlossinessTexture;
 };
 
 struct MeshPrimitive {

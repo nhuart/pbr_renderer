@@ -160,6 +160,7 @@ add_executable(pbr_renderer
     src/renderer/embedded_image.cpp
     src/renderer/gltf_buffer.cpp
     src/renderer/gltf_model.cpp
+    src/renderer/gltf_material.cpp
     src/renderer/gltf_model_io.cpp
     src/renderer/gltf_primitive.cpp
     src/renderer/gltf_tangents.cpp

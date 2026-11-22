@@ -14,11 +14,12 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec4 tangent; // xyz = tangent direction, w = handedness (+1 or -1)
     glm::vec2 normalTexCoord;
+    glm::vec2 specularTexCoord{};
 
     bool operator==(Vertex const& other) const {
         return pos == other.pos && color == other.color && texCoord == other.texCoord &&
                normal == other.normal && tangent == other.tangent &&
-               normalTexCoord == other.normalTexCoord;
+               normalTexCoord == other.normalTexCoord && specularTexCoord == other.specularTexCoord;
     }
 
     static vk::VertexInputBindingDescription getBindingDescription() {
@@ -27,7 +28,7 @@ struct Vertex {
             .inputRate = vk::VertexInputRate::eVertex };
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 6> getAttributeDescriptions() {
+    static std::array<vk::VertexInputAttributeDescription, 7> getAttributeDescriptions() {
         return { { { .location = 0,
                        .binding = 0,
                        .format = vk::Format::eR32G32B32Sfloat,
@@ -51,7 +52,11 @@ struct Vertex {
             { .location = 5,
                 .binding = 0,
                 .format = vk::Format::eR32G32Sfloat,
-                .offset = offsetof(Vertex, normalTexCoord) } } };
+                .offset = offsetof(Vertex, normalTexCoord) },
+            { .location = 6,
+                .binding = 0,
+                .format = vk::Format::eR32G32Sfloat,
+                .offset = offsetof(Vertex, specularTexCoord) } } };
     }
 };
 
