@@ -102,6 +102,8 @@ private:
     void recreateAoMaterialInstances();
     MaterialPipelineKey resolveMaterialPipeline(MeshInstance const& instance,
             MaterialDefinition const& definition) const;
+    void configurePbrFeatures(MaterialPipelineKey& key, MeshInstance const& instance,
+            MaterialDefinition const& definition) const;
     void mainLoop();
     void cleanup();
     void drawFrame();
@@ -123,9 +125,12 @@ private:
     void addDepthMipPasses(vk::Format depthFormat);
     void addAoBlurPass(std::string name, RenderGraphImageHandle input,
             RenderGraphImageHandle output, uint32_t passIndex);
-    void addForwardPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
+    void addOpaquePass(RenderGraphImageHandle color, RenderGraphImageHandle depth);
+    void addTransparentPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
             RenderGraphImageHandle resolveTarget);
-    void drawForwardScene(vk::raii::CommandBuffer const& cmd) const;
+    void prepareForwardPass(vk::raii::CommandBuffer const& cmd) const;
+    void drawOpaqueScene(vk::raii::CommandBuffer const& cmd) const;
+    void drawTransparentScene(vk::raii::CommandBuffer const& cmd) const;
     void drawMesh(vk::raii::CommandBuffer const& cmd, MaterialBinding const& binding,
             MeshPrimitive const& primitive) const;
     void drawSkybox(vk::raii::CommandBuffer const& cmd) const;

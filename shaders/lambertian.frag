@@ -1,6 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "material_surface.glsl"
+#include "surface_fog.glsl"
 
 layout(binding = 1) uniform sampler2D texSampler;
 
@@ -23,5 +24,6 @@ void main() {
 
     vec4 texColor = texture(texSampler, fragTexCoord);
     vec3 baseColor = texColor.rgb * fragBaseColor.rgb * fragColor.rgb;
-    outColor = vec4(baseColor * light, colorPassOpacity(texColor.a, fragColor.a));
+    outColor = vec4(foggedSurfaceColor(baseColor * light, fragWorldPos),
+            colorPassOpacity(texColor.a, fragColor.a));
 }

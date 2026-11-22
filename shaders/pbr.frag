@@ -4,6 +4,7 @@
 #include "medium.glsl"
 #include "lighting.glsl"
 #include "material_surface.glsl"
+#include "surface_fog.glsl"
 
 layout(binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -295,5 +296,5 @@ void main() {
     vec3 direct = directLighting(surface);
     vec3 ambient = ambientLighting(surface);
     vec3 color = ambient + direct;
-    outColor = vec4(color, opacity);
+    outColor = vec4(foggedSurfaceColor(color, fragWorldPos), opacity);
 }

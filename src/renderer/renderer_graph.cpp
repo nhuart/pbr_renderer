@@ -36,9 +36,11 @@ void Renderer::buildRenderGraph() {
     addShadowPass();
     addDepthPrepass(depthFormat);
     addAmbientOcclusionPasses(depthFormat);
-    addForwardPass(multisampled ? msaaHdrImage : hdrImage, depthImage,
+    auto forwardColor = multisampled ? msaaHdrImage : hdrImage;
+    addOpaquePass(forwardColor, depthImage);
+    addVolumetricPass(forwardColor);
+    addTransparentPass(forwardColor, depthImage,
             multisampled ? hdrImage : RenderGraphImageHandle{});
-    addVolumetricPass(hdrImage);
     addTonemapPass(hdrImage);
     mRenderGraph.compile(*mCtx);
 }
@@ -261,24 +263,42 @@ void Renderer::addAoBlurPass(std::string name, RenderGraphImageHandle input,
             });
 }
 
-void Renderer::addForwardPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
-        RenderGraphImageHandle resolveTarget) {
-    auto& forwardPass = mRenderGraph.addPass("ForwardPass").writesColor(color).writesDepth(depth);
-    if (resolveTarget.isValid()) {
-        forwardPass.resolvesTo(resolveTarget);
-    }
+void Renderer::prepareForwardPass(vk::raii::CommandBuffer const& cmd) const {
+    cmd.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
+    cmd.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
+    setViewportAndScissor(cmd, mSwapchain->extent);
+}
+
+void Renderer::addOpaquePass(RenderGraphImageHandle color, RenderGraphImageHandle depth) {
+    auto& forwardPass = mRenderGraph.addPass("OpaquePass").writesColor(color).writesDepth(depth);
     if (mShadowMapImageHandle.isValid()) {
         forwardPass.reads(mShadowMapImageHandle);
     }
     if (mAoRawImageHandle.isValid()) {
         forwardPass.reads(mAoRawImageHandle);
     }
-    forwardPass.execute([this](vk::raii::CommandBuffer const& commandBuffer) {
-        commandBuffer.bindVertexBuffers(0, *mMeshBuffer->vertexBuffer, { vk::DeviceSize{ 0 } });
-        commandBuffer.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
-        setViewportAndScissor(commandBuffer, mSwapchain->extent);
+    forwardPass.execute([this](vk::raii::CommandBuffer const& cmd) {
+        prepareForwardPass(cmd);
+        drawOpaqueScene(cmd);
+    });
+}
 
-        drawForwardScene(commandBuffer);
+void Renderer::addTransparentPass(RenderGraphImageHandle color, RenderGraphImageHandle depth,
+        RenderGraphImageHandle resolveTarget) {
+    auto& pass = mRenderGraph.addPass("TransparentPass")
+                         .writesColor(color)
+                         .preservesColorContents(color)
+                         .writesDepth(depth)
+                         .preservesDepthContents();
+    if (resolveTarget.isValid()) {
+        pass.resolvesTo(resolveTarget);
+    }
+    if (mShadowMapImageHandle.isValid()) {
+        pass.reads(mShadowMapImageHandle);
+    }
+    pass.execute([this](vk::raii::CommandBuffer const& cmd) {
+        prepareForwardPass(cmd);
+        drawTransparentScene(cmd);
     });
 }
 

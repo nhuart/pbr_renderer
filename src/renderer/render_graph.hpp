@@ -42,6 +42,7 @@ struct RenderGraphPass {
     std::vector<RenderGraphImageHandle> colorWrites;
     std::vector<RenderGraphImageHandle> preservedColorAttachments;
     RenderGraphImageHandle depthWrite{};
+    bool preservesDepthContents = false;
     std::vector<RenderGraphImageHandle> reads;
     RenderGraphImageHandle resolveTarget{};
     std::function<void(vk::raii::CommandBuffer const&)> execute;
@@ -71,6 +72,7 @@ public:
     RenderGraph& writesColor(RenderGraphImageHandle handle);
     RenderGraph& preservesColorContents(RenderGraphImageHandle handle);
     RenderGraph& writesDepth(RenderGraphImageHandle handle);
+    RenderGraph& preservesDepthContents();
     RenderGraph& reads(RenderGraphImageHandle handle);
     RenderGraph& resolvesTo(RenderGraphImageHandle handle);
     RenderGraph& execute(std::function<void(vk::raii::CommandBuffer const&)> fn);

@@ -24,26 +24,28 @@ MaterialPipelineKey Renderer::resolveMaterialPipeline(MeshInstance const& instan
         .fragmentShader = instance.fragmentShader,
         .doubleSided = definition.doubleSided,
         .alphaMode = definition.alphaMode };
-    if (instance.fragmentShader != "pbr") {
-        return key;
+    if (instance.fragmentShader == "pbr") {
+        configurePbrFeatures(key, instance, definition);
     }
+    bool usesFragmentFog =
+            definition.alphaMode == AlphaMode::Blend && mScene.volumetric.has_value();
+    key.enableFeatureIf(usesFragmentFog, ShaderFeatures::VolumetricFog, "_fog");
+    return key;
+}
+
+void Renderer::configurePbrFeatures(MaterialPipelineKey& key, MeshInstance const& instance,
+        MaterialDefinition const& definition) const {
     key.features = ShaderFeatures::BrdfLut;
-    auto enableFeature = [&key](bool enabled, ShaderFeatures feature, char const* suffix) {
-        if (enabled) {
-            key.features = key.features | feature;
-            key.fragmentShader += suffix;
-        }
-    };
     bool hasShadow = instance.receiveShadows && mShadowPipeline.has_value();
     bool hasPcf = hasShadow && mShadowPipeline->shadowType == ShadowType::PCF;
-    enableFeature(mIblEnvironment.has_value(), ShaderFeatures::Ibl, "_ibl");
-    enableFeature(instance.useNormalMap && definition.normalTexture.hasTexture(),
+    key.enableFeatureIf(mIblEnvironment.has_value(), ShaderFeatures::Ibl, "_ibl");
+    key.enableFeatureIf(instance.useNormalMap && definition.normalTexture.hasTexture(),
             ShaderFeatures::NormalMap, "_normal");
-    enableFeature(hasPcf, ShaderFeatures::PcfShadow, "_pcf");
-    enableFeature(hasShadow && !hasPcf, ShaderFeatures::HardShadow, "_shadow");
+    key.enableFeatureIf(hasPcf, ShaderFeatures::PcfShadow, "_pcf");
+    key.enableFeatureIf(hasShadow && !hasPcf, ShaderFeatures::HardShadow, "_shadow");
     // SAO and GTAO share the same surface-shader sampler and variant.
-    enableFeature(mScene.sao.has_value() || mScene.gtao.has_value(), ShaderFeatures::Ao, "_sao");
-    return key;
+    bool receivesAo = definition.alphaMode != AlphaMode::Blend && (mScene.sao || mScene.gtao);
+    key.enableFeatureIf(receivesAo, ShaderFeatures::Ao, "_sao");
 }
 
 void Renderer::createMaterialPipelines() {
@@ -53,8 +55,11 @@ void Renderer::createMaterialPipelines() {
             ++bindingCounts[binding.pipelineKey];
         }
     }
+    MaterialPassLayouts layouts{ .surface = *mMaterialSurfaces->layout,
+        .volumetric = mVolumetricPipeline ? mVolumetricPipeline->materialDescriptorLayout()
+                                          : vk::DescriptorSetLayout{} };
     for (auto const& [key, count]: bindingCounts) {
-        mMaterialPipelines.emplace(key, Material(*mCtx, key, count, *mMaterialSurfaces->layout));
+        mMaterialPipelines.emplace(key, Material(*mCtx, key, count, layouts));
     }
 }
 

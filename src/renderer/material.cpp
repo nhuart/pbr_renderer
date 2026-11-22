@@ -10,7 +10,7 @@
 #include <iostream>
 
 Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount,
-        vk::DescriptorSetLayout surfaceLayout) {
+        MaterialPassLayouts const& passLayouts) {
     auto features = key.features;
 
     // Build descriptor set layout from active features only
@@ -173,12 +173,16 @@ Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uin
         .stencilTestEnable = vk::False,
     };
 
-    std::array layouts{ *descriptorSetLayout, surfaceLayout };
-    pipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                              .setLayoutCount = layouts.size(),
-                                                              .pSetLayouts = layouts.data(),
-                                                              .pushConstantRangeCount = 0,
-                                                          });
+    std::vector layouts{ *descriptorSetLayout, passLayouts.surface };
+    if (hasFeature(features, ShaderFeatures::VolumetricFog)) {
+        layouts.push_back(passLayouts.volumetric);
+    }
+    pipelineLayout = vk::raii::PipelineLayout(ctx.device,
+            vk::PipelineLayoutCreateInfo{
+                .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+                .pSetLayouts = layouts.data(),
+                .pushConstantRangeCount = 0,
+            });
 
     vk::Format colorFormat = Swapchain::HDR_COLOR_FORMAT;
     vk::Format depthFormat = vkutil::findDepthFormat(ctx);

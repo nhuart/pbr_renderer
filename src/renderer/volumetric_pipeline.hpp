@@ -32,6 +32,12 @@ struct VolumetricPipeline {
             ShadowPipeline const& shadow);
     void update(uint32_t frame, VolumetricUBO const& ubo);
     void draw(vk::raii::CommandBuffer const& cmd, uint32_t frame) const;
+    [[nodiscard]] vk::DescriptorSetLayout materialDescriptorLayout() const {
+        return *descriptorLayout;
+    }
+    [[nodiscard]] vk::DescriptorSet frameDescriptorSet(uint32_t frame) const {
+        return *descriptorSets[frame];
+    }
 
 private:
     vk::raii::DescriptorSetLayout descriptorLayout{ nullptr };

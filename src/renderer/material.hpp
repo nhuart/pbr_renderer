@@ -26,6 +26,14 @@ struct MaterialPipelineKey {
     bool doubleSided = false;
     AlphaMode alphaMode = AlphaMode::Opaque;
 
+    void enableFeatureIf(bool enabled, ShaderFeatures feature, char const* shaderSuffix) {
+        if (!enabled) {
+            return;
+        }
+        features = features | feature;
+        fragmentShader += shaderSuffix;
+    }
+
     auto operator<=>(MaterialPipelineKey const&) const = default;
 };
 
@@ -37,6 +45,11 @@ struct MaterialResources {
     TextureAtlas const* normalMap = nullptr;
     ShadowPipeline const* shadowMap = nullptr;
     AoPipeline const* aoPipeline = nullptr;
+};
+
+struct MaterialPassLayouts {
+    vk::DescriptorSetLayout surface;
+    vk::DescriptorSetLayout volumetric{};
 };
 
 struct MaterialInstance {
@@ -63,7 +76,7 @@ struct Material {
     vk::raii::Pipeline pipeline{ nullptr };
 
     Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount,
-            vk::DescriptorSetLayout surfaceLayout);
+            MaterialPassLayouts const& passLayouts);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             MaterialResources const& resources) const;

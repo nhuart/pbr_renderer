@@ -19,6 +19,7 @@ enum class ShaderFeatures : uint8_t {
     PcfShadow = 1 << 3,
     Ao = 1 << 4,
     BrdfLut = 1 << 5,
+    VolumetricFog = 1 << 6,
 };
 inline ShaderFeatures operator|(ShaderFeatures a, ShaderFeatures b) {
     return static_cast<ShaderFeatures>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));

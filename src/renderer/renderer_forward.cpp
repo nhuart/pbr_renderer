@@ -11,36 +11,37 @@ struct MeshDraw {
     float viewDepth;
 };
 
-struct ForwardDrawQueues {
-    std::vector<MeshDraw> opaque;
-    std::vector<MeshDraw> transparent;
+struct TransparentDrawQueue {
+    std::vector<MeshDraw> draws;
 
     void appendObject(RenderObject const& object, glm::mat4 const& modelView) {
         for (auto const& primitive: object.model->primitives) {
             auto const& binding = object.materialBindings.at(primitive.materialIndex);
-            auto& queue = binding.pipelineKey.alphaMode == AlphaMode::Blend ? transparent : opaque;
+            if (binding.pipelineKey.alphaMode != AlphaMode::Blend) {
+                continue;
+            }
             float viewDepth = -(modelView * glm::vec4(primitive.center, 1.0f)).z;
-            queue.push_back({ &binding, &primitive, viewDepth });
+            draws.push_back({ &binding, &primitive, viewDepth });
         }
     }
 
-    void sortTransparentBackToFront() {
-        std::stable_sort(transparent.begin(), transparent.end(),
+    void sortBackToFront() {
+        std::stable_sort(draws.begin(), draws.end(),
                 [](MeshDraw const& farther, MeshDraw const& nearer) {
                     return farther.viewDepth > nearer.viewDepth;
                 });
     }
 };
 
-ForwardDrawQueues buildDrawQueues(std::vector<RenderObject> const& objects,
+TransparentDrawQueue buildTransparentDrawQueue(std::vector<RenderObject> const& objects,
         std::vector<GameObject> const& gameObjects, glm::mat4 const& view) {
-    ForwardDrawQueues queues;
+    TransparentDrawQueue queue;
     for (auto const& object: objects) {
         glm::mat4 modelView = view * gameObjects[object.gameObjectIndex].getModelMatrix();
-        queues.appendObject(object, modelView);
+        queue.appendObject(object, modelView);
     }
-    queues.sortTransparentBackToFront();
-    return queues;
+    queue.sortBackToFront();
+    return queue;
 }
 
 } // namespace
@@ -52,6 +53,10 @@ void Renderer::drawMesh(vk::raii::CommandBuffer const& cmd, MaterialBinding cons
         *binding.surface.descriptorSets[0] };
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *binding.pipeline->pipelineLayout, 0,
             sets, {});
+    if (hasFeature(binding.pipelineKey.features, ShaderFeatures::VolumetricFog)) {
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *binding.pipeline->pipelineLayout,
+                2, mVolumetricPipeline->frameDescriptorSet(mFrameIndex), {});
+    }
     cmd.drawIndexed(primitive.range.indexCount, 1, primitive.range.firstIndex, 0, 0);
 }
 
@@ -76,13 +81,21 @@ void Renderer::drawParticles(vk::raii::CommandBuffer const& cmd) const {
     cmd.draw(mScene.particles->count, 1, 0, 0);
 }
 
-void Renderer::drawForwardScene(vk::raii::CommandBuffer const& cmd) const {
-    auto queues = buildDrawQueues(mRenderObjects, mGameObjects, mCamera.viewMatrix());
-    for (auto const& draw: queues.opaque) {
-        drawMesh(cmd, *draw.binding, *draw.primitive);
+void Renderer::drawOpaqueScene(vk::raii::CommandBuffer const& cmd) const {
+    for (auto const& object: mRenderObjects) {
+        for (auto const& primitive: object.model->primitives) {
+            auto const& binding = object.materialBindings.at(primitive.materialIndex);
+            if (binding.pipelineKey.alphaMode != AlphaMode::Blend) {
+                drawMesh(cmd, binding, primitive);
+            }
+        }
     }
     drawSkybox(cmd);
-    for (auto const& draw: queues.transparent) {
+}
+
+void Renderer::drawTransparentScene(vk::raii::CommandBuffer const& cmd) const {
+    auto queue = buildTransparentDrawQueue(mRenderObjects, mGameObjects, mCamera.viewMatrix());
+    for (auto const& draw: queue.draws) {
         drawMesh(cmd, *draw.binding, *draw.primitive);
     }
     drawParticles(cmd);

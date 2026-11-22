@@ -49,10 +49,14 @@ function(add_shader_output shader_source output_name)
     if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong|view_space_normals|shadow)[.]frag$")
         list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/material_surface.glsl")
     endif()
-    if(shader_source STREQUAL "shaders/pbr.frag" OR shader_source STREQUAL "shaders/volumetric.frag")
+    if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong|volumetric)[.]frag$")
         list(APPEND shader_dependencies
             "${CMAKE_SOURCE_DIR}/shaders/medium.glsl"
-            "${CMAKE_SOURCE_DIR}/shaders/lighting.glsl")
+            "${CMAKE_SOURCE_DIR}/shaders/lighting.glsl"
+            "${CMAKE_SOURCE_DIR}/shaders/volumetric_medium.glsl")
+    endif()
+    if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong)[.]frag$")
+        list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/surface_fog.glsl")
     endif()
     add_custom_command(
         OUTPUT "${output_path}"
@@ -92,11 +96,15 @@ foreach(shader IN LISTS SHADER_SOURCES)
     add_shader_output("${shader}" "${shader_name}")
 endforeach()
 
+foreach(shader IN ITEMS lambertian phong blinn_phong)
+    add_shader_output("shaders/${shader}.frag" "${shader}_fog.frag" -DUSE_FOG)
+endforeach()
+
 # Compile both presentation modes from the same source.
 add_shader_output("shaders/tonemap.frag" "tonemap.frag")
 add_shader_output("shaders/tonemap.frag" "tonemap_none.frag" -DNO_TONEMAP)
 
-# Keep suffix order in sync with Renderer::resolveMaterialPipeline().
+# Keep suffix order in sync with Renderer material feature selection.
 function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
     set(variant_name pbr)
     set(define_flags)
@@ -121,6 +129,7 @@ function(add_pbr_shader has_ibl has_normal_map shadow_mode has_ao)
     endif()
 
     add_shader_output("shaders/pbr.frag" "${variant_name}.frag" ${define_flags})
+    add_shader_output("shaders/pbr.frag" "${variant_name}_fog.frag" ${define_flags} -DUSE_FOG)
     set(SHADER_SPIRV_OUTPUTS "${SHADER_SPIRV_OUTPUTS}" PARENT_SCOPE)
 endfunction()
 
