@@ -109,8 +109,9 @@ Multiple instances can reference the same `gltf` path. The mesh data, however, i
 
 - Lambertian, Phong, and Blinn–Phong surface shading
 - Metallic-roughness PBR with a Cook–Torrance microfacet specular BRDF (GGX)
-- Base-color textures and glTF normal mapping
-- Multi-material glTF models with per-primitive material assignments
+- Base-color/diffuse, normal, and specular/glossiness textures
+- Multi-material glTF models with per-primitive material
+- Back-to-front transparent mesh rendering
 - Ambient, directional, point, and spot lights
 - Physically based camera
 - Image-based lighting and skybox
