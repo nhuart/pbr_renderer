@@ -59,6 +59,7 @@ struct MaterialDefinition {
 struct MeshPrimitive {
     IndexRange range;
     uint32_t materialIndex = 0;
+    glm::vec3 center{};
 };
 
 struct ModelAsset {

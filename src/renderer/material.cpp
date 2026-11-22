@@ -150,7 +150,13 @@ Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uin
         .minSampleShading = 0.2f,
     };
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-        .blendEnable = vk::False,
+        .blendEnable = key.alphaMode == AlphaMode::Blend,
+        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+        .colorBlendOp = vk::BlendOp::eAdd,
+        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+        .dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+        .alphaBlendOp = vk::BlendOp::eAdd,
         .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
                           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
     };
@@ -161,7 +167,7 @@ Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uin
     };
     vk::PipelineDepthStencilStateCreateInfo depthStencilInfo{
         .depthTestEnable = vk::True,
-        .depthWriteEnable = vk::True,
+        .depthWriteEnable = key.alphaMode != AlphaMode::Blend,
         .depthCompareOp = vk::CompareOp::eLess,
         .depthBoundsTestEnable = vk::False,
         .stencilTestEnable = vk::False,

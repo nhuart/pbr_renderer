@@ -124,10 +124,26 @@ public:
         if (vertexTransform.reversesWinding()) {
             reverseWinding(range);
         }
-        mOutput.asset.primitives.push_back({ range, resolveMaterialIndex(model, primitive) });
+        mOutput.asset.primitives.push_back(
+                { range, resolveMaterialIndex(model, primitive), primitiveCenter(range) });
     }
 
 private:
+    glm::vec3 primitiveCenter(IndexRange range) const {
+        if (range.indexCount == 0) {
+            return glm::vec3(0.0f);
+        }
+        glm::vec3 boundsMin(std::numeric_limits<float>::max());
+        glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+        size_t end = size_t(range.firstIndex) + range.indexCount;
+        for (size_t index = range.firstIndex; index < end; ++index) {
+            auto const& position = mOutput.vertices[mOutput.indices[index]].pos;
+            boundsMin = glm::min(boundsMin, position);
+            boundsMax = glm::max(boundsMax, position);
+        }
+        return (boundsMin + boundsMax) * 0.5f;
+    }
+
     void appendIndexedVertices(gltf::PrimitiveGeometry const& geometry,
             gltf::VertexTransform const& transform) {
         constexpr uint32_t UNMAPPED_VERTEX = std::numeric_limits<uint32_t>::max();
