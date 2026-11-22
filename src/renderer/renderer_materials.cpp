@@ -53,30 +53,50 @@ void Renderer::createMaterialPipelines() {
         }
     }
     for (auto const& [key, count]: bindingCounts) {
-        mMaterialPipelines.emplace(key, Material(*mCtx, key, count));
+        mMaterialPipelines.emplace(key, Material(*mCtx, key, count, *mMaterialSurfaces->layout));
     }
 }
 
 void Renderer::createMaterialBindings() {
     for (auto& object: mRenderObjects) {
-        auto const& instance = mScene.meshInstances[object.gameObjectIndex];
         for (auto& [index, binding]: object.materialBindings) {
-            auto const& definition = object.model->materials.at(index);
-            binding.texture =
-                    instance.texturePath.empty()
-                            ? &mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
-                                      *object.model, definition.baseColorTexture,
-                                      TextureUsage::BaseColor)
-                            : &mResources->getTexture(*mCtx, *mCmds, instance.texturePath);
-            if (hasFeature(binding.pipelineKey.features, ShaderFeatures::NormalMap)) {
-                binding.normalMap =
-                        &mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
-                                *object.model, definition.normalTexture, TextureUsage::NormalMap);
-            }
-            binding.pipeline = &mMaterialPipelines.at(binding.pipelineKey);
-            createMaterialInstance(binding);
+            createMaterialBinding(object, index, binding);
         }
     }
+}
+
+TextureAtlas const& Renderer::resolveBaseColorTexture(MeshInstance const& instance,
+        ModelAsset const& model, TextureReference reference) {
+    if (!instance.texturePath.empty()) {
+        return mResources->getTexture(*mCtx, *mCmds, instance.texturePath);
+    }
+    return mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath, model, reference,
+            TextureUsage::BaseColor);
+}
+
+void Renderer::createMaterialBinding(RenderObject const& object, uint32_t materialIndex,
+        MaterialBinding& binding) {
+    auto const& instance = mScene.meshInstances[object.gameObjectIndex];
+    auto const& definition = object.model->materials.at(materialIndex);
+    binding.texture =
+            &resolveBaseColorTexture(instance, *object.model, definition.baseColorTexture);
+    if (hasFeature(binding.pipelineKey.features, ShaderFeatures::NormalMap)) {
+        binding.normalMap = &mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
+                *object.model, definition.normalTexture, TextureUsage::NormalMap);
+    }
+    binding.pipeline = &mMaterialPipelines.at(binding.pipelineKey);
+    createMaterialSurface(binding, instance, *object.model, definition);
+    createMaterialInstance(binding);
+}
+
+void Renderer::createMaterialSurface(MaterialBinding& binding, MeshInstance const& instance,
+        ModelAsset const& model, MaterialDefinition const& definition) {
+    auto const& specularTexture = mResources->getEmbeddedTexture(*mCtx, *mCmds, instance.gltfPath,
+            model, TextureReference{}, TextureUsage::BaseColor);
+    SurfaceUniforms uniforms{
+        .opacityFactor = instance.baseColor.value_or(definition.baseColor).a };
+    binding.surface = mMaterialSurfaces->create(*mCtx, uniforms,
+            SurfaceTextures{ *binding.texture, specularTexture });
 }
 
 void Renderer::createMaterialInstance(MaterialBinding& binding) {

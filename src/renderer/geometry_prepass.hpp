@@ -51,11 +51,11 @@ struct GeometryPrepass {
     std::vector<NormalsObject> normalsObjects;
 
     GeometryPrepass(VulkanContext const& ctx, Swapchain const& swapchain,
-            uint32_t depthMipLevels = 1);
+            vk::DescriptorSetLayout surfaceLayout, uint32_t depthMipLevels = 1);
     void allocateObjects(VulkanContext const& ctx, uint32_t objectCount);
     void updateObjectUBO(uint32_t objectIndex, uint32_t frameIndex, NormalsUBO const& ubo);
 
 private:
     void createImages(VulkanContext const& ctx, vk::Extent2D extent);
-    void createNormalsPass(VulkanContext const& ctx);
+    void createNormalsPass(VulkanContext const& ctx, vk::DescriptorSetLayout surfaceLayout);
 };

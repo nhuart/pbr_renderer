@@ -188,10 +188,10 @@ struct ShadowGraphicsState {
 } // namespace
 
 ShadowPipeline::ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds,
-        uint32_t objectCount) {
+        uint32_t objectCount, vk::DescriptorSetLayout surfaceLayout) {
     createDepthImage(ctx, cmds);
     createFragmentUniformBuffers(ctx);
-    createDescriptorResources(ctx, objectCount);
+    createDescriptorResources(ctx, objectCount, surfaceLayout);
     createGraphicsPipeline(ctx);
     allocateObjectData(ctx, objectCount);
 }
@@ -246,7 +246,8 @@ void ShadowPipeline::createFragmentUniformBuffers(VulkanContext const& ctx) {
     }
 }
 
-void ShadowPipeline::createDescriptorResources(VulkanContext const& ctx, uint32_t objectCount) {
+void ShadowPipeline::createDescriptorResources(VulkanContext const& ctx, uint32_t objectCount,
+        vk::DescriptorSetLayout surfaceLayout) {
     vk::DescriptorSetLayoutBinding uniformBinding{
         .binding = 0,
         .descriptorType = vk::DescriptorType::eUniformBuffer,
@@ -272,12 +273,11 @@ void ShadowPipeline::createDescriptorResources(VulkanContext const& ctx, uint32_
                 .pPoolSizes = &uniformPoolSize,
             });
 
-    vk::DescriptorSetLayout descriptorSetLayoutHandle = *descriptorSetLayout;
-    pipelineLayout =
-            vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                     .setLayoutCount = 1,
-                                                     .pSetLayouts = &descriptorSetLayoutHandle,
-                                                 });
+    std::array layouts{ *descriptorSetLayout, surfaceLayout };
+    pipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
+                                                              .setLayoutCount = layouts.size(),
+                                                              .pSetLayouts = layouts.data(),
+                                                          });
 }
 
 void ShadowPipeline::createGraphicsPipeline(VulkanContext const& ctx) {

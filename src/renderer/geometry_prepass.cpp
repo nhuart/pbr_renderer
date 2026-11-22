@@ -11,10 +11,10 @@
 #include <iostream>
 
 GeometryPrepass::GeometryPrepass(VulkanContext const& ctx, Swapchain const& swapchain,
-        uint32_t depthMipLevels)
+        vk::DescriptorSetLayout surfaceLayout, uint32_t depthMipLevels)
         : depthMipLevelCount(depthMipLevels) {
     createImages(ctx, swapchain.extent);
-    createNormalsPass(ctx);
+    createNormalsPass(ctx, surfaceLayout);
 }
 
 void GeometryPrepass::createImages(VulkanContext const& ctx, vk::Extent2D extent) {
@@ -50,7 +50,8 @@ void GeometryPrepass::createImages(VulkanContext const& ctx, vk::Extent2D extent
     normalsSampler = vkutil::createNearestSampler(ctx);
 }
 
-void GeometryPrepass::createNormalsPass(VulkanContext const& ctx) {
+void GeometryPrepass::createNormalsPass(VulkanContext const& ctx,
+        vk::DescriptorSetLayout surfaceLayout) {
     // Descriptor set layout: binding 0 = UniformBufferObject (vert+frag)
     std::array<vk::DescriptorSetLayoutBinding, 1> bindings{ {
         { .binding = 0,
@@ -66,10 +67,10 @@ void GeometryPrepass::createNormalsPass(VulkanContext const& ctx) {
 
     // The descriptor pool is sized when the scene's object count is known.
 
-    vk::DescriptorSetLayout dslHandle = *normalsDescLayout;
+    std::array layouts{ *normalsDescLayout, surfaceLayout };
     normalsPipeLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                                 .setLayoutCount = 1,
-                                                                 .pSetLayouts = &dslHandle,
+                                                                 .setLayoutCount = layouts.size(),
+                                                                 .pSetLayouts = layouts.data(),
                                                              });
 
     auto vertCode = vkutil::readSpirv("shaders/compiled/standard.vert.spv");

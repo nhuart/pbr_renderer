@@ -51,7 +51,8 @@ struct ShadowPipeline {
     // Per-frame UBOs for material binding 8 (lightSpaceTransform VP — used in fragment shader)
     std::array<ShadowFrameBuffer, MAX_FRAMES_IN_FLIGHT> fragmentUbo;
 
-    ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount);
+    ShadowPipeline(VulkanContext const& ctx, CommandService const& cmds, uint32_t objectCount,
+            vk::DescriptorSetLayout surfaceLayout);
 
     void allocateObjectData(VulkanContext const& ctx, uint32_t objectCount);
     void updateLightSpaceMatrix(DirectionalLight const& light, Scene const& scene,
@@ -65,7 +66,8 @@ private:
     void createDepthSampler(VulkanContext const& ctx);
     void initializeDepthImageLayout(CommandService const& cmds);
     void createFragmentUniformBuffers(VulkanContext const& ctx);
-    void createDescriptorResources(VulkanContext const& ctx, uint32_t objectCount);
+    void createDescriptorResources(VulkanContext const& ctx, uint32_t objectCount,
+            vk::DescriptorSetLayout surfaceLayout);
     void createGraphicsPipeline(VulkanContext const& ctx);
     void allocateObjectDescriptorSets(VulkanContext const& ctx, ShadowObjectData& objectData);
 };

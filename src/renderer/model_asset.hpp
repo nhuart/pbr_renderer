@@ -39,6 +39,10 @@ struct TextureReference {
     bool hasTexture() const { return texture >= 0; }
 };
 
+// Numeric values are part of the SurfaceUniforms / material_surface.glsl GPU interface.
+enum class MaterialWorkflow { MetallicRoughness = 0, SpecularGlossiness = 1 };
+enum class AlphaMode { Opaque = 0, Mask = 1, Blend = 2 };
+
 struct MaterialDefinition {
     glm::vec4 baseColor{ 1.0f };
     float metallic = 1.0f;

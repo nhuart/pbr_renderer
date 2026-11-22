@@ -76,6 +76,11 @@ void Renderer::addShadowPass() {
                                 *mShadowPipeline->objects[shadowObjIdx].descriptorSets[mFrameIndex],
                                 {});
                         for (auto const& primitive: object.model->primitives) {
+                            auto const& binding =
+                                    object.materialBindings.at(primitive.materialIndex);
+                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                    *mShadowPipeline->pipelineLayout, 1,
+                                    *binding.surface.descriptorSets[0], {});
                             bool doubleSided =
                                     object.model->materials[primitive.materialIndex].doubleSided;
                             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
@@ -129,6 +134,11 @@ void Renderer::addDepthPrepass(vk::Format depthFormat) {
                                 *mGeometryPrepass->normalsObjects[i].descriptorSets[mFrameIndex],
                                 {});
                         for (auto const& primitive: object.model->primitives) {
+                            auto const& binding =
+                                    object.materialBindings.at(primitive.materialIndex);
+                            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                    *mGeometryPrepass->normalsPipeLayout, 1,
+                                    *binding.surface.descriptorSets[0], {});
                             bool doubleSided =
                                     object.model->materials[primitive.materialIndex].doubleSided;
                             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
@@ -264,35 +274,7 @@ void Renderer::addForwardPass(RenderGraphImageHandle color, RenderGraphImageHand
         commandBuffer.bindIndexBuffer(*mMeshBuffer->indexBuffer, 0, vk::IndexType::eUint32);
         setViewportAndScissor(commandBuffer, mSwapchain->extent);
 
-        for (auto const& renderObject: mRenderObjects) {
-            for (auto const& primitive: renderObject.model->primitives) {
-                auto const& binding = renderObject.materialBindings.at(primitive.materialIndex);
-                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                        *binding.pipeline->pipeline);
-                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                        *binding.pipeline->pipelineLayout, 0,
-                        *binding.materialInstance.descriptorSets[mFrameIndex], {});
-                commandBuffer.drawIndexed(primitive.range.indexCount, 1, primitive.range.firstIndex,
-                        0, 0);
-            }
-        }
-
-        if (mScene.particles) {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                    *mParticlePipeline->particlePipeline);
-            commandBuffer.bindVertexBuffers(0,
-                    *mParticlePipeline->shaderStorageBuffers[mFrameIndex], { vk::DeviceSize{ 0 } });
-            commandBuffer.draw(mScene.particles->count, 1, 0, 0);
-        }
-
-        if (mSkyboxPipeline) {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                    *mSkyboxPipeline->pipeline);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                    *mSkyboxPipeline->pipelineLayout, 0,
-                    *mSkyboxPipeline->descriptorSets[mFrameIndex], {});
-            commandBuffer.draw(3, 1, 0, 0);
-        }
+        drawForwardScene(commandBuffer);
     });
 }
 

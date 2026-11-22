@@ -46,6 +46,9 @@ find_program(GLSLC glslc HINTS "${Vulkan_ROOT}/bin" REQUIRED)
 function(add_shader_output shader_source output_name)
     set(output_path "${CMAKE_BINARY_DIR}/shaders/${output_name}.spv")
     set(shader_dependencies "${CMAKE_SOURCE_DIR}/${shader_source}")
+    if(shader_source MATCHES "(pbr|lambertian|phong|blinn_phong|view_space_normals|shadow)[.]frag$")
+        list(APPEND shader_dependencies "${CMAKE_SOURCE_DIR}/shaders/material_surface.glsl")
+    endif()
     if(shader_source STREQUAL "shaders/pbr.frag" OR shader_source STREQUAL "shaders/volumetric.frag")
         list(APPEND shader_dependencies
             "${CMAKE_SOURCE_DIR}/shaders/medium.glsl"
@@ -150,6 +153,7 @@ add_executable(pbr_renderer
     src/renderer/renderer_materials.cpp
     src/renderer/renderer_capture.cpp
     src/renderer/renderer_graph.cpp
+    src/renderer/renderer_forward.cpp
     src/renderer/render_graph.cpp
     src/renderer/texture_atlas.cpp
     src/renderer/mesh_buffer.cpp
@@ -165,6 +169,7 @@ add_executable(pbr_renderer
     src/renderer/skybox_pipeline.cpp
     src/renderer/tonemap_pipeline.cpp
     src/renderer/material.cpp
+    src/renderer/material_surface.cpp
     src/renderer/material_instance.cpp
     src/renderer/shadow_pipeline.cpp
     src/renderer/ao_pipeline.cpp

@@ -9,8 +9,8 @@
 #include <array>
 #include <iostream>
 
-Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key,
-        uint32_t instanceCount) {
+Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount,
+        vk::DescriptorSetLayout surfaceLayout) {
     auto features = key.features;
 
     // Build descriptor set layout from active features only
@@ -167,10 +167,10 @@ Material::Material(VulkanContext const& ctx, MaterialPipelineKey const& key,
         .stencilTestEnable = vk::False,
     };
 
-    vk::DescriptorSetLayout dslHandle = *descriptorSetLayout;
+    std::array layouts{ *descriptorSetLayout, surfaceLayout };
     pipelineLayout = vk::raii::PipelineLayout(ctx.device, vk::PipelineLayoutCreateInfo{
-                                                              .setLayoutCount = 1,
-                                                              .pSetLayouts = &dslHandle,
+                                                              .setLayoutCount = layouts.size(),
+                                                              .pSetLayouts = layouts.data(),
                                                               .pushConstantRangeCount = 0,
                                                           });
 

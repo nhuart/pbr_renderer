@@ -60,7 +60,8 @@ struct Material {
     vk::raii::DescriptorPool descriptorPool{ nullptr };
     vk::raii::Pipeline pipeline{ nullptr };
 
-    Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount);
+    Material(VulkanContext const& ctx, MaterialPipelineKey const& key, uint32_t instanceCount,
+            vk::DescriptorSetLayout surfaceLayout);
 
     [[nodiscard]] MaterialInstance createInstance(VulkanContext const& ctx,
             MaterialResources const& resources) const;

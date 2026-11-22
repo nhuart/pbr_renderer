@@ -81,6 +81,12 @@ void Renderer::initVulkan() {
     createSceneObjects();
     mResources.emplace();
     mMeshBuffer.emplace(*mCtx, *mCmds, mScene);
+    uint32_t surfaceCount = 0;
+    for (auto const& instance: mScene.meshInstances) {
+        surfaceCount +=
+                static_cast<uint32_t>(mMeshBuffer->models.at(instance.gltfPath).primitives.size());
+    }
+    mMaterialSurfaces.emplace(*mCtx, surfaceCount);
     mLightBuffer.emplace(*mCtx, LightUBO{});
     createEnvironment();
     createShadowPipeline();
@@ -140,7 +146,7 @@ void Renderer::createShadowPipeline() {
     uint32_t shadowCasterCount = static_cast<uint32_t>(
             std::count_if(mScene.meshInstances.begin(), mScene.meshInstances.end(),
                     [](MeshInstance const& instance) { return instance.castShadows; }));
-    mShadowPipeline.emplace(*mCtx, *mCmds, shadowCasterCount);
+    mShadowPipeline.emplace(*mCtx, *mCmds, shadowCasterCount, *mMaterialSurfaces->layout);
     mShadowPipeline->shadowType = shadows.shadowType;
     mShadowPipeline->shadowBias = shadows.shadowBias;
     if (auto const* directional = std::get_if<DirectionalLight>(light)) {
@@ -155,7 +161,7 @@ void Renderer::createGeometryPrepass() {
         return;
     }
     uint32_t depthMipLevels = mScene.sao ? AoPipeline::saoDepthMipLevels(mSwapchain->extent) : 1;
-    mGeometryPrepass.emplace(*mCtx, *mSwapchain, depthMipLevels);
+    mGeometryPrepass.emplace(*mCtx, *mSwapchain, *mMaterialSurfaces->layout, depthMipLevels);
     mGeometryPrepass->allocateObjects(*mCtx, static_cast<uint32_t>(mScene.meshInstances.size()));
 }
 
